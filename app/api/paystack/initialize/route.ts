@@ -6,7 +6,7 @@ import { isValidWalletOrTag, isValidAmount } from "@/utils/validation";
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { ngnAmount, sendAmount, walletAddress, transactionId, email } = body;
+    const { ngnAmount, sendAmount, walletAddress, transactionId } = body;
 
     // Validate inputs
     if (!ngnAmount || !isValidAmount(ngnAmount.toString())) {
@@ -19,13 +19,6 @@ export async function POST(request: NextRequest) {
     if (!walletAddress || !isValidWalletOrTag(walletAddress.trim())) {
       return NextResponse.json(
         { success: false, error: "Invalid wallet address or SendTag" },
-        { status: 400 }
-      );
-    }
-
-    if (!email || !email.includes("@")) {
-      return NextResponse.json(
-        { success: false, error: "Valid email is required" },
         { status: 400 }
       );
     }
@@ -43,9 +36,13 @@ export async function POST(request: NextRequest) {
     // Get callback URL
     const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/payment/callback`;
 
+    // Generate a default email for Paystack (required by Paystack API)
+    // Using transaction ID to create a unique email
+    const defaultEmail = `tx-${transactionId}@sendapp.local`;
+
     // Initialize Paystack transaction
     const result = await initializeTransaction({
-      email,
+      email: defaultEmail,
       amount: amountInKobo,
       reference: transactionId, // Use our transaction ID as Paystack reference
       callback_url: callbackUrl,

@@ -10,7 +10,6 @@ export default function PaymentForm() {
   const [ngnAmount, setNgnAmount] = useState<string>("");
   const [sendAmount, setSendAmount] = useState<string>("0.00");
   const [walletAddress, setWalletAddress] = useState<string>("");
-  const [email, setEmail] = useState<string>("");
   const [transactionId, setTransactionId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [isResolvingSendTag, setIsResolvingSendTag] = useState(false);
@@ -18,7 +17,6 @@ export default function PaymentForm() {
   const [errors, setErrors] = useState<{
     ngnAmount?: string;
     walletAddress?: string;
-    email?: string;
   }>({});
   const [showModal, setShowModal] = useState(false);
   const [modalData, setModalData] = useState<{
@@ -107,10 +105,6 @@ export default function PaymentForm() {
         "Please enter a valid Base wallet address (0x...) or SendTag (@username)";
     }
 
-    if (!email || !email.includes("@")) {
-      newErrors.email = "Please enter a valid email address";
-    }
-
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -179,7 +173,6 @@ export default function PaymentForm() {
           sendAmount,
           walletAddress: finalWalletAddress,
           transactionId,
-          email,
         }),
       });
 
@@ -209,7 +202,7 @@ export default function PaymentForm() {
   };
 
   const handleInputChange = (
-    field: "ngnAmount" | "walletAddress" | "email",
+    field: "ngnAmount" | "walletAddress",
     value: string
   ) => {
     if (field === "ngnAmount") {
@@ -223,12 +216,6 @@ export default function PaymentForm() {
       // Clear error when user starts typing
       if (errors.walletAddress) {
         setErrors((prev) => ({ ...prev, walletAddress: undefined }));
-      }
-    } else if (field === "email") {
-      setEmail(value);
-      // Clear error when user starts typing
-      if (errors.email) {
-        setErrors((prev) => ({ ...prev, email: undefined }));
       }
     }
   };
@@ -297,37 +284,6 @@ export default function PaymentForm() {
                     value={sendAmount}
                   />
                 </div>
-              </div>
-            </div>
-
-            {/* Email Input */}
-            <div>
-              <label
-                className="block text-sm font-medium text-slate-700 dark:text-slate-300"
-                htmlFor="email"
-              >
-                Email address
-              </label>
-              <div className="mt-2 relative">
-                <input
-                  className={`w-full rounded-md border ${
-                    errors.email
-                      ? "border-red-300 dark:border-red-600"
-                      : "border-slate-300 dark:border-slate-600"
-                  } bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-primary focus:border-primary placeholder:text-slate-400 dark:placeholder:text-slate-500 px-3 py-2`}
-                  id="email"
-                  name="email"
-                  placeholder="your@email.com"
-                  type="email"
-                  value={email}
-                  onChange={(e) => handleInputChange("email", e.target.value)}
-                  required
-                />
-                {errors.email && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
-                    {errors.email}
-                  </p>
-                )}
               </div>
             </div>
 
