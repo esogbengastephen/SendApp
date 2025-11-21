@@ -38,10 +38,12 @@ cp .env.local.example .env.local
 ```
 
 Edit `.env.local` with your actual values:
-- Paystack secret and public keys
+- Paystack secret and public keys (see [PAYSTACK_SETUP.md](./PAYSTACK_SETUP.md) for detailed setup)
 - Base RPC URL
 - Liquidity pool private key (keep secure!)
 - Exchange rate configuration
+
+**📖 For detailed Paystack setup and testing instructions, see [PAYSTACK_SETUP.md](./PAYSTACK_SETUP.md)**
 
 4. Run the development server:
 ```bash
