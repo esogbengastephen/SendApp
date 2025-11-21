@@ -2,6 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { nanoid } from "nanoid";
+import { isValidWalletOrTag, isValidAmount } from "@/utils/validation";
+import Modal from "./Modal";
+import Toast from "./Toast";
 
 export default function PaymentForm() {
   const [ngnAmount, setNgnAmount] = useState<string>("");
@@ -9,6 +12,22 @@ export default function PaymentForm() {
   const [walletAddress, setWalletAddress] = useState<string>("");
   const [transactionId, setTransactionId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
+  const [exchangeRate, setExchangeRate] = useState<number>(50);
+  const [errors, setErrors] = useState<{
+    ngnAmount?: string;
+    walletAddress?: string;
+  }>({});
+  const [showModal, setShowModal] = useState(false);
+  const [modalData, setModalData] = useState<{
+    title: string;
+    message: string;
+    type: "success" | "error" | "info";
+  } | null>(null);
+  const [toast, setToast] = useState<{
+    message: string;
+    type: "success" | "error" | "info";
+    isVisible: boolean;
+  }>({ message: "", type: "info", isVisible: false });
 
   // Generate unique transaction ID on component mount
   useEffect(() => {
@@ -20,31 +39,82 @@ export default function PaymentForm() {
     }
   }, []);
 
+  // Fetch exchange rate on mount
+  useEffect(() => {
+    const fetchExchangeRate = async () => {
+      try {
+        const response = await fetch("/api/rate");
+        const data = await response.json();
+        if (data.success && data.rate) {
+          setExchangeRate(data.rate);
+        }
+      } catch (error) {
+        console.error("Failed to fetch exchange rate:", error);
+        // Use default rate on error
+      }
+    };
+    fetchExchangeRate();
+  }, []);
+
   // Calculate $SEND amount based on NGN amount
   useEffect(() => {
     if (ngnAmount && parseFloat(ngnAmount) > 0) {
-      // TODO: Fetch real exchange rate from API
-      const exchangeRate = 50; // Placeholder: 1 NGN = 50 $SEND
       const calculated = (parseFloat(ngnAmount) * exchangeRate).toFixed(2);
       setSendAmount(calculated);
     } else {
       setSendAmount("0.00");
     }
-  }, [ngnAmount]);
+  }, [ngnAmount, exchangeRate]);
+
+  // Validate form fields
+  const validateForm = (): boolean => {
+    const newErrors: typeof errors = {};
+
+    if (!ngnAmount || !isValidAmount(ngnAmount)) {
+      newErrors.ngnAmount = "Please enter a valid amount greater than 0";
+    }
+
+    if (!walletAddress || !isValidWalletOrTag(walletAddress.trim())) {
+      newErrors.walletAddress =
+        "Please enter a valid Base wallet address (0x...) or SendTag (@username)";
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
 
   const handleCopyAccount = async () => {
     const accountInfo = "7034494055";
     try {
       await navigator.clipboard.writeText(accountInfo);
-      // TODO: Add toast notification
-      alert("Account number copied to clipboard!");
+      setToast({
+        message: "Account number copied to clipboard!",
+        type: "success",
+        isVisible: true,
+      });
     } catch (err) {
       console.error("Failed to copy:", err);
+      setToast({
+        message: "Failed to copy account number",
+        type: "error",
+        isVisible: true,
+      });
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Validate form
+    if (!validateForm()) {
+      setToast({
+        message: "Please fix the errors in the form",
+        type: "error",
+        isVisible: true,
+      });
+      return;
+    }
+
     setIsLoading(true);
 
     try {
@@ -55,12 +125,38 @@ export default function PaymentForm() {
       console.log("Wallet Address:", walletAddress);
 
       // Placeholder for payment flow
-      alert("Payment flow will be implemented in next phase");
+      setModalData({
+        title: "Payment Flow",
+        message: "Payment flow will be implemented in Phase 3 (Paystack API integration).",
+        type: "info",
+      });
+      setShowModal(true);
     } catch (error) {
       console.error("Payment error:", error);
-      alert("An error occurred. Please try again.");
+      setModalData({
+        title: "Error",
+        message: "An error occurred. Please try again.",
+        type: "error",
+      });
+      setShowModal(true);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleInputChange = (field: "ngnAmount" | "walletAddress", value: string) => {
+    if (field === "ngnAmount") {
+      setNgnAmount(value);
+      // Clear error when user starts typing
+      if (errors.ngnAmount) {
+        setErrors((prev) => ({ ...prev, ngnAmount: undefined }));
+      }
+    } else if (field === "walletAddress") {
+      setWalletAddress(value);
+      // Clear error when user starts typing
+      if (errors.walletAddress) {
+        setErrors((prev) => ({ ...prev, walletAddress: undefined }));
+      }
     }
   };
 
@@ -85,7 +181,11 @@ export default function PaymentForm() {
               </label>
               <div className="mt-2 relative">
                 <input
-                  className="w-full rounded-md border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-primary focus:border-primary placeholder:text-slate-400 dark:placeholder:text-slate-500 px-3 py-2"
+                  className={`w-full rounded-md border ${
+                    errors.ngnAmount
+                      ? "border-red-300 dark:border-red-600"
+                      : "border-slate-300 dark:border-slate-600"
+                  } bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-primary focus:border-primary placeholder:text-slate-400 dark:placeholder:text-slate-500 px-3 py-2`}
                   id="ngn_amount"
                   name="ngn_amount"
                   placeholder="e.g. 5000"
@@ -93,9 +193,14 @@ export default function PaymentForm() {
                   min="0"
                   step="0.01"
                   value={ngnAmount}
-                  onChange={(e) => setNgnAmount(e.target.value)}
+                  onChange={(e) => handleInputChange("ngnAmount", e.target.value)}
                   required
                 />
+                {errors.ngnAmount && (
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                    {errors.ngnAmount}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -132,15 +237,24 @@ export default function PaymentForm() {
               </label>
               <div className="mt-2 relative">
                 <input
-                  className="w-full rounded-md border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-primary focus:border-primary placeholder:text-slate-400 dark:placeholder:text-slate-500 px-3 py-2"
+                  className={`w-full rounded-md border ${
+                    errors.walletAddress
+                      ? "border-red-300 dark:border-red-600"
+                      : "border-slate-300 dark:border-slate-600"
+                  } bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-primary focus:border-primary placeholder:text-slate-400 dark:placeholder:text-slate-500 px-3 py-2`}
                   id="wallet_address"
                   name="wallet_address"
                   placeholder="0x... or @username"
                   type="text"
                   value={walletAddress}
-                  onChange={(e) => setWalletAddress(e.target.value)}
+                  onChange={(e) => handleInputChange("walletAddress", e.target.value)}
                   required
                 />
+                {errors.walletAddress && (
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                    {errors.walletAddress}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -186,6 +300,28 @@ export default function PaymentForm() {
           </form>
         </div>
       </div>
+
+      {/* Modal */}
+      {showModal && modalData && (
+        <Modal
+          isOpen={showModal}
+          onClose={() => {
+            setShowModal(false);
+            setModalData(null);
+          }}
+          title={modalData.title}
+          message={modalData.message}
+          type={modalData.type}
+        />
+      )}
+
+      {/* Toast */}
+      <Toast
+        message={toast.message}
+        type={toast.type}
+        isVisible={toast.isVisible}
+        onClose={() => setToast({ ...toast, isVisible: false })}
+      />
     </div>
   );
 }
