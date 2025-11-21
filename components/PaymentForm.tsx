@@ -163,8 +163,8 @@ export default function PaymentForm() {
         finalWalletAddress = resolvedAddress;
       }
 
-      // Initialize Paystack payment
-      const response = await fetch("/api/paystack/initialize", {
+      // Store transaction first
+      const storeResponse = await fetch("/api/paystack/initialize", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -177,17 +177,41 @@ export default function PaymentForm() {
         }),
       });
 
-      const data = await response.json();
+      const storeData = await storeResponse.json();
 
-      if (!data.success) {
-        throw new Error(data.error || "Failed to initialize payment");
+      if (!storeData.success) {
+        throw new Error(storeData.error || "Failed to store transaction");
       }
 
-      // Redirect to Paystack payment page
-      if (data.data?.authorizationUrl) {
-        window.location.href = data.data.authorizationUrl;
+      // Check for payment and distribute tokens
+      setIsLoading(true);
+      const checkResponse = await fetch("/api/paystack/check-payment", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          transactionId,
+          ngnAmount,
+        }),
+      });
+
+      const checkData = await checkResponse.json();
+
+      if (checkData.success) {
+        setModalData({
+          title: "Success!",
+          message: checkData.message || "Payment verified and tokens distributed successfully!",
+          type: "success",
+        });
+        setShowModal(true);
+        
+        // Clear form on success
+        setNgnAmount("");
+        setWalletAddress("");
+        setSendAmount("0.00");
       } else {
-        throw new Error("No authorization URL received");
+        throw new Error(checkData.error || "Payment verification failed");
       }
     } catch (error: any) {
       console.error("Payment error:", error);
