@@ -5,6 +5,7 @@ import {
   updateTransaction,
   isTransactionProcessed,
 } from "@/lib/transactions";
+import { distributeTokens } from "@/lib/token-distribution";
 
 export async function POST(request: NextRequest) {
   try {
@@ -53,20 +54,49 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Update transaction status
+      // Update transaction status to processing
       updateTransaction(transaction.transactionId, {
         status: "completed",
       });
 
-      // TODO: Trigger token distribution here
-      // This will be implemented in Phase 4 (Blockchain Integration)
-      console.log(`Transaction ${reference} verified. Ready for token distribution.`);
+      // Distribute tokens to user's wallet
+      console.log(`Transaction ${reference} verified. Distributing tokens...`);
       console.log(`Wallet: ${transaction.walletAddress}, Amount: ${transaction.sendAmount} SEND`);
 
-      return NextResponse.json({
-        success: true,
-        message: "Transaction processed successfully",
-      });
+      try {
+        const distributionResult = await distributeTokens(
+          transaction.transactionId,
+          transaction.walletAddress,
+          transaction.sendAmount
+        );
+
+        if (distributionResult.success) {
+          console.log(`Tokens distributed successfully. TX Hash: ${distributionResult.txHash}`);
+          return NextResponse.json({
+            success: true,
+            message: "Transaction processed and tokens distributed successfully",
+            txHash: distributionResult.txHash,
+          });
+        } else {
+          console.error(`Token distribution failed: ${distributionResult.error}`);
+          // Still return success to Paystack (payment was successful)
+          // But log the error for manual review
+          return NextResponse.json({
+            success: true,
+            message: "Payment verified but token distribution failed",
+            error: distributionResult.error,
+          });
+        }
+      } catch (distError: any) {
+        console.error("Error during token distribution:", distError);
+        // Payment was successful, but token distribution failed
+        // Return success to Paystack, but log error for manual intervention
+        return NextResponse.json({
+          success: true,
+          message: "Payment verified but token distribution encountered an error",
+          error: distError.message,
+        });
+      }
     }
 
     // Handle other event types if needed
