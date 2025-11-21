@@ -10,12 +10,15 @@ export default function PaymentForm() {
   const [ngnAmount, setNgnAmount] = useState<string>("");
   const [sendAmount, setSendAmount] = useState<string>("0.00");
   const [walletAddress, setWalletAddress] = useState<string>("");
+  const [email, setEmail] = useState<string>("");
   const [transactionId, setTransactionId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
+  const [isResolvingSendTag, setIsResolvingSendTag] = useState(false);
   const [exchangeRate, setExchangeRate] = useState<number>(50);
   const [errors, setErrors] = useState<{
     ngnAmount?: string;
     walletAddress?: string;
+    email?: string;
   }>({});
   const [showModal, setShowModal] = useState(false);
   const [modalData, setModalData] = useState<{
@@ -66,6 +69,31 @@ export default function PaymentForm() {
     }
   }, [ngnAmount, exchangeRate]);
 
+  // Resolve SendTag to wallet address if needed
+  const resolveSendTag = async (sendTag: string): Promise<string | null> => {
+    try {
+      setIsResolvingSendTag(true);
+      const response = await fetch("/api/sendtag/resolve", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ sendTag }),
+      });
+
+      const data = await response.json();
+      if (data.success && data.walletAddress) {
+        return data.walletAddress;
+      }
+      return null;
+    } catch (error) {
+      console.error("Failed to resolve SendTag:", error);
+      return null;
+    } finally {
+      setIsResolvingSendTag(false);
+    }
+  };
+
   // Validate form fields
   const validateForm = (): boolean => {
     const newErrors: typeof errors = {};
@@ -77,6 +105,10 @@ export default function PaymentForm() {
     if (!walletAddress || !isValidWalletOrTag(walletAddress.trim())) {
       newErrors.walletAddress =
         "Please enter a valid Base wallet address (0x...) or SendTag (@username)";
+    }
+
+    if (!email || !email.includes("@")) {
+      newErrors.email = "Please enter a valid email address";
     }
 
     setErrors(newErrors);
@@ -118,24 +150,56 @@ export default function PaymentForm() {
     setIsLoading(true);
 
     try {
-      // TODO: Implement Paystack payment initialization
-      console.log("Transaction ID:", transactionId);
-      console.log("NGN Amount:", ngnAmount);
-      console.log("Send Amount:", sendAmount);
-      console.log("Wallet Address:", walletAddress);
+      let finalWalletAddress = walletAddress.trim();
 
-      // Placeholder for payment flow
-      setModalData({
-        title: "Payment Flow",
-        message: "Payment flow will be implemented in Phase 3 (Paystack API integration).",
-        type: "info",
+      // Resolve SendTag if needed
+      if (finalWalletAddress.startsWith("@")) {
+        const resolvedAddress = await resolveSendTag(finalWalletAddress);
+        if (!resolvedAddress) {
+          setModalData({
+            title: "Error",
+            message: "Failed to resolve SendTag. Please check the SendTag or use a wallet address instead.",
+            type: "error",
+          });
+          setShowModal(true);
+          setIsLoading(false);
+          return;
+        }
+        finalWalletAddress = resolvedAddress;
+      }
+
+      // Initialize Paystack payment
+      const response = await fetch("/api/paystack/initialize", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ngnAmount,
+          sendAmount,
+          walletAddress: finalWalletAddress,
+          transactionId,
+          email,
+        }),
       });
-      setShowModal(true);
-    } catch (error) {
+
+      const data = await response.json();
+
+      if (!data.success) {
+        throw new Error(data.error || "Failed to initialize payment");
+      }
+
+      // Redirect to Paystack payment page
+      if (data.data?.authorizationUrl) {
+        window.location.href = data.data.authorizationUrl;
+      } else {
+        throw new Error("No authorization URL received");
+      }
+    } catch (error: any) {
       console.error("Payment error:", error);
       setModalData({
-        title: "Error",
-        message: "An error occurred. Please try again.",
+        title: "Payment Error",
+        message: error.message || "An error occurred. Please try again.",
         type: "error",
       });
       setShowModal(true);
@@ -144,7 +208,10 @@ export default function PaymentForm() {
     }
   };
 
-  const handleInputChange = (field: "ngnAmount" | "walletAddress", value: string) => {
+  const handleInputChange = (
+    field: "ngnAmount" | "walletAddress" | "email",
+    value: string
+  ) => {
     if (field === "ngnAmount") {
       setNgnAmount(value);
       // Clear error when user starts typing
@@ -156,6 +223,12 @@ export default function PaymentForm() {
       // Clear error when user starts typing
       if (errors.walletAddress) {
         setErrors((prev) => ({ ...prev, walletAddress: undefined }));
+      }
+    } else if (field === "email") {
+      setEmail(value);
+      // Clear error when user starts typing
+      if (errors.email) {
+        setErrors((prev) => ({ ...prev, email: undefined }));
       }
     }
   };
@@ -227,6 +300,37 @@ export default function PaymentForm() {
               </div>
             </div>
 
+            {/* Email Input */}
+            <div>
+              <label
+                className="block text-sm font-medium text-slate-700 dark:text-slate-300"
+                htmlFor="email"
+              >
+                Email address
+              </label>
+              <div className="mt-2 relative">
+                <input
+                  className={`w-full rounded-md border ${
+                    errors.email
+                      ? "border-red-300 dark:border-red-600"
+                      : "border-slate-300 dark:border-slate-600"
+                  } bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-primary focus:border-primary placeholder:text-slate-400 dark:placeholder:text-slate-500 px-3 py-2`}
+                  id="email"
+                  name="email"
+                  placeholder="your@email.com"
+                  type="email"
+                  value={email}
+                  onChange={(e) => handleInputChange("email", e.target.value)}
+                  required
+                />
+                {errors.email && (
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                    {errors.email}
+                  </p>
+                )}
+              </div>
+            </div>
+
             {/* Wallet Address / SendTag Input */}
             <div>
               <label
@@ -249,7 +353,13 @@ export default function PaymentForm() {
                   value={walletAddress}
                   onChange={(e) => handleInputChange("walletAddress", e.target.value)}
                   required
+                  disabled={isResolvingSendTag}
                 />
+                {isResolvingSendTag && (
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Resolving SendTag...
+                  </p>
+                )}
                 {errors.walletAddress && (
                   <p className="mt-1 text-sm text-red-600 dark:text-red-400">
                     {errors.walletAddress}
