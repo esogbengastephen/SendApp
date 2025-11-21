@@ -20,6 +20,20 @@ export interface Transaction {
 const transactions = new Map<string, Transaction>();
 
 /**
+ * Get all transactions
+ */
+export function getAllTransactions(): Transaction[] {
+  return Array.from(transactions.values());
+}
+
+/**
+ * Get transactions by status
+ */
+export function getTransactionsByStatus(status: Transaction["status"]): Transaction[] {
+  return Array.from(transactions.values()).filter((tx) => tx.status === status);
+}
+
+/**
  * Store a new transaction
  */
 export function createTransaction(data: Omit<Transaction, "createdAt" | "status">): Transaction {
