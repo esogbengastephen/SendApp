@@ -15,8 +15,8 @@ export const DEFAULT_EXCHANGE_RATE = parseFloat(
 
 // Deposit Account Information
 export const DEPOSIT_ACCOUNT = {
-  name: "Eso Gbenga",
-  accountNumber: "7034494055",
-  bank: "Opay",
+  name: "FlashPhotogra/Badmus O. U",
+  accountNumber: "9327908332",
+  bank: "Wema",
 };
 

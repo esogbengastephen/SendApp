@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { nanoid } from "nanoid";
 import { isValidWalletOrTag, isValidAmount } from "@/utils/validation";
+import { DEPOSIT_ACCOUNT } from "@/lib/constants";
 import Modal from "./Modal";
 import Toast from "./Toast";
 
@@ -110,7 +111,7 @@ export default function PaymentForm() {
   };
 
   const handleCopyAccount = async () => {
-    const accountInfo = "7034494055";
+    const accountInfo = DEPOSIT_ACCOUNT.accountNumber;
     try {
       await navigator.clipboard.writeText(accountInfo);
       setToast({
@@ -332,13 +333,13 @@ export default function PaymentForm() {
               <div className="bg-slate-100 dark:bg-slate-800 p-4 rounded-lg flex items-center justify-between">
                 <div>
                   <p className="font-semibold text-slate-900 dark:text-slate-100">
-                    Eso Gbenga
+                    {DEPOSIT_ACCOUNT.name}
                   </p>
                   <p className="text-slate-600 dark:text-slate-400">
-                    7034494055
+                    {DEPOSIT_ACCOUNT.accountNumber}
                   </p>
                   <p className="text-sm text-slate-500 dark:text-slate-500">
-                    Opay
+                    {DEPOSIT_ACCOUNT.bank}
                   </p>
                 </div>
                 <button
