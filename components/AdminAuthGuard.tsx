@@ -19,6 +19,7 @@ export default function AdminAuthGuard({ children }: AdminAuthGuardProps) {
     checkAuth();
   }, [address, isConnected]);
 
+
   const checkAuth = async () => {
     setIsChecking(true);
     
@@ -55,7 +56,15 @@ export default function AdminAuthGuard({ children }: AdminAuthGuardProps) {
   };
 
   const handleAuthSuccess = (walletAddress: string) => {
-    setIsAuthenticated(true);
+    // Immediately check auth with the new session
+    const session = localStorage.getItem("admin_session");
+    if (session) {
+      const sessionData = JSON.parse(session);
+      if (sessionData.address === walletAddress.toLowerCase()) {
+        setIsAuthenticated(true);
+        setIsChecking(false);
+      }
+    }
   };
 
   if (isChecking) {

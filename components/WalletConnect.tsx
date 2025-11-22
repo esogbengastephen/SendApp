@@ -48,8 +48,11 @@ export default function WalletConnect({ onAuthSuccess }: WalletConnectProps) {
 
       if (data.success && data.isAdmin) {
         // Store session
-        localStorage.setItem("admin_wallet", walletAddress);
-        localStorage.setItem("admin_session", JSON.stringify({ address: walletAddress, timestamp: Date.now() }));
+        const sessionData = { address: walletAddress.toLowerCase(), timestamp: Date.now() };
+        localStorage.setItem("admin_wallet", walletAddress.toLowerCase());
+        localStorage.setItem("admin_session", JSON.stringify(sessionData));
+        
+        // Call success callback - this will trigger AdminAuthGuard to re-check
         onAuthSuccess(walletAddress);
       } else {
         setError("This wallet is not authorized as an admin");
