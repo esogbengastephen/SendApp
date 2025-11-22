@@ -45,6 +45,8 @@ export default function WalletConnect({ onAuthSuccess }: WalletConnectProps) {
       });
 
       const data = await response.json();
+      
+      console.log("Verification response:", data);
 
       if (data.success && data.isAdmin) {
         // Store session
@@ -55,8 +57,10 @@ export default function WalletConnect({ onAuthSuccess }: WalletConnectProps) {
         // Call success callback - this will trigger AdminAuthGuard to re-check
         onAuthSuccess(walletAddress);
       } else {
-        setError("This wallet is not authorized as an admin");
-        disconnect();
+        const errorMsg = data.error || "This wallet is not authorized as an admin";
+        console.error("Admin verification failed:", data);
+        setError(errorMsg + (data.debug ? ` (Debug: ${JSON.stringify(data.debug)})` : ""));
+        // Don't disconnect immediately - let user see the error
       }
     } catch (err: any) {
       console.error("Admin verification error:", err);

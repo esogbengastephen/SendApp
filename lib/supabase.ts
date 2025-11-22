@@ -10,14 +10,24 @@ export const supabase = createClient(
 );
 
 // Admin wallet addresses (in production, store in Supabase table)
-export const ADMIN_WALLETS = process.env.NEXT_PUBLIC_ADMIN_WALLETS?.split(",") || [];
+export const ADMIN_WALLETS = process.env.NEXT_PUBLIC_ADMIN_WALLETS
+  ?.split(",")
+  .map((addr) => addr.trim().toLowerCase())
+  .filter((addr) => addr.length > 0) || [];
 
 /**
  * Verify if a wallet address is an admin
  */
 export async function isAdminWallet(walletAddress: string): Promise<boolean> {
+  const normalizedAddress = walletAddress.toLowerCase().trim();
+  
+  // Debug logging
+  console.log("Checking admin wallet:", normalizedAddress);
+  console.log("Admin wallets from env:", ADMIN_WALLETS);
+  
   // Check environment variable first
-  if (ADMIN_WALLETS.length > 0 && ADMIN_WALLETS.includes(walletAddress.toLowerCase())) {
+  if (ADMIN_WALLETS.length > 0 && ADMIN_WALLETS.includes(normalizedAddress)) {
+    console.log("Wallet found in ADMIN_WALLETS");
     return true;
   }
 
@@ -34,14 +44,26 @@ export async function isAdminWallet(walletAddress: string): Promise<boolean> {
       // PGRST116 is "not found" error, which is fine
       console.error("Error checking admin wallet:", error);
       // If table doesn't exist, fall back to env variable check
-      return ADMIN_WALLETS.length > 0 && ADMIN_WALLETS.includes(walletAddress.toLowerCase());
+      const isInEnv = ADMIN_WALLETS.length > 0 && ADMIN_WALLETS.includes(normalizedAddress);
+      console.log("Supabase error, falling back to env check:", isInEnv);
+      return isInEnv;
     }
 
-    return !!data;
+    if (data) {
+      console.log("Wallet found in Supabase");
+      return true;
+    }
+    
+    // Not found in Supabase, check env again
+    const isInEnv = ADMIN_WALLETS.length > 0 && ADMIN_WALLETS.includes(normalizedAddress);
+    console.log("Not in Supabase, checking env:", isInEnv);
+    return isInEnv;
   } catch (error) {
     console.error("Error checking admin wallet:", error);
     // Fall back to env variable check
-    return ADMIN_WALLETS.length > 0 && ADMIN_WALLETS.includes(walletAddress.toLowerCase());
+    const isInEnv = ADMIN_WALLETS.length > 0 && ADMIN_WALLETS.includes(normalizedAddress);
+    console.log("Exception, falling back to env check:", isInEnv);
+    return isInEnv;
   }
 }
 

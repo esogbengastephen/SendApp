@@ -37,11 +37,24 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if wallet is admin
-    const isAdmin = await isAdminWallet(walletAddress);
+    const normalizedAddress = walletAddress.toLowerCase().trim();
+    console.log("Verifying admin wallet:", normalizedAddress);
+    console.log("Environment ADMIN_WALLETS:", process.env.NEXT_PUBLIC_ADMIN_WALLETS);
+    
+    const isAdmin = await isAdminWallet(normalizedAddress);
+    console.log("Is admin result:", isAdmin);
 
     if (!isAdmin) {
       return NextResponse.json(
-        { success: false, isAdmin: false, error: "Wallet is not authorized as admin" },
+        { 
+          success: false, 
+          isAdmin: false, 
+          error: "Wallet is not authorized as admin",
+          debug: {
+            walletAddress: normalizedAddress,
+            envWallets: process.env.NEXT_PUBLIC_ADMIN_WALLETS,
+          }
+        },
         { status: 403 }
       );
     }
