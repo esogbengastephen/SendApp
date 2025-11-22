@@ -41,11 +41,17 @@ export default function PaymentForm() {
     }
   }, []);
 
-  // Fetch exchange rate on mount
+  // Fetch exchange rate on mount and periodically
   useEffect(() => {
     const fetchExchangeRate = async () => {
       try {
-        const response = await fetch("/api/rate");
+        // Add cache-busting to ensure we get the latest rate
+        const response = await fetch(`/api/rate?t=${Date.now()}`, {
+          cache: "no-store",
+          headers: {
+            "Cache-Control": "no-cache",
+          },
+        });
         const data = await response.json();
         if (data.success && data.rate) {
           setExchangeRate(data.rate);
@@ -55,7 +61,23 @@ export default function PaymentForm() {
         // Use default rate on error
       }
     };
+
+    // Fetch immediately
     fetchExchangeRate();
+
+    // Refresh every 30 seconds to get updated rate
+    const interval = setInterval(fetchExchangeRate, 30000);
+
+    // Refresh when window regains focus (user comes back to tab)
+    const handleFocus = () => {
+      fetchExchangeRate();
+    };
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("focus", handleFocus);
+    };
   }, []);
 
   // Calculate $SEND amount based on NGN amount
