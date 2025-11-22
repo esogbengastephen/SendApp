@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
+import { getExchangeRate } from "@/lib/settings";
 import { DEFAULT_EXCHANGE_RATE } from "@/lib/constants";
 
 export async function GET() {
   try {
-    // TODO: Fetch real-time rate from DEX or price oracle
-    // For now, return the default rate from environment or constants
-    const rate = DEFAULT_EXCHANGE_RATE;
+    // Get the current exchange rate from settings (can be updated by admin)
+    const rate = getExchangeRate();
 
     return NextResponse.json(
       {
