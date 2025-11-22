@@ -80,10 +80,15 @@ export async function PUT(request: NextRequest) {
     }
 
     // Update exchange rate
+    const rateValue = parseFloat(exchangeRate);
+    console.log(`[Admin Settings] Updating exchange rate to: ${rateValue}`);
+    
     const updatedSettings = updateExchangeRate(
-      parseFloat(exchangeRate),
+      rateValue,
       walletAddress.toLowerCase()
     );
+
+    console.log(`[Admin Settings] Exchange rate updated successfully: ${updatedSettings.exchangeRate}`);
 
     return NextResponse.json({
       success: true,

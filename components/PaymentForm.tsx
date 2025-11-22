@@ -53,8 +53,14 @@ export default function PaymentForm() {
           },
         });
         const data = await response.json();
+        console.log("[PaymentForm] Fetched exchange rate:", data);
         if (data.success && data.rate) {
-          setExchangeRate(data.rate);
+          const newRate = parseFloat(data.rate);
+          console.log(`[PaymentForm] Updating exchange rate from ${exchangeRate} to ${newRate}`);
+          if (newRate !== exchangeRate) {
+            setExchangeRate(newRate);
+            console.log(`[PaymentForm] Exchange rate updated to: ${newRate}`);
+          }
         }
       } catch (error) {
         console.error("Failed to fetch exchange rate:", error);
