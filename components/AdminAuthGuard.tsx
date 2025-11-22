@@ -26,29 +26,40 @@ export default function AdminAuthGuard({ children }: AdminAuthGuardProps) {
     // Check localStorage for session
     const session = localStorage.getItem("admin_session");
     if (session) {
-      const sessionData = JSON.parse(session);
-      const walletAddress = sessionData.address;
-      
-      // Check if session is still valid (24 hours)
-      const sessionAge = Date.now() - sessionData.timestamp;
-      const maxAge = 24 * 60 * 60 * 1000; // 24 hours
-      
-      if (sessionAge < maxAge && walletAddress === address?.toLowerCase()) {
-        setIsAuthenticated(true);
-        setIsChecking(false);
-        return;
-      } else {
-        // Session expired or wallet changed
+      try {
+        const sessionData = JSON.parse(session);
+        const walletAddress = sessionData.address;
+        
+        // Check if session is still valid (24 hours)
+        const sessionAge = Date.now() - sessionData.timestamp;
+        const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+        
+        // If wallet is connected, verify it matches session
+        if (isConnected && address) {
+          if (sessionAge < maxAge && walletAddress === address.toLowerCase()) {
+            setIsAuthenticated(true);
+            setIsChecking(false);
+            return;
+          } else if (sessionAge >= maxAge) {
+            // Session expired
+            localStorage.removeItem("admin_session");
+            localStorage.removeItem("admin_wallet");
+          } else if (walletAddress !== address.toLowerCase()) {
+            // Wallet changed
+            localStorage.removeItem("admin_session");
+            localStorage.removeItem("admin_wallet");
+          }
+        } else if (sessionAge < maxAge) {
+          // Session valid but wallet not connected yet - allow access if wallet connects
+          // This handles the case where session exists but wallet needs to reconnect
+          setIsAuthenticated(false);
+          setIsChecking(false);
+          return;
+        }
+      } catch (error) {
+        console.error("Error parsing session:", error);
         localStorage.removeItem("admin_session");
         localStorage.removeItem("admin_wallet");
-      }
-    }
-
-    // If wallet is connected, verify admin access
-    if (isConnected && address) {
-      const storedWallet = localStorage.getItem("admin_wallet");
-      if (storedWallet?.toLowerCase() === address.toLowerCase()) {
-        setIsAuthenticated(true);
       }
     }
 
@@ -56,15 +67,10 @@ export default function AdminAuthGuard({ children }: AdminAuthGuardProps) {
   };
 
   const handleAuthSuccess = (walletAddress: string) => {
-    // Immediately check auth with the new session
-    const session = localStorage.getItem("admin_session");
-    if (session) {
-      const sessionData = JSON.parse(session);
-      if (sessionData.address === walletAddress.toLowerCase()) {
-        setIsAuthenticated(true);
-        setIsChecking(false);
-      }
-    }
+    // Immediately set authenticated state after successful verification
+    // The session is already stored by WalletConnect component
+    setIsAuthenticated(true);
+    setIsChecking(false);
   };
 
   if (isChecking) {
