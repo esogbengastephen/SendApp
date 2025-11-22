@@ -12,8 +12,10 @@ Add admin wallet addresses to your `.env.local` file:
 
 ```bash
 # Admin Wallets (comma-separated list)
-NEXT_PUBLIC_ADMIN_WALLETS=0x1234567890123456789012345678901234567890,0x0987654321098765432109876543210987654321
+NEXT_PUBLIC_ADMIN_WALLETS=0x084DC081e43C8f36e7A8Fa93228b82A40A6673d0
 ```
+
+**Note:** Wallet addresses are case-insensitive, but it's recommended to use the exact format shown.
 
 ### 2. Supabase Configuration (Optional)
 
