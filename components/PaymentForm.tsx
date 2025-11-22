@@ -337,6 +337,9 @@ export default function PaymentForm() {
                     value={sendAmount}
                   />
                 </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Rate: 1 NGN = {exchangeRate} SEND
+                </p>
               </div>
             </div>
 
