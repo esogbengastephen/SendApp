@@ -33,6 +33,10 @@ let settings: PlatformSettings = global.__sendSettings;
  * Get current platform settings
  */
 export function getSettings(): PlatformSettings {
+  // Always read from global to ensure we get the latest value
+  if (global.__sendSettings) {
+    settings = global.__sendSettings;
+  }
   return { ...settings };
 }
 
@@ -40,6 +44,10 @@ export function getSettings(): PlatformSettings {
  * Get current exchange rate
  */
 export function getExchangeRate(): number {
+  // Always read from global to ensure we get the latest value
+  if (global.__sendSettings) {
+    settings = global.__sendSettings;
+  }
   return settings.exchangeRate;
 }
 
