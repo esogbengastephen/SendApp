@@ -14,18 +14,26 @@
   "license": "ISC",
   "type": "module",
   "dependencies": {
+    "@supabase/supabase-js": "^2.84.0",
+    "@tanstack/react-query": "^5.90.10",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.6",
     "@types/react-dom": "^19.2.3",
+    "@walletconnect/ethereum-provider": "^2.21.10",
+    "@web3modal/ethereum": "^2.7.1",
+    "@web3modal/wagmi": "^5.1.11",
     "axios": "^1.13.2",
+    "date-fns": "^4.1.0",
     "ethers": "^6.15.0",
     "nanoid": "^5.1.6",
     "next": "^16.0.3",
     "paystack-sdk": "^3.4.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "recharts": "^3.4.1",
     "typescript": "^5.9.3",
-    "viem": "^2.39.3"
+    "viem": "^2.39.3",
+    "wagmi": "^3.0.1"
   },
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.10",

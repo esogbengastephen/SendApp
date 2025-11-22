@@ -2,6 +2,19 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import {
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
+import { format, subDays } from "date-fns";
 
 interface Stats {
   totalTransactions: number;
@@ -10,6 +23,13 @@ interface Stats {
   pendingPayments: number;
   successfulPayments: number;
   failedPayments: number;
+}
+
+interface ChartData {
+  date: string;
+  revenue: number;
+  transactions: number;
+  tokens: number;
 }
 
 export default function AdminDashboard() {
@@ -22,6 +42,8 @@ export default function AdminDashboard() {
     failedPayments: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [revenueData, setRevenueData] = useState<ChartData[]>([]);
+  const [transactionData, setTransactionData] = useState<ChartData[]>([]);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -37,7 +59,43 @@ export default function AdminDashboard() {
         setLoading(false);
       }
     };
+
+    const fetchChartData = async () => {
+      try {
+        // Generate mock chart data for last 30 days
+        const days = 30;
+        const revenueChart: ChartData[] = [];
+        const transactionChart: ChartData[] = [];
+
+        for (let i = days - 1; i >= 0; i--) {
+          const date = subDays(new Date(), i);
+          const dateStr = format(date, "MMM dd");
+          
+          // Mock data - in production, fetch from API
+          revenueChart.push({
+            date: dateStr,
+            revenue: Math.floor(Math.random() * 50000) + 10000,
+            transactions: 0,
+            tokens: 0,
+          });
+
+          transactionChart.push({
+            date: dateStr,
+            revenue: 0,
+            transactions: Math.floor(Math.random() * 50) + 10,
+            tokens: 0,
+          });
+        }
+
+        setRevenueData(revenueChart);
+        setTransactionData(transactionChart);
+      } catch (error) {
+        console.error("Error fetching chart data:", error);
+      }
+    };
+
     fetchStats();
+    fetchChartData();
   }, []);
 
   const statCards = [
@@ -199,6 +257,84 @@ export default function AdminDashboard() {
               </div>
             ))}
           </div>
+        </div>
+      </div>
+
+      {/* Analytics Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Revenue Trends */}
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
+          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-4">
+            Revenue Trends (Last 30 Days)
+          </h2>
+          <ResponsiveContainer width="100%" height={300}>
+            <LineChart data={revenueData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis
+                dataKey="date"
+                stroke="#64748b"
+                style={{ fontSize: "12px" }}
+              />
+              <YAxis
+                stroke="#64748b"
+                style={{ fontSize: "12px" }}
+                tickFormatter={(value) => `₦${(value / 1000).toFixed(0)}k`}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "#fff",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "8px",
+                }}
+                formatter={(value: number) => [`₦${value.toLocaleString()}`, "Revenue"]}
+              />
+              <Legend />
+              <Line
+                type="monotone"
+                dataKey="revenue"
+                stroke="#34ff4d"
+                strokeWidth={2}
+                name="Revenue (NGN)"
+                dot={{ fill: "#34ff4d", r: 3 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Transaction Volume */}
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
+          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-4">
+            Transaction Volume (Last 30 Days)
+          </h2>
+          <ResponsiveContainer width="100%" height={300}>
+            <BarChart data={transactionData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis
+                dataKey="date"
+                stroke="#64748b"
+                style={{ fontSize: "12px" }}
+              />
+              <YAxis
+                stroke="#64748b"
+                style={{ fontSize: "12px" }}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "#fff",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "8px",
+                }}
+                formatter={(value: number) => [value, "Transactions"]}
+              />
+              <Legend />
+              <Bar
+                dataKey="transactions"
+                fill="#34ff4d"
+                name="Transactions"
+                radius={[8, 8, 0, 0]}
+              />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </div>
     </div>

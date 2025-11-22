@@ -1,11 +1,19 @@
+"use client";
+
 import Link from "next/link";
 import { DEPOSIT_ACCOUNT } from "@/lib/constants";
+import AdminAuthGuard from "@/components/AdminAuthGuard";
+import WagmiProvider from "@/components/WagmiProvider";
+import { useAccount, useDisconnect } from "wagmi";
 
-export default function AdminLayout({
+function AdminLayoutContent({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const { address } = useAccount();
+  const { disconnect } = useDisconnect();
+
   return (
     <div className="min-h-screen bg-background-light dark:bg-background-dark">
       {/* Sidebar */}
@@ -24,6 +32,27 @@ export default function AdminLayout({
               </p>
             </div>
           </div>
+
+          {/* Wallet Info */}
+          {address && (
+            <div className="mb-4 p-3 bg-slate-100 dark:bg-slate-800 rounded-lg">
+              <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Connected Wallet</p>
+              <p className="text-xs font-mono text-slate-900 dark:text-slate-100 truncate">
+                {address.slice(0, 6)}...{address.slice(-4)}
+              </p>
+              <button
+                onClick={() => {
+                  disconnect();
+                  localStorage.removeItem("admin_session");
+                  localStorage.removeItem("admin_wallet");
+                  window.location.href = "/admin";
+                }}
+                className="mt-2 text-xs text-red-600 dark:text-red-400 hover:underline"
+              >
+                Disconnect
+              </button>
+            </div>
+          )}
 
           <nav className="space-y-2">
             <Link
@@ -90,6 +119,20 @@ export default function AdminLayout({
       {/* Main Content */}
       <main className="ml-64 p-8">{children}</main>
     </div>
+  );
+}
+
+export default function AdminLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <WagmiProvider>
+      <AdminAuthGuard>
+        <AdminLayoutContent>{children}</AdminLayoutContent>
+      </AdminAuthGuard>
+    </WagmiProvider>
   );
 }
 
