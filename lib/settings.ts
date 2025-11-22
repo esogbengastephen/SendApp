@@ -11,13 +11,23 @@ interface PlatformSettings {
 // Initialize with default rate from environment or constant
 const defaultRate = parseFloat(process.env.SEND_NGN_EXCHANGE_RATE || "50");
 
-let settings: PlatformSettings = {
-  exchangeRate: defaultRate,
-  updatedAt: new Date(),
-};
+// Use a global object to ensure it's shared across all module instances
+declare global {
+  // eslint-disable-next-line no-var
+  var __sendSettings: PlatformSettings | undefined;
+}
 
-// Log initialization
-console.log(`[Settings] Initialized with exchange rate: ${defaultRate}`);
+// Initialize settings - use global to persist across hot reloads in development
+if (!global.__sendSettings) {
+  global.__sendSettings = {
+    exchangeRate: defaultRate,
+    updatedAt: new Date(),
+  };
+  console.log(`[Settings] Initialized with exchange rate: ${defaultRate}`);
+}
+
+// Reference the global settings
+let settings: PlatformSettings = global.__sendSettings;
 
 /**
  * Get current platform settings
@@ -45,13 +55,19 @@ export function updateExchangeRate(
   }
 
   const oldRate = settings.exchangeRate;
+  
+  // Update both local and global reference
   settings = {
     exchangeRate: rate,
     updatedAt: new Date(),
     updatedBy,
   };
+  
+  // Also update global to ensure persistence
+  global.__sendSettings = settings;
 
   console.log(`[Settings] Exchange rate updated: ${oldRate} -> ${rate} by ${updatedBy || 'system'}`);
+  console.log(`[Settings] Current settings object:`, settings);
   
   return { ...settings };
 }
