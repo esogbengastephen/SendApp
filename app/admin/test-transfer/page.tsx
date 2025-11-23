@@ -21,20 +21,44 @@ export default function TestTransferPage() {
 
     setCheckingBalance(true);
     setError(null);
+    setResult(null);
 
     try {
-      const response = await fetch(`/api/admin/test-transfer?adminWallet=${address}`);
-      const data = await response.json();
+      // First verify pool configuration
+      const verifyResponse = await fetch(`/api/admin/verify-pool?adminWallet=${address}`);
+      const verifyData = await verifyResponse.json();
 
-      if (data.success) {
-        setPoolBalance(data.data.balance);
-        setResult({
-          type: "balance",
-          message: `Pool Balance: ${data.data.balance} SEND`,
-          data: data.data,
-        });
+      if (verifyData.success) {
+        console.log("Pool verification:", verifyData.data);
+        
+        // Then get balance
+        const response = await fetch(`/api/admin/test-transfer?adminWallet=${address}`);
+        const data = await response.json();
+
+        if (data.success) {
+          setPoolBalance(data.data.balance);
+          setResult({
+            type: "balance",
+            message: `Pool Balance: ${data.data.balance} SEND`,
+            data: {
+              ...data.data,
+              verification: verifyData.data,
+            },
+          });
+          
+          // Show warning if balance is 0
+          if (parseFloat(data.data.balance) === 0) {
+            setError(
+              `Balance is 0. Pool Address: ${data.data.poolAddress}. ` +
+              `Please verify this is the correct wallet address and that it has SEND tokens. ` +
+              `Token Contract: ${data.data.tokenContract}`
+            );
+          }
+        } else {
+          setError(data.error || "Failed to check balance");
+        }
       } else {
-        setError(data.error || "Failed to check balance");
+        setError(verifyData.error || "Failed to verify pool configuration");
       }
     } catch (err: any) {
       console.error("Error checking balance:", err);
@@ -119,19 +143,43 @@ export default function TestTransferPage() {
         <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-4">
           Liquidity Pool Balance
         </h2>
-        <div className="flex items-center gap-4">
-          {poolBalance !== null ? (
-            <p className="text-2xl font-bold text-primary">{poolBalance} SEND</p>
-          ) : (
-            <p className="text-slate-500 dark:text-slate-400">Not checked</p>
+        <div className="space-y-4">
+          <div className="flex items-center gap-4">
+            {poolBalance !== null ? (
+              <p className="text-2xl font-bold text-primary">{poolBalance} SEND</p>
+            ) : (
+              <p className="text-slate-500 dark:text-slate-400">Not checked</p>
+            )}
+            <button
+              onClick={checkPoolBalance}
+              disabled={checkingBalance || !address}
+              className="bg-primary text-slate-900 font-bold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {checkingBalance ? "Checking..." : "Check Balance"}
+            </button>
+          </div>
+          
+          {result?.data?.verification && (
+            <div className="mt-4 p-4 bg-slate-100 dark:bg-slate-800 rounded-lg space-y-2 text-sm">
+              <p className="font-semibold text-slate-900 dark:text-slate-100">Pool Information:</p>
+              <p className="text-slate-600 dark:text-slate-400">
+                <span className="font-medium">Pool Address:</span>{" "}
+                <span className="font-mono">{result.data.poolAddress}</span>
+              </p>
+              <p className="text-slate-600 dark:text-slate-400">
+                <span className="font-medium">Token Contract:</span>{" "}
+                <span className="font-mono">{result.data.tokenContract}</span>
+              </p>
+              <p className="text-slate-600 dark:text-slate-400">
+                <span className="font-medium">Network:</span> {result.data.network}
+              </p>
+              {result.data.verification.balanceError && (
+                <p className="text-red-600 dark:text-red-400">
+                  <span className="font-medium">Error:</span> {result.data.verification.balanceError}
+                </p>
+              )}
+            </div>
           )}
-          <button
-            onClick={checkPoolBalance}
-            disabled={checkingBalance || !address}
-            className="bg-primary text-slate-900 font-bold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {checkingBalance ? "Checking..." : "Check Balance"}
-          </button>
         </div>
       </div>
 

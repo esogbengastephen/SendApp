@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { isAdminWallet } from "@/lib/supabase";
-import { transferTokens, getTokenBalance } from "@/lib/blockchain";
-import { getWalletClient } from "@/lib/blockchain";
+import { transferTokens, getTokenBalance, getWalletClient } from "@/lib/blockchain";
 
 /**
  * Test endpoint to transfer tokens directly from liquidity pool
@@ -117,7 +116,18 @@ export async function GET(request: NextRequest) {
     // Get liquidity pool address and balance
     const walletClient = getWalletClient();
     const poolAddress = walletClient.account.address;
-    const poolBalance = await getTokenBalance(poolAddress);
+    
+    console.log(`[Test Transfer] Checking balance for pool address: ${poolAddress}`);
+    console.log(`[Test Transfer] Token contract: ${process.env.NEXT_PUBLIC_SEND_TOKEN_ADDRESS || "0x3f14920c99beb920afa163031c4e47a3e03b3e4a"}`);
+    
+    let poolBalance;
+    try {
+      poolBalance = await getTokenBalance(poolAddress);
+      console.log(`[Test Transfer] Balance retrieved: ${poolBalance} SEND`);
+    } catch (error: any) {
+      console.error(`[Test Transfer] Error getting balance:`, error);
+      throw error;
+    }
 
     return NextResponse.json({
       success: true,
@@ -125,6 +135,8 @@ export async function GET(request: NextRequest) {
         poolAddress,
         balance: poolBalance,
         token: "SEND",
+        tokenContract: process.env.NEXT_PUBLIC_SEND_TOKEN_ADDRESS || "0x3f14920c99beb920afa163031c4e47a3e03b3e4a",
+        network: "Base",
       },
     });
   } catch (error: any) {

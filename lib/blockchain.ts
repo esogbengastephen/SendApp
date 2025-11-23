@@ -52,23 +52,50 @@ export function getPublicClient() {
  * Get the wallet client for token transfers
  */
 export function getWalletClient() {
-  const privateKey = process.env.LIQUIDITY_POOL_PRIVATE_KEY;
+  let privateKey = process.env.LIQUIDITY_POOL_PRIVATE_KEY;
   
   if (!privateKey) {
     throw new Error("LIQUIDITY_POOL_PRIVATE_KEY is not set in environment variables");
   }
 
+  // Clean up the private key - remove whitespace and newlines
+  privateKey = privateKey.trim().replace(/\s/g, '');
+
+  // Ensure it starts with 0x
   if (!privateKey.startsWith("0x")) {
-    throw new Error("Private key must start with 0x");
+    privateKey = `0x${privateKey}`;
   }
 
-  const account = privateKeyToAccount(privateKey as `0x${string}`);
-  
-  return createWalletClient({
-    account,
-    chain: base,
-    transport: http(BASE_RPC_URL),
-  });
+  // Validate format - should be 66 characters (0x + 64 hex chars)
+  if (privateKey.length !== 66) {
+    throw new Error(
+      `Invalid private key format. Expected 66 characters (0x + 64 hex), got ${privateKey.length}. ` +
+      `Make sure your private key is a valid 64-character hex string.`
+    );
+  }
+
+  // Validate it's valid hex
+  if (!/^0x[a-fA-F0-9]{64}$/.test(privateKey)) {
+    throw new Error(
+      "Invalid private key format. Must be a valid 64-character hexadecimal string starting with 0x."
+    );
+  }
+
+  try {
+    const account = privateKeyToAccount(privateKey as `0x${string}`);
+    
+    return createWalletClient({
+      account,
+      chain: base,
+      transport: http(BASE_RPC_URL),
+    });
+  } catch (error: any) {
+    console.error("Error creating wallet client:", error);
+    throw new Error(
+      `Failed to create wallet client: ${error.message}. ` +
+      `Please check that LIQUIDITY_POOL_PRIVATE_KEY is a valid private key.`
+    );
+  }
 }
 
 /**
@@ -85,12 +112,21 @@ export function getLiquidityPoolAddress(): string {
 export async function getTokenBalance(address: string): Promise<string> {
   try {
     const publicClient = getPublicClient();
+    
+    console.log(`[getTokenBalance] Checking balance for: ${address}`);
+    console.log(`[getTokenBalance] Token contract: ${SEND_TOKEN_ADDRESS}`);
+    console.log(`[getTokenBalance] RPC URL: ${BASE_RPC_URL}`);
+    
+    // Get token decimals
     const decimals = (await publicClient.readContract({
       address: SEND_TOKEN_ADDRESS as `0x${string}`,
       abi: ERC20_ABI,
       functionName: "decimals",
     })) as number;
+    
+    console.log(`[getTokenBalance] Token decimals: ${decimals}`);
 
+    // Get balance
     const balance = (await publicClient.readContract({
       address: SEND_TOKEN_ADDRESS as `0x${string}`,
       abi: ERC20_ABI,
@@ -98,9 +134,20 @@ export async function getTokenBalance(address: string): Promise<string> {
       args: [address as `0x${string}`],
     })) as bigint;
 
-    return formatUnits(balance, decimals);
-  } catch (error) {
-    console.error("Error getting token balance:", error);
+    console.log(`[getTokenBalance] Raw balance (wei): ${balance.toString()}`);
+    
+    const formattedBalance = formatUnits(balance, decimals);
+    console.log(`[getTokenBalance] Formatted balance: ${formattedBalance} SEND`);
+
+    return formattedBalance;
+  } catch (error: any) {
+    console.error("[getTokenBalance] Error getting token balance:", error);
+    console.error("[getTokenBalance] Error details:", {
+      message: error.message,
+      code: error.code,
+      address,
+      tokenContract: SEND_TOKEN_ADDRESS,
+    });
     throw error;
   }
 }
