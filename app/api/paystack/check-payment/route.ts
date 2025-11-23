@@ -124,8 +124,11 @@ export async function POST(request: NextRequest) {
       if (distributionResult.success) {
         return NextResponse.json({
           success: true,
-          message: "Payment verified and tokens distributed successfully",
+          message: `Payment verified and ${transaction.sendAmount} SEND tokens distributed successfully to ${transaction.walletAddress.slice(0, 6)}...${transaction.walletAddress.slice(-4)}`,
           txHash: distributionResult.txHash,
+          explorerUrl: `https://basescan.org/tx/${distributionResult.txHash}`,
+          amount: transaction.sendAmount,
+          walletAddress: transaction.walletAddress,
         });
       } else {
         return NextResponse.json({

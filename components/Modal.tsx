@@ -9,6 +9,8 @@ interface ModalProps {
   message: string;
   type?: "success" | "error" | "info";
   children?: React.ReactNode;
+  txHash?: string;
+  explorerUrl?: string;
 }
 
 export default function Modal({
@@ -18,6 +20,8 @@ export default function Modal({
   message,
   type = "info",
   children,
+  txHash,
+  explorerUrl,
 }: ModalProps) {
   useEffect(() => {
     if (isOpen) {
@@ -69,6 +73,25 @@ export default function Modal({
         </div>
         <p className="text-slate-700 dark:text-slate-300 mb-4">{message}</p>
         {children && <div className="mb-4">{children}</div>}
+        
+        {/* Transaction Hash Link */}
+        {txHash && explorerUrl && (
+          <div className="mb-4 p-3 bg-slate-100 dark:bg-slate-700 rounded-lg">
+            <p className="text-xs text-slate-600 dark:text-slate-400 mb-2">Transaction Hash:</p>
+            <a
+              href={explorerUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-sm font-mono text-primary hover:underline break-all"
+            >
+              {txHash}
+            </a>
+            <p className="text-xs text-slate-500 dark:text-slate-500 mt-2">
+              Click to view on Basescan
+            </p>
+          </div>
+        )}
+        
         <button
           onClick={onClose}
           className="w-full bg-primary text-slate-900 font-bold py-2 px-4 rounded-md hover:opacity-90 transition-opacity"

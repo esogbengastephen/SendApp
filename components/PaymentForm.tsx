@@ -24,6 +24,8 @@ export default function PaymentForm() {
     title: string;
     message: string;
     type: "success" | "error" | "info";
+    txHash?: string;
+    explorerUrl?: string;
   } | null>(null);
   const [toast, setToast] = useState<{
     message: string;
@@ -227,19 +229,45 @@ export default function PaymentForm() {
       const checkData = await checkResponse.json();
 
       if (checkData.success) {
+        const txHash = checkData.txHash;
+        const explorerUrl = checkData.explorerUrl || (txHash 
+          ? `https://basescan.org/tx/${txHash}`
+          : null);
+        
         setModalData({
-          title: "Success!",
+          title: "Success! 🎉",
           message: checkData.message || "Payment verified and tokens distributed successfully!",
           type: "success",
+          txHash: txHash,
+          explorerUrl: explorerUrl || undefined,
         });
         setShowModal(true);
+        
+        // Show transaction hash in toast if available
+        if (txHash) {
+          setToast({
+            message: `Tokens sent! View transaction: ${txHash.slice(0, 10)}...`,
+            type: "success",
+            isVisible: true,
+          });
+        }
         
         // Clear form on success
         setNgnAmount("");
         setWalletAddress("");
         setSendAmount("0.00");
       } else {
-        throw new Error(checkData.error || "Payment verification failed");
+        // Check if it's a "payment not found" error - might need to wait
+        if (checkData.error?.includes("Payment not found")) {
+          setModalData({
+            title: "Payment Not Found",
+            message: checkData.error + " Please wait a few minutes for the payment to be processed by your bank, then try again.",
+            type: "info",
+          });
+        } else {
+          throw new Error(checkData.error || "Payment verification failed");
+        }
+        setShowModal(true);
       }
     } catch (error: any) {
       console.error("Payment error:", error);
@@ -434,6 +462,8 @@ export default function PaymentForm() {
           title={modalData.title}
           message={modalData.message}
           type={modalData.type}
+          txHash={modalData.txHash}
+          explorerUrl={modalData.explorerUrl}
         />
       )}
 
