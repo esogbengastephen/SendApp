@@ -44,7 +44,10 @@ const ERC20_ABI = [
 export function getPublicClient() {
   return createPublicClient({
     chain: base,
-    transport: http(BASE_RPC_URL),
+    transport: http(BASE_RPC_URL, {
+      retryCount: 3,
+      retryDelay: 1000,
+    }),
   });
 }
 
@@ -84,11 +87,14 @@ export function getWalletClient() {
   try {
     const account = privateKeyToAccount(privateKey as `0x${string}`);
     
-    return createWalletClient({
-      account,
-      chain: base,
-      transport: http(BASE_RPC_URL),
-    });
+  return createWalletClient({
+    account,
+    chain: base,
+    transport: http(BASE_RPC_URL, {
+      retryCount: 3,
+      retryDelay: 1000,
+    }),
+  });
   } catch (error: any) {
     console.error("Error creating wallet client:", error);
     throw new Error(
