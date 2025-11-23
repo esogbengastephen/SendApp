@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { initializeTransaction } from "@/lib/paystack";
 import { createTransaction } from "@/lib/transactions";
 import { isValidWalletOrTag, isValidAmount } from "@/utils/validation";
 
+/**
+ * Store transaction without initializing Paystack payment
+ * This endpoint just stores the transaction with the unique ID generated on page load
+ * The transaction ID links: wallet address + payment amount + payment verification
+ */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
@@ -30,56 +34,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Convert NGN to kobo (Paystack uses kobo as the smallest unit)
-    const amountInKobo = Math.round(parseFloat(ngnAmount) * 100);
-
-    // Get callback URL
-    const callbackUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/payment/callback`;
-
-    // Generate a default email for Paystack (required by Paystack API)
-    // Using transaction ID to create a unique email
-    const defaultEmail = `tx-${transactionId}@sendapp.local`;
-
-    // Initialize Paystack transaction
-    const result = await initializeTransaction({
-      email: defaultEmail,
-      amount: amountInKobo,
-      reference: transactionId, // Use our transaction ID as Paystack reference
-      callback_url: callbackUrl,
-      metadata: {
-        transactionId,
-        ngnAmount: parseFloat(ngnAmount),
-        sendAmount,
-        walletAddress: walletAddress.trim(),
-      },
-    });
-
-    if (!result.success) {
-      return NextResponse.json(
-        { success: false, error: result.error },
-        { status: 500 }
-      );
-    }
-
-    // Store transaction in our system
+    // Store transaction in our system using the unique transaction ID
+    // This ID was generated when the page loaded and will be used to:
+    // 1. Link the wallet address the user provided
+    // 2. Verify the payment amount when checking Paystack
+    // 3. Distribute tokens to the correct wallet
     createTransaction({
       transactionId,
-      paystackReference: result.data.reference,
+      paystackReference: transactionId, // Use transaction ID as reference (will be updated when payment is found)
       ngnAmount: parseFloat(ngnAmount),
       sendAmount,
       walletAddress: walletAddress.trim(),
     });
 
+    console.log(`Transaction stored: ${transactionId} for wallet ${walletAddress.trim()}, amount: ${ngnAmount} NGN = ${sendAmount} SEND`);
+
     return NextResponse.json({
       success: true,
+      message: "Transaction stored successfully",
       data: {
-        authorizationUrl: result.data.authorization_url,
-        accessCode: result.data.access_code,
-        reference: result.data.reference,
+        transactionId,
       },
     });
   } catch (error: any) {
-    console.error("Payment initialization error:", error);
+    console.error("Transaction storage error:", error);
     return NextResponse.json(
       { success: false, error: "Internal server error" },
       { status: 500 }
