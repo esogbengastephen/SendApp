@@ -6,6 +6,11 @@ import { distributeTokens } from "@/lib/token-distribution";
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const PAYSTACK_API_BASE = "https://api.paystack.co";
 
+// Validate Paystack key on module load
+if (!PAYSTACK_SECRET_KEY) {
+  console.error("PAYSTACK_SECRET_KEY is not set in environment variables");
+}
+
 /**
  * Check for recent payments and verify if payment matches transaction
  */
@@ -44,6 +49,17 @@ export async function POST(request: NextRequest) {
         message: "Transaction already processed",
         txHash: transaction.txHash,
       });
+    }
+
+    // Validate Paystack key
+    if (!PAYSTACK_SECRET_KEY) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Paystack API key not configured. Please set PAYSTACK_SECRET_KEY in environment variables.",
+        },
+        { status: 500 }
+      );
     }
 
     // Fetch recent transactions from Paystack
@@ -138,12 +154,39 @@ export async function POST(request: NextRequest) {
       }
     } catch (paystackError: any) {
       console.error("Paystack API error:", paystackError);
+      
+      // Handle specific Paystack errors
+      const errorMessage = paystackError.response?.data?.message || "Failed to check payment";
+      const errorCode = paystackError.response?.status;
+      
+      // Check for invalid key error
+      if (errorMessage.toLowerCase().includes("invalid key") || errorCode === 401) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Invalid Paystack API key. Please check your PAYSTACK_SECRET_KEY in .env.local file. Make sure it starts with 'sk_test_' for test mode or 'sk_live_' for live mode.",
+          },
+          { status: 401 }
+        );
+      }
+      
+      // Check for missing key
+      if (errorMessage.toLowerCase().includes("authorization") || errorCode === 401) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: "Paystack authentication failed. Please verify your PAYSTACK_SECRET_KEY is correct and has no extra spaces.",
+          },
+          { status: 401 }
+        );
+      }
+      
       return NextResponse.json(
         {
           success: false,
-          error: paystackError.response?.data?.message || "Failed to check payment",
+          error: errorMessage || "Failed to check payment",
         },
-        { status: 500 }
+        { status: errorCode || 500 }
       );
     }
   } catch (error: any) {
