@@ -93,12 +93,12 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">
+        <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-slate-100">
           Settings
         </h1>
-        <p className="text-slate-600 dark:text-slate-400 mt-2">
+        <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 mt-1 sm:mt-2">
           Configure platform settings and parameters
         </p>
       </div>
@@ -120,8 +120,8 @@ export default function SettingsPage() {
       )}
 
       {/* Exchange Rate */}
-      <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
-        <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-4">
+      <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
+        <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 mb-3 sm:mb-4">
           Exchange Rate
         </h2>
         <div className="space-y-4">
@@ -150,8 +150,8 @@ export default function SettingsPage() {
       </div>
 
       {/* Deposit Account */}
-      <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
-        <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-4">
+      <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
+        <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 mb-3 sm:mb-4">
           Deposit Account
         </h2>
         <div className="space-y-3">

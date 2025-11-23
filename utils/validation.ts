@@ -6,10 +6,11 @@ export function isValidAddress(address: string): boolean {
 }
 
 /**
- * Validates if a string is a valid SendTag (starts with @)
+ * Validates if a string is a valid SendTag (starts with /)
+ * Format: /username (e.g., /lightblock)
  */
 export function isValidSendTag(tag: string): boolean {
-  return /^@[a-zA-Z0-9_]+$/.test(tag);
+  return /^\/[a-zA-Z0-9_]+$/.test(tag);
 }
 
 /**

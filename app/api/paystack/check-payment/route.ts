@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
-import { getTransactionByReference, updateTransaction } from "@/lib/transactions";
+import { getTransaction, getTransactionByReference, updateTransaction, getAllTransactions } from "@/lib/transactions";
 import { distributeTokens } from "@/lib/token-distribution";
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
@@ -33,14 +33,31 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get transaction record
-    const transaction = getTransactionByReference(transactionId);
+    // Get transaction record - try by transactionId first, then by reference
+    let transaction = getTransaction(transactionId);
     if (!transaction) {
+      // Try by reference as fallback
+      transaction = getTransactionByReference(transactionId);
+    }
+    
+    if (!transaction) {
+      console.error(`Transaction not found for ID: ${transactionId}`);
+      const allTransactions = getAllTransactions();
+      console.log(`Available transactions (${allTransactions.length}):`, allTransactions.map((t) => ({
+        id: t.transactionId,
+        reference: t.paystackReference,
+        status: t.status,
+      })));
       return NextResponse.json(
-        { success: false, error: "Transaction not found" },
+        { 
+          success: false, 
+          error: "Transaction not found. Please ensure you have filled out the form correctly and try again. If the issue persists, please refresh the page to get a new transaction ID." 
+        },
         { status: 404 }
       );
     }
+    
+    console.log(`Found transaction: ${transaction.transactionId}, status: ${transaction.status}, wallet: ${transaction.walletAddress}, amount: ${transaction.ngnAmount} NGN`);
 
     // Check if already processed
     if (transaction.status === "completed") {

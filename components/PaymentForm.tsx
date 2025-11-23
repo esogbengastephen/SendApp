@@ -1,11 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { nanoid } from "nanoid";
 import { isValidWalletOrTag, isValidAmount } from "@/utils/validation";
 import { DEPOSIT_ACCOUNT } from "@/lib/constants";
 import Modal from "./Modal";
 import Toast from "./Toast";
+import { calculateSendAmount } from "@/lib/transactions";
+
+interface SendTagSuggestion {
+  name: string;
+  displayName: string;
+}
 
 export default function PaymentForm() {
   const [ngnAmount, setNgnAmount] = useState<string>("");
@@ -14,6 +20,7 @@ export default function PaymentForm() {
   const [transactionId, setTransactionId] = useState<string>("");
   const [isLoading, setIsLoading] = useState(false);
   const [isResolvingSendTag, setIsResolvingSendTag] = useState(false);
+  const [isTransactionCompleted, setIsTransactionCompleted] = useState(false);
   const [exchangeRate, setExchangeRate] = useState<number>(50);
   const [errors, setErrors] = useState<{
     ngnAmount?: string;
@@ -33,15 +40,137 @@ export default function PaymentForm() {
     isVisible: boolean;
   }>({ message: "", type: "info", isVisible: false });
 
-  // Generate unique transaction ID on component mount
+  // Autocomplete state
+  const [sendTagSuggestions, setSendTagSuggestions] = useState<SendTagSuggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const suggestionsRef = useRef<HTMLDivElement>(null);
+
+  // Auto-claim pending transactions on mount
   useEffect(() => {
-    const id = nanoid();
-    setTransactionId(id);
-    // Store in localStorage for persistence
+    const checkForPendingTransactions = async () => {
+      // Get stored transaction ID from localStorage
+      const storedTxId = localStorage.getItem("transactionId");
+      if (!storedTxId) return;
+      
+      // Get stored wallet address and amount if available
+      const storedWallet = localStorage.getItem("walletAddress");
+      const storedAmount = localStorage.getItem("ngnAmount");
+      
+      if (!storedWallet || !storedAmount) return;
+      
+      // Only check if form is not being used
+      if (ngnAmount || walletAddress) return;
+      
+      try {
+        // Check if this transaction is pending and can be claimed
+        const response = await fetch("/api/paystack/process-payment", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            transactionId: storedTxId,
+            ngnAmount: storedAmount,
+            sendAmount: "",
+            walletAddress: storedWallet,
+            exchangeRate: exchangeRate,
+          }),
+        });
+        
+        const data = await response.json();
+        if (data.success && data.txHash) {
+          // Transaction was auto-claimed!
+          setModalData({
+            title: "Tokens Claimed! 🎉",
+            message: "Your pending transaction was automatically processed and tokens have been sent to your wallet.",
+            type: "success",
+            txHash: data.txHash,
+            explorerUrl: data.explorerUrl,
+          });
+          setShowModal(true);
+          
+          // Clear stored transaction ID
+          localStorage.removeItem("transactionId");
+          localStorage.removeItem("walletAddress");
+          localStorage.removeItem("ngnAmount");
+          
+          // Refresh page after 3 seconds
+          setTimeout(() => {
+            window.location.reload();
+          }, 3000);
+        }
+      } catch (error) {
+        console.error("Error checking for pending transactions:", error);
+        // Silent fail - don't show error to user
+      }
+    };
+    
+    // Only check if we have a stored transaction ID and form is not being used
+    if (localStorage.getItem("transactionId") && !ngnAmount && !walletAddress) {
+      checkForPendingTransactions();
+    }
+  }, []); // Run once on mount
+
+  // Check for existing transaction ID in localStorage on mount
+  useEffect(() => {
     if (typeof window !== "undefined") {
-      localStorage.setItem("transactionId", id);
+      const storedId = localStorage.getItem("transactionId");
+      if (storedId) {
+        // Check if transaction ID exists in database
+        fetch(`/api/transactions/create-id?transactionId=${storedId}`)
+          .then((res) => res.json())
+          .then((data) => {
+            if (data.success && data.exists) {
+              setTransactionId(storedId);
+              console.log("[PaymentForm] Restored transaction ID from localStorage:", storedId);
+            } else {
+              // Transaction ID doesn't exist in database, generate new one
+              generateNewTransactionId();
+            }
+          })
+          .catch(() => {
+            // On error, generate new ID
+            generateNewTransactionId();
+          });
+      } else {
+        // No stored ID, will generate when user inputs amount
+      }
     }
   }, []);
+
+  // Generate new transaction ID and store in database
+  const generateNewTransactionId = async () => {
+    try {
+      const response = await fetch("/api/transactions/create-id", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({}),
+      });
+
+      const data = await response.json();
+      if (data.success && data.transactionId) {
+        const id = data.transactionId;
+        setTransactionId(id);
+        if (typeof window !== "undefined") {
+          localStorage.setItem("transactionId", id);
+        }
+        console.log("[PaymentForm] Generated new transaction ID:", id);
+      }
+    } catch (error) {
+      console.error("Failed to generate transaction ID:", error);
+      // Fallback: generate locally
+      const id = nanoid();
+      setTransactionId(id);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("transactionId", id);
+      }
+    }
+  };
 
   // Fetch exchange rate on mount and periodically
   useEffect(() => {
@@ -88,15 +217,181 @@ export default function PaymentForm() {
     };
   }, []);
 
-  // Calculate $SEND amount based on NGN amount
+  // Calculate $SEND amount based on NGN amount and generate transaction ID when amount is entered
   useEffect(() => {
     if (ngnAmount && parseFloat(ngnAmount) > 0) {
       const calculated = (parseFloat(ngnAmount) * exchangeRate).toFixed(2);
       setSendAmount(calculated);
+
+      // Generate transaction ID when user first inputs amount (if not already generated)
+      if (!transactionId) {
+        generateNewTransactionId();
+      } else {
+        // Update existing transaction ID with amount and exchange rate
+        updateTransactionIdWithAmount(parseFloat(ngnAmount), calculated);
+      }
     } else {
       setSendAmount("0.00");
     }
   }, [ngnAmount, exchangeRate]);
+
+  // Update transaction ID in database with amount and exchange rate
+  const updateTransactionIdWithAmount = async (amount: number, sendAmt: string) => {
+    if (!transactionId) return;
+
+    try {
+      const response = await fetch("/api/transactions/create-id", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          transactionId,
+          ngnAmount: amount,
+          sendAmount: sendAmt,
+          exchangeRate,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        console.log("[PaymentForm] Updated transaction ID with amount:", transactionId);
+      }
+    } catch (error) {
+      console.error("Failed to update transaction ID:", error);
+    }
+  };
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Auto-claim pending transactions on mount
+  useEffect(() => {
+    const checkForPendingTransactions = async () => {
+      // Get stored transaction ID from localStorage
+      const storedTxId = localStorage.getItem("transactionId");
+      if (!storedTxId) return;
+      
+      // Get stored wallet address and amount if available
+      const storedWallet = localStorage.getItem("walletAddress");
+      const storedAmount = localStorage.getItem("ngnAmount");
+      
+      if (!storedWallet || !storedAmount) return;
+      
+      // Only check if form is not being used
+      if (ngnAmount || walletAddress) return;
+      
+      try {
+        // Check if this transaction is pending and can be claimed
+        const response = await fetch("/api/paystack/process-payment", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            transactionId: storedTxId,
+            ngnAmount: storedAmount,
+            sendAmount: "",
+            walletAddress: storedWallet,
+            exchangeRate: exchangeRate,
+          }),
+        });
+        
+        const data = await response.json();
+        if (data.success && data.txHash) {
+          // Transaction was auto-claimed!
+          setModalData({
+            title: "Tokens Claimed! 🎉",
+            message: "Your pending transaction was automatically processed and tokens have been sent to your wallet.",
+            type: "success",
+            txHash: data.txHash,
+            explorerUrl: data.explorerUrl,
+          });
+          setShowModal(true);
+          
+          // Clear stored transaction ID
+          localStorage.removeItem("transactionId");
+          localStorage.removeItem("walletAddress");
+          localStorage.removeItem("ngnAmount");
+          
+          // Refresh page after 3 seconds
+          setTimeout(() => {
+            window.location.reload();
+          }, 3000);
+        }
+      } catch (error) {
+        console.error("Error checking for pending transactions:", error);
+        // Silent fail - don't show error to user
+      }
+    };
+    
+    // Only check if we have a stored transaction ID and form is not being used
+    if (localStorage.getItem("transactionId") && !ngnAmount && !walletAddress) {
+      checkForPendingTransactions();
+    }
+  }, []); // Run once on mount
+
+  // Search for SendTag suggestions
+  const searchSendTags = async (query: string) => {
+    if (!query || query.length < 1) {
+      setSendTagSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    // Only search if it looks like a SendTag (starts with /)
+    if (!query.startsWith("/")) {
+      setSendTagSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    // Remove / prefix for search
+    const searchQuery = query.substring(1);
+
+    if (searchQuery.length < 1) {
+      setSendTagSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+
+    try {
+      setIsSearching(true);
+      const response = await fetch(`/api/sendtag/search?q=${encodeURIComponent(searchQuery)}&limit=10`);
+      const data = await response.json();
+
+      if (data.success && data.tags) {
+        setSendTagSuggestions(data.tags);
+        setShowSuggestions(data.tags.length > 0);
+      } else {
+        setSendTagSuggestions([]);
+        setShowSuggestions(false);
+      }
+    } catch (error) {
+      console.error("Failed to search SendTags:", error);
+      setSendTagSuggestions([]);
+      setShowSuggestions(false);
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  // Debounced search function
+  const debouncedSearch = (query: string) => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    searchTimeoutRef.current = setTimeout(() => {
+      searchSendTags(query);
+    }, 300); // 300ms delay
+  };
 
   // Resolve SendTag to wallet address if needed
   const resolveSendTag = async (sendTag: string): Promise<string | null> => {
@@ -133,7 +428,7 @@ export default function PaymentForm() {
 
     if (!walletAddress || !isValidWalletOrTag(walletAddress.trim())) {
       newErrors.walletAddress =
-        "Please enter a valid Base wallet address (0x...) or SendTag (@username)";
+        "Please enter a valid Base wallet address (0x...) or SendTag (/username)";
     }
 
     setErrors(newErrors);
@@ -162,6 +457,25 @@ export default function PaymentForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Prevent submission if transaction is already completed
+    if (isTransactionCompleted) {
+      setToast({
+        message: "Transaction already completed. Refreshing page...",
+        type: "info",
+        isVisible: true,
+      });
+      // Refresh page to generate new transaction ID
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
+      return;
+    }
+
+    // Prevent multiple submissions
+    if (isLoading) {
+      return;
+    }
+
     // Validate form
     if (!validateForm()) {
       setToast({
@@ -177,8 +491,8 @@ export default function PaymentForm() {
     try {
       let finalWalletAddress = walletAddress.trim();
 
-      // Resolve SendTag if needed
-      if (finalWalletAddress.startsWith("@")) {
+      // Resolve SendTag if needed (SendTags use / prefix, e.g., /lightblock)
+      if (finalWalletAddress.startsWith("/")) {
         const resolvedAddress = await resolveSendTag(finalWalletAddress);
         if (!resolvedAddress) {
           setModalData({
@@ -193,8 +507,15 @@ export default function PaymentForm() {
         finalWalletAddress = resolvedAddress;
       }
 
-      // Store transaction first
-      const storeResponse = await fetch("/api/paystack/initialize", {
+      // Store transaction details in localStorage for auto-claim
+      localStorage.setItem("transactionId", transactionId);
+      localStorage.setItem("walletAddress", finalWalletAddress);
+      localStorage.setItem("ngnAmount", ngnAmount);
+
+      // Store transaction and check payment in one call
+      // This ensures the transaction is available when checking
+      console.log(`Processing payment: ${transactionId} for wallet ${finalWalletAddress}, amount: ${ngnAmount} NGN`);
+      const processResponse = await fetch("/api/paystack/process-payment", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -204,39 +525,56 @@ export default function PaymentForm() {
           sendAmount,
           walletAddress: finalWalletAddress,
           transactionId,
+          exchangeRate: exchangeRate, // Add exchangeRate
         }),
       });
 
-      const storeData = await storeResponse.json();
-
-      if (!storeData.success) {
-        throw new Error(storeData.error || "Failed to store transaction");
+      if (!processResponse.ok) {
+        const errorText = await processResponse.text();
+        console.error("Payment processing failed:", errorText);
+        // Try to parse as JSON for better error message
+        try {
+          const errorData = JSON.parse(errorText);
+          throw new Error(errorData.error || `Payment processing failed: ${processResponse.status}`);
+        } catch {
+          throw new Error(`Payment processing failed: ${processResponse.status} ${errorText}`);
+        }
       }
 
-      // Check for payment and distribute tokens
-      setIsLoading(true);
-      const checkResponse = await fetch("/api/paystack/check-payment", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          transactionId,
-          ngnAmount,
-        }),
-      });
+      const processData = await processResponse.json();
+      console.log("Payment processing response:", processData);
 
-      const checkData = await checkResponse.json();
+      // Check if transaction was already completed
+      if (processData.alreadyCompleted) {
+        setIsTransactionCompleted(true);
+        setModalData({
+          title: "Transaction Already Completed",
+          message: "This transaction has already been processed. Refreshing page to start a new transaction...",
+          type: "info",
+          txHash: processData.txHash,
+          explorerUrl: processData.explorerUrl,
+        });
+        setShowModal(true);
+        
+        // Refresh page after 2 seconds to generate new transaction ID
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+        return;
+      }
 
-      if (checkData.success) {
-        const txHash = checkData.txHash;
-        const explorerUrl = checkData.explorerUrl || (txHash 
+      if (processData.success) {
+        // Mark transaction as completed to prevent duplicate submissions
+        setIsTransactionCompleted(true);
+        
+        const txHash = processData.txHash;
+        const explorerUrl = processData.explorerUrl || (txHash 
           ? `https://basescan.org/tx/${txHash}`
           : null);
         
         setModalData({
           title: "Success! 🎉",
-          message: checkData.message || "Payment verified and tokens distributed successfully!",
+          message: processData.message || "Payment verified and tokens distributed successfully! Refreshing page...",
           type: "success",
           txHash: txHash,
           explorerUrl: explorerUrl || undefined,
@@ -256,16 +594,21 @@ export default function PaymentForm() {
         setNgnAmount("");
         setWalletAddress("");
         setSendAmount("0.00");
+        
+        // Refresh page after 3 seconds to generate new transaction ID
+        setTimeout(() => {
+          window.location.reload();
+        }, 3000);
       } else {
         // Check if it's a "payment not found" error - might need to wait
-        if (checkData.error?.includes("Payment not found")) {
+        if (processData.error?.includes("Payment not found")) {
           setModalData({
             title: "Payment Not Found",
-            message: checkData.error + " Please wait a few minutes for the payment to be processed by your bank, then try again.",
+            message: processData.error + " Please wait a few minutes for the payment to be processed by your bank, then try again.",
             type: "info",
           });
         } else {
-          throw new Error(checkData.error || "Payment verification failed");
+          throw new Error(processData.error || "Payment verification failed");
         }
         setShowModal(true);
       }
@@ -298,8 +641,43 @@ export default function PaymentForm() {
       if (errors.walletAddress) {
         setErrors((prev) => ({ ...prev, walletAddress: undefined }));
       }
+      
+      // Search for SendTag suggestions if it starts with /
+      if (value.startsWith("/")) {
+        debouncedSearch(value);
+      } else {
+        setSendTagSuggestions([]);
+        setShowSuggestions(false);
+      }
     }
   };
+
+  // Handle selecting a suggestion
+  const handleSelectSuggestion = (suggestion: SendTagSuggestion) => {
+    setWalletAddress(suggestion.name);
+    setSendTagSuggestions([]);
+    setShowSuggestions(false);
+    inputRef.current?.focus();
+  };
+
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        suggestionsRef.current &&
+        !suggestionsRef.current.contains(event.target as Node) &&
+        inputRef.current &&
+        !inputRef.current.contains(event.target as Node)
+      ) {
+        setShowSuggestions(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
 
   return (
     <div className="w-full max-w-lg p-8">
@@ -381,6 +759,7 @@ export default function PaymentForm() {
               </label>
               <div className="mt-2 relative">
                 <input
+                  ref={inputRef}
                   className={`w-full rounded-md border ${
                     errors.walletAddress
                       ? "border-red-300 dark:border-red-600"
@@ -388,13 +767,45 @@ export default function PaymentForm() {
                   } bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-primary focus:border-primary placeholder:text-slate-400 dark:placeholder:text-slate-500 px-3 py-2`}
                   id="wallet_address"
                   name="wallet_address"
-                  placeholder="0x... or @username"
+                  placeholder="0x... or /username"
                   type="text"
                   value={walletAddress}
                   onChange={(e) => handleInputChange("walletAddress", e.target.value)}
+                  onFocus={() => {
+                    if (walletAddress.startsWith("/") && sendTagSuggestions.length > 0) {
+                      setShowSuggestions(true);
+                    }
+                  }}
                   required
                   disabled={isResolvingSendTag}
                 />
+                
+                {/* SendTag Suggestions Dropdown */}
+                {showSuggestions && sendTagSuggestions.length > 0 && (
+                  <div
+                    ref={suggestionsRef}
+                    className="absolute z-50 w-full mt-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-md shadow-lg max-h-60 overflow-auto"
+                  >
+                    {isSearching && (
+                      <div className="px-3 py-2 text-sm text-slate-500 dark:text-slate-400">
+                        Searching...
+                      </div>
+                    )}
+                    {sendTagSuggestions.map((suggestion, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => handleSelectSuggestion(suggestion)}
+                        className="w-full text-left px-3 py-2 hover:bg-slate-100 dark:hover:bg-slate-700 focus:bg-slate-100 dark:focus:bg-slate-700 focus:outline-none transition-colors"
+                      >
+                        <div className="font-medium text-slate-900 dark:text-slate-100">
+                          {suggestion.name}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                
                 {isResolvingSendTag && (
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                     Resolving SendTag...
@@ -441,10 +852,14 @@ export default function PaymentForm() {
             <div>
               <button
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || isTransactionCompleted}
                 className="w-full bg-primary text-slate-900 font-bold py-3 px-4 rounded-md hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-slate-900 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isLoading ? "Processing..." : "I have sent"}
+                {isTransactionCompleted 
+                  ? "Transaction Completed - Refreshing..." 
+                  : isLoading 
+                    ? "Processing..." 
+                    : "I have sent"}
               </button>
             </div>
           </form>

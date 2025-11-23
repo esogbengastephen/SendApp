@@ -4,6 +4,7 @@ import {
   getTransactionByReference,
   updateTransaction,
   isTransactionProcessed,
+  calculateSendAmount,
 } from "@/lib/transactions";
 import { distributeTokens } from "@/lib/token-distribution";
 
@@ -37,6 +38,7 @@ export async function POST(request: NextRequest) {
     if (event.event === "charge.success") {
       const transactionData = event.data;
       const reference = transactionData.reference;
+      const paystackAmount = transactionData.amount / 100; // Convert from kobo to NGN
 
       // Check if transaction has already been processed
       if (isTransactionProcessed(reference)) {
@@ -45,29 +47,53 @@ export async function POST(request: NextRequest) {
       }
 
       // Get our transaction record
-      const transaction = getTransactionByReference(reference);
+      let transaction = getTransactionByReference(reference);
+      
+      // If not found by reference, try to find by amount + timestamp
       if (!transaction) {
-        console.error(`Transaction not found for reference: ${reference}`);
+        console.log(`Transaction not found by reference ${reference}, trying to match by amount and timestamp...`);
+        // This will be handled in process-payment endpoint
         return NextResponse.json(
-          { success: false, error: "Transaction not found" },
+          { success: false, error: "Transaction not found. User should claim via payment form." },
           { status: 404 }
         );
       }
 
-      // Update transaction status to processing
+      // Verify NGN amount matches
+      if (Math.abs(transaction.ngnAmount - paystackAmount) > 0.01) {
+        console.error(`Amount mismatch: Transaction has ${transaction.ngnAmount} NGN, Paystack has ${paystackAmount} NGN`);
+        return NextResponse.json(
+          { success: false, error: "Amount mismatch between transaction and Paystack payment" },
+          { status: 400 }
+        );
+      }
+
+      // Recalculate sendAmount if exchangeRate is stored (in case rate changed)
+      let finalSendAmount = transaction.sendAmount;
+      if (transaction.exchangeRate) {
+        const recalculated = calculateSendAmount(transaction.ngnAmount, transaction.exchangeRate);
+        finalSendAmount = recalculated;
+        console.log(`Recalculated sendAmount: ${finalSendAmount} SEND (from rate ${transaction.exchangeRate})`);
+      }
+
+      // Update transaction with both amounts and status
       updateTransaction(transaction.transactionId, {
         status: "completed",
+        ngnAmount: paystackAmount, // Use Paystack amount as source of truth
+        sendAmount: finalSendAmount, // Use recalculated amount
+        paystackReference: reference,
+        completedAt: new Date(),
       });
 
       // Distribute tokens to user's wallet
       console.log(`Transaction ${reference} verified. Distributing tokens...`);
-      console.log(`Wallet: ${transaction.walletAddress}, Amount: ${transaction.sendAmount} SEND`);
+      console.log(`Wallet: ${transaction.walletAddress}, Amount: ${finalSendAmount} SEND`);
 
       try {
         const distributionResult = await distributeTokens(
           transaction.transactionId,
           transaction.walletAddress,
-          transaction.sendAmount
+          finalSendAmount
         );
 
         if (distributionResult.success) {
@@ -79,8 +105,6 @@ export async function POST(request: NextRequest) {
           });
         } else {
           console.error(`Token distribution failed: ${distributionResult.error}`);
-          // Still return success to Paystack (payment was successful)
-          // But log the error for manual review
           return NextResponse.json({
             success: true,
             message: "Payment verified but token distribution failed",
@@ -89,8 +113,6 @@ export async function POST(request: NextRequest) {
         }
       } catch (distError: any) {
         console.error("Error during token distribution:", distError);
-        // Payment was successful, but token distribution failed
-        // Return success to Paystack, but log error for manual intervention
         return NextResponse.json({
           success: true,
           message: "Payment verified but token distribution encountered an error",

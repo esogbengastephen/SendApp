@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { DEPOSIT_ACCOUNT } from "@/lib/constants";
 import AdminAuthGuard from "@/components/AdminAuthGuard";
@@ -13,11 +14,35 @@ function AdminLayoutContent({
 }) {
   const { address } = useAccount();
   const { disconnect } = useDisconnect();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-background-light dark:bg-background-dark">
+      {/* Mobile Menu Button */}
+      <button
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+        className="fixed top-4 left-4 z-50 lg:hidden bg-white dark:bg-slate-900 p-2 rounded-lg shadow-lg border border-slate-200 dark:border-slate-700"
+        aria-label="Toggle menu"
+      >
+        <span className="material-icons-outlined text-slate-900 dark:text-slate-100">
+          {sidebarOpen ? "close" : "menu"}
+        </span>
+      </button>
+
+      {/* Mobile Overlay */}
+      {sidebarOpen && (
+        <div
+          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="fixed left-0 top-0 h-full w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700">
+      <aside
+        className={`fixed left-0 top-0 h-full w-64 bg-white dark:bg-slate-900 border-r border-slate-200 dark:border-slate-700 z-40 transform transition-transform duration-300 ease-in-out lg:translate-x-0 ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
         <div className="p-6">
           <div className="flex items-center gap-3 mb-8">
             <div className="bg-primary p-3 rounded-lg">
@@ -57,6 +82,7 @@ function AdminLayoutContent({
           <nav className="space-y-2">
             <Link
               href="/admin"
+              onClick={() => setSidebarOpen(false)}
               className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               <span className="material-icons-outlined">dashboard</span>
@@ -64,6 +90,7 @@ function AdminLayoutContent({
             </Link>
             <Link
               href="/admin/transactions"
+              onClick={() => setSidebarOpen(false)}
               className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               <span className="material-icons-outlined">receipt_long</span>
@@ -71,13 +98,23 @@ function AdminLayoutContent({
             </Link>
             <Link
               href="/admin/payments"
+              onClick={() => setSidebarOpen(false)}
               className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               <span className="material-icons-outlined">payment</span>
               <span>Payments</span>
             </Link>
             <Link
+              href="/admin/users"
+              onClick={() => setSidebarOpen(false)}
+              className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+            >
+              <span className="material-icons-outlined">people</span>
+              <span>Users</span>
+            </Link>
+            <Link
               href="/admin/token-distribution"
+              onClick={() => setSidebarOpen(false)}
               className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               <span className="material-icons-outlined">account_balance_wallet</span>
@@ -85,6 +122,7 @@ function AdminLayoutContent({
             </Link>
             <Link
               href="/admin/test-transfer"
+              onClick={() => setSidebarOpen(false)}
               className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               <span className="material-icons-outlined">send</span>
@@ -92,6 +130,7 @@ function AdminLayoutContent({
             </Link>
             <Link
               href="/admin/settings"
+              onClick={() => setSidebarOpen(false)}
               className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
             >
               <span className="material-icons-outlined">settings</span>
@@ -99,6 +138,7 @@ function AdminLayoutContent({
             </Link>
             <Link
               href="/"
+              onClick={() => setSidebarOpen(false)}
               className="flex items-center gap-3 px-4 py-3 rounded-lg text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors mt-4"
             >
               <span className="material-icons-outlined">arrow_back</span>
@@ -124,7 +164,7 @@ function AdminLayoutContent({
       </aside>
 
       {/* Main Content */}
-      <main className="ml-64 p-8">{children}</main>
+      <main className="lg:ml-64 p-4 sm:p-6 lg:p-8 pt-16 lg:pt-8">{children}</main>
     </div>
   );
 }

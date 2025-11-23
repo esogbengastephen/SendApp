@@ -1,0 +1,592 @@
+import { NextRequest, NextResponse } from "next/server";
+import axios from "axios";
+import { createTransaction, getTransaction, updateTransaction, getAllTransactions, findPendingTransactionByWalletAndAmount, findCompletedTransactionByWalletAndAmount, addVerificationAttempt, calculateSendAmount, type Transaction } from "@/lib/transactions";
+import { createOrUpdateUser } from "@/lib/users";
+import { distributeTokens } from "@/lib/token-distribution";
+import { isValidWalletOrTag, isValidAmount } from "@/utils/validation";
+import { verifyPaymentForTransaction } from "@/lib/payment-verification";
+
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+const PAYSTACK_API_BASE = "https://api.paystack.co";
+
+/**
+ * Check for pending transactions that can be claimed
+ * Matches by: walletAddress + ngnAmount + timestamp
+ */
+async function findClaimablePendingTransaction(
+  walletAddress: string,
+  ngnAmount: number,
+  transactionId?: string
+): Promise<Transaction | null> {
+  const allTransactions = getAllTransactions();
+  const normalizedWallet = walletAddress.trim().toLowerCase();
+  const amountInKobo = Math.round(ngnAmount * 100);
+  
+  // First, try to find by transactionId if provided
+  if (transactionId) {
+    const txById = getTransaction(transactionId);
+    if (txById && txById.walletAddress.toLowerCase() === normalizedWallet && 
+        Math.abs(txById.ngnAmount - ngnAmount) < 0.01) {
+      return txById;
+    }
+  }
+  
+  // Find pending transactions matching wallet and amount
+  const pendingMatches = allTransactions.filter(tx => 
+    tx.status === "pending" &&
+    tx.walletAddress.toLowerCase() === normalizedWallet &&
+    Math.abs(tx.ngnAmount - ngnAmount) < 0.01
+  );
+  
+  if (pendingMatches.length === 0) {
+    return null;
+  }
+  
+  // Check Paystack for matching payment
+  if (!PAYSTACK_SECRET_KEY) {
+    return null;
+  }
+  
+  try {
+    const paystackResponse = await axios.get(
+      `${PAYSTACK_API_BASE}/transaction`,
+      {
+        headers: {
+          Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+        },
+        params: {
+          perPage: 100,
+        },
+      }
+    );
+    
+    const paystackTransactions = paystackResponse.data.data || [];
+    const usedReferences = new Set(
+      allTransactions
+        .filter(t => t.status === "completed" && t.paystackReference)
+        .map(t => t.paystackReference)
+    );
+    
+    // Find unused Paystack payment matching amount and timestamp
+    for (const pendingTx of pendingMatches) {
+      const txTime = new Date(pendingTx.createdAt);
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+      
+      const matchingPayment = paystackTransactions.find((ptx: any) => {
+        const ptxAmount = ptx.amount;
+        const ptxTime = new Date(ptx.created_at);
+        
+        return (
+          ptxAmount === amountInKobo &&
+          ptx.status === "success" &&
+          ptxTime >= txTime &&
+          ptxTime > tenMinutesAgo &&
+          !usedReferences.has(ptx.reference)
+        );
+      });
+      
+      if (matchingPayment) {
+        console.log(`Found claimable pending transaction ${pendingTx.transactionId} with matching Paystack payment ${matchingPayment.reference}`);
+        return pendingTx;
+      }
+    }
+  } catch (error) {
+    console.error("Error checking Paystack for claimable transactions:", error);
+  }
+  
+  return null;
+}
+
+/**
+ * Combined endpoint: Store transaction and check for payment
+ * This ensures the transaction is available when checking
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { ngnAmount, sendAmount, walletAddress, transactionId, exchangeRate } = body;
+    
+    console.log(`[Process Payment] Received request:`, {
+      transactionId,
+      ngnAmount,
+      walletAddress: walletAddress ? (walletAddress.length > 6 ? `${walletAddress.slice(0, 6)}...` : walletAddress) : 'missing',
+      exchangeRate,
+    });
+
+    // Validate inputs
+    if (!transactionId) {
+      return NextResponse.json(
+        { success: false, error: "Transaction ID is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!ngnAmount || !isValidAmount(ngnAmount.toString())) {
+      return NextResponse.json(
+        { success: false, error: "Invalid NGN amount" },
+        { status: 400 }
+      );
+    }
+
+    if (!walletAddress || !isValidWalletOrTag(walletAddress.trim())) {
+      return NextResponse.json(
+        { success: false, error: "Invalid wallet address or SendTag" },
+        { status: 400 }
+      );
+    }
+
+    const normalizedWallet = walletAddress.trim().toLowerCase();
+    const parsedAmount = parseFloat(ngnAmount);
+    
+    // Validate parsed amount
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      return NextResponse.json(
+        { success: false, error: "Invalid NGN amount" },
+        { status: 400 }
+      );
+    }
+    
+    const amountInKobo = Math.round(parsedAmount * 100);
+    
+    // Validate and parse exchangeRate
+    let parsedExchangeRate: number = 50; // Default fallback
+    if (exchangeRate !== undefined && exchangeRate !== null && exchangeRate !== "") {
+      // Handle both string and number types
+      const rateValue = typeof exchangeRate === "string" ? parseFloat(exchangeRate) : exchangeRate;
+      if (!isNaN(rateValue) && rateValue > 0) {
+        parsedExchangeRate = rateValue;
+      }
+    }
+    
+    // First, check if this specific transaction ID is already completed
+    let transaction = getTransaction(transactionId);
+    if (transaction && transaction.status === "completed") {
+      console.log(`Transaction ${transactionId} already completed, preventing duplicate processing`);
+      return NextResponse.json({
+        success: false,
+        error: "This transaction ID has already been completed. Please refresh the page to start a new transaction.",
+        alreadyCompleted: true,
+        txHash: transaction.txHash,
+        explorerUrl: transaction.txHash ? `https://basescan.org/tx/${transaction.txHash}` : undefined,
+      });
+    }
+
+    // Validate Paystack key before checking for payments
+    if (!PAYSTACK_SECRET_KEY) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Paystack API key not configured. Please set PAYSTACK_SECRET_KEY in environment variables.",
+        },
+        { status: 500 }
+      );
+    }
+
+    // Check Paystack FIRST to see if there's an unused payment
+    // This allows users to send the same amount twice if there are two actual payments
+    let unusedPaymentExists = false;
+    try {
+      const paystackResponse = await axios.get(
+        `${PAYSTACK_API_BASE}/transaction`,
+        {
+          headers: {
+            Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+          },
+          params: {
+            perPage: 100, // Check last 100 transactions
+          },
+        }
+      );
+
+      const paystackTransactions = paystackResponse.data.data || [];
+      
+      // Get all used Paystack references from our database
+      const allCompletedTransactions = getAllTransactions().filter(
+        (t) => t.status === "completed" && t.paystackReference
+      );
+      const usedPaystackReferences = new Set(
+        allCompletedTransactions.map((t) => t.paystackReference)
+      );
+      
+      // Check if there's an unused payment matching the amount
+      const now = new Date();
+      const tenMinutesAgo = new Date(now.getTime() - 10 * 60 * 1000);
+      
+      const unusedPayment = paystackTransactions.find((tx: any) => {
+        const txAmount = tx.amount;
+        const txTime = new Date(tx.created_at);
+        const txReference = tx.reference;
+        
+        return (
+          txAmount === amountInKobo &&
+          tx.status === "success" &&
+          txTime > tenMinutesAgo &&
+          !usedPaystackReferences.has(txReference)
+        );
+      });
+      
+      unusedPaymentExists = !!unusedPayment;
+      
+      if (unusedPayment) {
+        console.log(`Found unused Paystack payment: ${unusedPayment.reference}, amount: ${unusedPayment.amount}, time: ${unusedPayment.created_at}`);
+      } else {
+        console.log(`No unused payment found in Paystack for amount ${amountInKobo}`);
+      }
+    } catch (paystackError: any) {
+      console.error("Error checking Paystack for unused payments:", paystackError);
+      // Continue with transaction creation - we'll check again later
+    }
+
+    // If there's a completed transaction with same wallet + amount, check if there's a new payment
+    const existingCompleted = findCompletedTransactionByWalletAndAmount(normalizedWallet, parsedAmount);
+    if (existingCompleted && !unusedPaymentExists) {
+      console.log(`Found completed transaction ${existingCompleted.transactionId} for wallet ${normalizedWallet}, amount ${parsedAmount} NGN, but no unused payment found`);
+      return NextResponse.json({
+        success: false,
+        error: "A payment with this amount and wallet address has already been processed, and no new payment was found. Please ensure you have sent a new payment to the account.",
+        alreadyCompleted: true,
+        txHash: existingCompleted.txHash,
+        explorerUrl: existingCompleted.txHash ? `https://basescan.org/tx/${existingCompleted.txHash}` : undefined,
+      });
+    }
+    
+    // If there's a completed transaction but a new unused payment exists, allow it
+    if (existingCompleted && unusedPaymentExists) {
+      console.log(`Found completed transaction ${existingCompleted.transactionId}, but unused payment exists - allowing new transaction`);
+    }
+
+    // If transaction ID doesn't exist or is pending, check for existing pending transaction
+    // with matching wallet address and amount (user might have refreshed page)
+    if (!transaction || transaction.status === "pending") {
+      // First, try to find a claimable pending transaction
+      const claimableTx = await findClaimablePendingTransaction(
+        normalizedWallet,
+        parsedAmount,
+        transactionId
+      );
+      
+      if (claimableTx) {
+        console.log(`Found claimable pending transaction ${claimableTx.transactionId}, using it instead of creating new one`);
+        transaction = claimableTx;
+        
+        // Update with latest data and ensure exchangeRate is stored
+        const currentExchangeRate = parsedExchangeRate || claimableTx.exchangeRate || 50;
+        const recalculatedSendAmount = calculateSendAmount(parsedAmount, currentExchangeRate);
+        
+        updateTransaction(claimableTx.transactionId, {
+          ngnAmount: parsedAmount,
+          sendAmount: recalculatedSendAmount,
+          walletAddress: normalizedWallet,
+          sendtag: body.sendtag,
+          exchangeRate: currentExchangeRate,
+        });
+        
+        // Ensure user exists
+        createOrUpdateUser(
+          normalizedWallet,
+          claimableTx.transactionId,
+          parsedAmount,
+          recalculatedSendAmount,
+          body.sendtag
+        );
+      } else {
+        const existingPending = findPendingTransactionByWalletAndAmount(normalizedWallet, parsedAmount);
+        
+        if (existingPending) {
+          // Use the existing pending transaction instead of creating a new one
+          console.log(`Found existing pending transaction ${existingPending.transactionId} for wallet ${normalizedWallet}, amount ${parsedAmount} NGN`);
+          console.log(`Using existing transaction instead of new ID ${transactionId}`);
+          
+          // Recalculate sendAmount with current exchangeRate
+          const currentExchangeRate = parsedExchangeRate || existingPending.exchangeRate || 50;
+          const recalculatedSendAmount = calculateSendAmount(parsedAmount, currentExchangeRate);
+          
+          // Update the existing transaction with latest data
+          updateTransaction(existingPending.transactionId, {
+            ngnAmount: parsedAmount,
+            sendAmount: recalculatedSendAmount,
+            walletAddress: normalizedWallet,
+            sendtag: body.sendtag,
+            exchangeRate: currentExchangeRate,
+          });
+          
+          // Ensure user exists for this transaction
+          createOrUpdateUser(
+            normalizedWallet,
+            existingPending.transactionId,
+            parsedAmount,
+            recalculatedSendAmount,
+            body.sendtag
+          );
+          
+          transaction = getTransaction(existingPending.transactionId);
+        } else if (!transaction) {
+          // No existing pending transaction found, create new one
+          console.log(`Creating new transaction: ${transactionId} for wallet ${normalizedWallet}, amount ${parsedAmount} NGN`);
+          
+          // Calculate sendAmount with current exchangeRate
+          const currentExchangeRate = parsedExchangeRate || 50;
+          const calculatedSendAmount = calculateSendAmount(parsedAmount, currentExchangeRate);
+          
+          transaction = createTransaction({
+            transactionId,
+            paystackReference: transactionId,
+            ngnAmount: parsedAmount,
+            sendAmount: calculatedSendAmount,
+            walletAddress: normalizedWallet,
+            sendtag: body.sendtag,
+            exchangeRate: currentExchangeRate,
+          });
+          console.log(`New transaction created: ${transactionId}`);
+          
+          // Create or update user for this transaction
+          createOrUpdateUser(
+            normalizedWallet,
+            transactionId,
+            parsedAmount,
+            calculatedSendAmount,
+            body.sendtag
+          );
+          
+          // Verify it was stored
+          const verifyStored = getTransaction(transactionId);
+          if (!verifyStored) {
+            console.error(`CRITICAL: Transaction ${transactionId} was not stored after creation!`);
+          } else {
+            console.log(`Verified: Transaction ${transactionId} is stored, status: ${verifyStored.status}`);
+          }
+        } else {
+          // Transaction exists and is pending, just update it
+          console.log(`Updating existing pending transaction: ${transactionId}`);
+          
+          // Recalculate sendAmount with current exchangeRate
+          const currentExchangeRate = parsedExchangeRate || transaction.exchangeRate || 50;
+          const recalculatedSendAmount = calculateSendAmount(parsedAmount, currentExchangeRate);
+          
+          updateTransaction(transactionId, {
+            ngnAmount: parsedAmount,
+            sendAmount: recalculatedSendAmount,
+            walletAddress: normalizedWallet,
+            sendtag: body.sendtag,
+            exchangeRate: currentExchangeRate,
+          });
+          
+          // Ensure user exists for this transaction
+          createOrUpdateUser(
+            normalizedWallet,
+            transactionId,
+            parsedAmount,
+            recalculatedSendAmount,
+            body.sendtag
+          );
+          
+          console.log(`Transaction updated: ${transactionId}`);
+        }
+      }
+    }
+
+    // Verify transaction exists
+    const finalTransactionId = transaction?.transactionId || transactionId;
+    transaction = getTransaction(finalTransactionId);
+    if (!transaction) {
+      console.error(`Failed to store/retrieve transaction ${finalTransactionId}`);
+      
+      // Debug: Log all current transactions
+      const allTransactions = getAllTransactions();
+      console.error(`Current transactions in storage: ${allTransactions.length}`);
+      console.error(`Transaction IDs:`, allTransactions.map((t) => t.transactionId));
+      
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: "Failed to store transaction. Please try again.",
+          debug: {
+            requestedId: finalTransactionId,
+            totalTransactions: allTransactions.length,
+            transactionIds: allTransactions.map((t) => t.transactionId),
+          }
+        },
+        { status: 500 }
+      );
+    }
+
+    console.log(`Transaction ready: ${transaction.transactionId} for wallet ${transaction.walletAddress}, amount: ${transaction.ngnAmount} NGN, status: ${transaction.status}, created at: ${transaction.createdAt.toISOString()}`);
+    
+    // Debug: Log transaction storage state
+    const allTransactions = getAllTransactions();
+    console.log(`Total transactions in storage: ${allTransactions.length}`);
+    console.log(`Pending: ${allTransactions.filter((t) => t.status === "pending").length}, Completed: ${allTransactions.filter((t) => t.status === "completed").length}`);
+
+    // Final check: if transaction is completed, reject (idempotency check)
+    if (transaction.status === "completed") {
+      console.log(`Transaction ${transaction.transactionId} is already completed (idempotency check)`);
+      return NextResponse.json({
+        success: true,
+        alreadyProcessed: true,
+        message: "Transaction already completed",
+        transactionId: transaction.transactionId,
+        txHash: transaction.txHash,
+        explorerUrl: transaction.txHash ? `https://basescan.org/tx/${transaction.txHash}` : undefined,
+      });
+    }
+
+    // ============================================
+    // THREE-POINT PAYMENT VERIFICATION
+    // ============================================
+    console.log(`[Payment Processing] Starting three-point verification for transaction ${finalTransactionId}`);
+    
+    const verificationResult = await verifyPaymentForTransaction(finalTransactionId);
+    
+    // Log verification attempt
+    addVerificationAttempt(finalTransactionId, {
+      point1Verified: verificationResult.point1Verified,
+      point2Verified: verificationResult.point2Verified,
+      point3Verified: verificationResult.point3Verified,
+      allPointsVerified: verificationResult.valid,
+      paystackReference: verificationResult.paystackTx?.reference,
+      errorMessage: verificationResult.errors.length > 0 ? verificationResult.errors.join("; ") : undefined,
+    });
+
+    if (!verificationResult.valid) {
+      console.error(`[Payment Processing] Verification failed for transaction ${finalTransactionId}:`, verificationResult.errors);
+      return NextResponse.json({
+        success: false,
+        error: "Payment verification failed. Please ensure you have sent the exact amount and try again.",
+        verificationDetails: {
+          point1Verified: verificationResult.point1Verified,
+          point2Verified: verificationResult.point2Verified,
+          point3Verified: verificationResult.point3Verified,
+          errors: verificationResult.errors,
+        },
+      });
+    }
+
+    // All three points verified - proceed with token distribution
+    const verifiedTx = verificationResult.paystackTx!;
+    console.log(`[Payment Processing] ✓ All three points verified for transaction ${finalTransactionId}`);
+    console.log(`[Payment Processing] Paystack reference: ${verifiedTx.reference}, amount: ${verifiedTx.amount}`);
+
+    // Final idempotency check: ensure Paystack reference hasn't been used
+    const checkForDuplicate = getAllTransactions().find(
+      (t) => t.paystackReference === verifiedTx.reference && t.transactionId !== transaction.transactionId && t.status === "completed"
+    );
+    
+    if (checkForDuplicate) {
+      console.error(`[Payment Processing] Paystack reference ${verifiedTx.reference} already used by transaction ${checkForDuplicate.transactionId}`);
+      return NextResponse.json({
+        success: false,
+        error: "This payment has already been processed for another transaction. Please contact support if you believe this is an error.",
+      });
+    }
+
+    // Update transaction status with Paystack reference
+    // Recalculate sendAmount if exchangeRate changed
+    let finalSendAmount = transaction.sendAmount || "0.00";
+    
+    // Validate transaction has required fields
+    if (!transaction.ngnAmount || isNaN(transaction.ngnAmount) || transaction.ngnAmount <= 0) {
+      console.error(`[Payment Processing] Invalid ngnAmount for transaction ${transaction.transactionId}: ${transaction.ngnAmount}`);
+      return NextResponse.json(
+        { success: false, error: "Transaction has invalid amount. Please contact support." },
+        { status: 500 }
+      );
+    }
+    
+    // Recalculate sendAmount if exchangeRate is available
+    if (transaction.exchangeRate && !isNaN(transaction.exchangeRate) && transaction.exchangeRate > 0) {
+      try {
+        finalSendAmount = calculateSendAmount(transaction.ngnAmount, transaction.exchangeRate);
+        console.log(`[Payment Processing] Recalculated sendAmount: ${finalSendAmount} SEND (rate: ${transaction.exchangeRate})`);
+      } catch (error: any) {
+        console.error(`[Payment Processing] Error calculating sendAmount:`, error);
+        // If calculation fails and we don't have a valid sendAmount, use default rate
+        if (!finalSendAmount || parseFloat(finalSendAmount) === 0) {
+          finalSendAmount = calculateSendAmount(transaction.ngnAmount, 50);
+          console.log(`[Payment Processing] Using default rate, calculated: ${finalSendAmount} SEND`);
+        }
+      }
+    } else if (!finalSendAmount || parseFloat(finalSendAmount) === 0) {
+      // If no sendAmount and no exchangeRate, use default rate
+      finalSendAmount = calculateSendAmount(transaction.ngnAmount, 50);
+      console.log(`[Payment Processing] No exchangeRate found, using default rate: ${finalSendAmount} SEND`);
+    }
+    
+    // Final validation of sendAmount
+    if (!finalSendAmount || parseFloat(finalSendAmount) <= 0) {
+      console.error(`[Payment Processing] Invalid finalSendAmount: ${finalSendAmount}`);
+      return NextResponse.json(
+        { success: false, error: "Failed to calculate token amount. Please contact support." },
+        { status: 500 }
+      );
+    }
+    
+    updateTransaction(transaction.transactionId, {
+      status: "completed",
+      paystackReference: verifiedTx.reference,
+      sendAmount: finalSendAmount, // Update with recalculated amount
+      completedAt: new Date(),
+    });
+    
+    // Update user record when transaction is completed
+    createOrUpdateUser(
+      transaction.walletAddress,
+      transaction.transactionId,
+      transaction.ngnAmount,
+      finalSendAmount,
+      transaction.sendtag
+    );
+    
+    console.log(`[Payment Processing] Transaction ${finalTransactionId} marked as completed with Paystack reference ${verifiedTx.reference}`);
+
+      // Check if tokens were already distributed (prevent duplicate distribution)
+      if (transaction.txHash) {
+        console.log(`Tokens already distributed for transaction ${transaction.transactionId}, txHash: ${transaction.txHash}`);
+        return NextResponse.json({
+          success: true,
+          message: `Payment verified. Tokens were already distributed. Transaction: ${transaction.txHash.slice(0, 10)}...`,
+          txHash: transaction.txHash,
+          explorerUrl: `https://basescan.org/tx/${transaction.txHash}`,
+          amount: finalSendAmount,
+          walletAddress: transaction.walletAddress,
+          alreadyDistributed: true,
+        });
+      }
+
+      // Distribute tokens
+      console.log(`[Payment Processing] Distributing tokens...`);
+      console.log(`[Payment Processing] Wallet: ${transaction.walletAddress}, Amount: ${finalSendAmount} SEND`);
+
+      const distributionResult = await distributeTokens(
+        transaction.transactionId,
+        transaction.walletAddress,
+        finalSendAmount
+      );
+
+      if (distributionResult.success) {
+        return NextResponse.json({
+          success: true,
+          message: `Payment verified and ${finalSendAmount} SEND tokens distributed successfully to ${transaction.walletAddress && transaction.walletAddress.length > 10 ? `${transaction.walletAddress.slice(0, 6)}...${transaction.walletAddress.slice(-4)}` : transaction.walletAddress}`,
+          txHash: distributionResult.txHash,
+          explorerUrl: `https://basescan.org/tx/${distributionResult.txHash}`,
+          amount: finalSendAmount,
+          walletAddress: transaction.walletAddress,
+          verificationDetails: {
+            point1Verified: verificationResult.point1Verified,
+            point2Verified: verificationResult.point2Verified,
+            point3Verified: verificationResult.point3Verified,
+          },
+        });
+      } else {
+        return NextResponse.json({
+          success: false,
+          error: `Payment verified but token distribution failed: ${distributionResult.error}`,
+        });
+      }
+  } catch (error: any) {
+    console.error("Payment processing error:", error);
+    return NextResponse.json(
+      { success: false, error: error.message || "Internal server error" },
+      { status: 500 }
+    );
+  }
+}

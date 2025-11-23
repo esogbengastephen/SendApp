@@ -44,6 +44,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [revenueData, setRevenueData] = useState<ChartData[]>([]);
   const [transactionData, setTransactionData] = useState<ChartData[]>([]);
+  const [recentActivities, setRecentActivities] = useState<any[]>([]);
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -62,40 +63,41 @@ export default function AdminDashboard() {
 
     const fetchChartData = async () => {
       try {
-        // Generate mock chart data for last 30 days
-        const days = 30;
-        const revenueChart: ChartData[] = [];
-        const transactionChart: ChartData[] = [];
-
-        for (let i = days - 1; i >= 0; i--) {
-          const date = subDays(new Date(), i);
-          const dateStr = format(date, "MMM dd");
-          
-          // Mock data - in production, fetch from API
-          revenueChart.push({
-            date: dateStr,
-            revenue: Math.floor(Math.random() * 50000) + 10000,
-            transactions: 0,
-            tokens: 0,
-          });
-
-          transactionChart.push({
-            date: dateStr,
-            revenue: 0,
-            transactions: Math.floor(Math.random() * 50) + 10,
-            tokens: 0,
-          });
+        const response = await fetch("/api/admin/charts");
+        const data = await response.json();
+        if (data.success) {
+          setRevenueData(data.revenueData);
+          setTransactionData(data.transactionData);
         }
-
-        setRevenueData(revenueChart);
-        setTransactionData(transactionChart);
       } catch (error) {
         console.error("Error fetching chart data:", error);
       }
     };
 
+    const fetchRecentActivity = async () => {
+      try {
+        const response = await fetch("/api/admin/recent-activity");
+        const data = await response.json();
+        if (data.success) {
+          setRecentActivities(data.activities);
+        }
+      } catch (error) {
+        console.error("Error fetching recent activity:", error);
+      }
+    };
+
     fetchStats();
     fetchChartData();
+    fetchRecentActivity();
+    
+    // Refresh data every 30 seconds
+    const interval = setInterval(() => {
+      fetchStats();
+      fetchChartData();
+      fetchRecentActivity();
+    }, 30000);
+    
+    return () => clearInterval(interval);
   }, []);
 
   const statCards = [
@@ -144,23 +146,23 @@ export default function AdminDashboard() {
   ];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-4 sm:space-y-6 lg:space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-slate-900 dark:text-slate-100">
+        <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-slate-100">
           Dashboard Overview
         </h1>
-        <p className="text-slate-600 dark:text-slate-400 mt-2">
+        <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 mt-1 sm:mt-2">
           Monitor transactions, payments, and token distributions
         </p>
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {statCards.map((stat, index) => (
           <div
             key={index}
-            className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700"
+            className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700"
           >
             <div className="flex items-center justify-between mb-4">
               <div className={`${stat.color} p-3 rounded-lg`}>
@@ -178,10 +180,10 @@ export default function AdminDashboard() {
                 {stat.change}
               </span>
             </div>
-            <h3 className="text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">
+            <h3 className="text-xs sm:text-sm font-medium text-slate-600 dark:text-slate-400 mb-1">
               {stat.title}
             </h3>
-            <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+            <p className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-slate-100">
               {loading ? "..." : stat.value}
             </p>
           </div>
@@ -189,9 +191,9 @@ export default function AdminDashboard() {
       </div>
 
       {/* Quick Actions */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
-          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+        <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
+          <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 mb-3 sm:mb-4">
             Quick Actions
           </h2>
           <div className="space-y-3">
@@ -231,43 +233,55 @@ export default function AdminDashboard() {
           </div>
         </div>
 
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
-          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-4">
+        <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
+          <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 mb-3 sm:mb-4">
             Recent Activity
           </h2>
           <div className="space-y-3">
-            {[1, 2, 3, 4, 5].map((i) => (
-              <div
-                key={i}
-                className="flex items-center gap-3 p-3 rounded-lg bg-slate-100 dark:bg-slate-800"
-              >
-                <div className="bg-primary p-2 rounded-full">
-                  <span className="material-icons-outlined text-slate-900 text-sm">
-                    check
-                  </span>
+            {loading ? (
+              <p className="text-slate-500 dark:text-slate-400">Loading...</p>
+            ) : recentActivities.length === 0 ? (
+              <p className="text-slate-500 dark:text-slate-400">No recent activity</p>
+            ) : (
+              recentActivities.map((activity, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-3 p-3 rounded-lg bg-slate-100 dark:bg-slate-800"
+                >
+                  <div className={`p-2 rounded-full ${
+                    activity.type === "completed" 
+                      ? "bg-green-500" 
+                      : activity.type === "failed"
+                      ? "bg-red-500"
+                      : "bg-yellow-500"
+                  }`}>
+                    <span className="material-icons-outlined text-white text-sm">
+                      {activity.type === "completed" ? "check" : activity.type === "failed" ? "error" : "schedule"}
+                    </span>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                      {activity.message}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {activity.time} • ₦{activity.amount.toLocaleString()} • {activity.wallet}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
-                    Transaction #{1234 + i} completed
-                  </p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    2 minutes ago
-                  </p>
-                </div>
-              </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>
 
       {/* Analytics Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* Revenue Trends */}
-        <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
-          <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-4">
+        <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
+          <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 mb-3 sm:mb-4">
             Revenue Trends (Last 30 Days)
           </h2>
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={250} className="sm:h-[300px]">
             <LineChart data={revenueData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
               <XAxis

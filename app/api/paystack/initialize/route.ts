@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createTransaction } from "@/lib/transactions";
+import { createTransaction, getTransaction, updateTransaction } from "@/lib/transactions";
 import { isValidWalletOrTag, isValidAmount } from "@/utils/validation";
 
 /**
@@ -34,20 +34,41 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Store transaction in our system using the unique transaction ID
-    // This ID was generated when the page loaded and will be used to:
-    // 1. Link the wallet address the user provided
-    // 2. Verify the payment amount when checking Paystack
-    // 3. Distribute tokens to the correct wallet
-    createTransaction({
-      transactionId,
-      paystackReference: transactionId, // Use transaction ID as reference (will be updated when payment is found)
-      ngnAmount: parseFloat(ngnAmount),
-      sendAmount,
-      walletAddress: walletAddress.trim(),
-    });
+    // Check if transaction already exists
+    const existingTransaction = getTransaction(transactionId);
+    if (existingTransaction) {
+      console.log(`Transaction ${transactionId} already exists, updating...`);
+      updateTransaction(transactionId, {
+        ngnAmount: parseFloat(ngnAmount),
+        sendAmount,
+        walletAddress: walletAddress.trim(),
+      });
+    } else {
+      // Store transaction in our system using the unique transaction ID
+      // This ID was generated when the page loaded and will be used to:
+      // 1. Link the wallet address the user provided
+      // 2. Verify the payment amount when checking Paystack
+      // 3. Distribute tokens to the correct wallet
+      createTransaction({
+        transactionId,
+        paystackReference: transactionId, // Use transaction ID as reference (will be updated when payment is found)
+        ngnAmount: parseFloat(ngnAmount),
+        sendAmount,
+        walletAddress: walletAddress.trim(),
+      });
+    }
 
-    console.log(`Transaction stored: ${transactionId} for wallet ${walletAddress.trim()}, amount: ${ngnAmount} NGN = ${sendAmount} SEND`);
+    // Verify transaction was stored
+    const storedTransaction = getTransaction(transactionId);
+    if (!storedTransaction) {
+      console.error(`Failed to store transaction ${transactionId}`);
+      return NextResponse.json(
+        { success: false, error: "Failed to store transaction. Please try again." },
+        { status: 500 }
+      );
+    }
+
+    console.log(`Transaction stored successfully: ${transactionId} for wallet ${walletAddress.trim()}, amount: ${ngnAmount} NGN = ${sendAmount} SEND`);
 
     return NextResponse.json({
       success: true,

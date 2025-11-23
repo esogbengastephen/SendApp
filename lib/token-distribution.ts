@@ -1,5 +1,5 @@
 import { transferTokens, estimateGas, isValidBaseAddress } from "./blockchain";
-import { updateTransaction } from "./transactions";
+import { updateTransaction, getTransaction } from "./transactions";
 import { isValidAddress } from "../utils/validation";
 
 /**
@@ -11,6 +11,24 @@ export async function distributeTokens(
   sendAmount: string
 ): Promise<{ success: boolean; txHash?: string; error?: string }> {
   try {
+    // Check if tokens have already been distributed for this transaction
+    const transaction = getTransaction(transactionId);
+    if (transaction?.txHash) {
+      console.log(`Tokens already distributed for transaction ${transactionId}, txHash: ${transaction.txHash}`);
+      return {
+        success: true,
+        txHash: transaction.txHash,
+      };
+    }
+    
+    // Check if transaction is already completed (prevents duplicate distribution)
+    if (transaction?.status === "completed" && transaction.txHash) {
+      console.log(`Transaction ${transactionId} already completed with txHash: ${transaction.txHash}`);
+      return {
+        success: true,
+        txHash: transaction.txHash,
+      };
+    }
     // Validate wallet address
     if (!isValidAddress(walletAddress) && !isValidBaseAddress(walletAddress)) {
       return {
