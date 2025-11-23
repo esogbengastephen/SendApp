@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-interface ModalProps {
+export interface ModalProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
@@ -13,7 +13,7 @@ interface ModalProps {
   explorerUrl?: string;
 }
 
-export default function Modal({
+function Modal({
   isOpen,
   onClose,
   title,
@@ -102,4 +102,6 @@ export default function Modal({
     </div>
   );
 }
+
+export default Modal;
 
