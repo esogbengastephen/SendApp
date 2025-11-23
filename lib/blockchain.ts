@@ -72,6 +72,14 @@ export function getWalletClient() {
 }
 
 /**
+ * Get the liquidity pool wallet address
+ */
+export function getLiquidityPoolAddress(): string {
+  const walletClient = getWalletClient();
+  return walletClient.account.address;
+}
+
+/**
  * Get token balance for an address
  */
 export async function getTokenBalance(address: string): Promise<string> {
