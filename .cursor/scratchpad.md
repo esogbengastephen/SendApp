@@ -11,7 +11,7 @@ We are building a Next.js web application that allows users to purchase $SEND to
 - Provide a clean, modern UI matching the provided design
 
 **Key Information:**
-- $SEND Token Contract: `0x3f14920c99beb920afa163031c4e47a3e03b3e4a`
+- $SEND Token Contract: `0xEab49138BA2Ea6dd776220fE26b7b8E446638956`
 - Blockchain: Base (Ethereum L2)
 - Payment Provider: Paystack
 - Token Symbol: $SEND
@@ -170,7 +170,7 @@ _No lessons recorded yet_
 ```
 # Base Network
 NEXT_PUBLIC_BASE_RPC_URL=https://mainnet.base.org
-NEXT_PUBLIC_SEND_TOKEN_ADDRESS=0x3f14920c99beb920afa163031c4e47a3e03b3e4a
+NEXT_PUBLIC_SEND_TOKEN_ADDRESS=0xEab49138BA2Ea6dd776220fE26b7b8E446638956
 
 # Paystack
 PAYSTACK_SECRET_KEY=sk_xxx

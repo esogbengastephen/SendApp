@@ -49,7 +49,7 @@ NEXT_PUBLIC_APP_URL=http://localhost:3000
 
 # Base Network
 NEXT_PUBLIC_BASE_RPC_URL=https://mainnet.base.org
-NEXT_PUBLIC_SEND_TOKEN_ADDRESS=0x3f14920c99beb920afa163031c4e47a3e03b3e4a
+NEXT_PUBLIC_SEND_TOKEN_ADDRESS=0xEab49138BA2Ea6dd776220fE26b7b8E446638956
 
 # Liquidity Pool (for token distribution)
 LIQUIDITY_POOL_PRIVATE_KEY=0x_your_private_key_here

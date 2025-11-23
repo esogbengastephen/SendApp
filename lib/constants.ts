@@ -6,7 +6,7 @@ export const BASE_RPC_URL =
 // $SEND Token Contract Address
 export const SEND_TOKEN_ADDRESS =
   process.env.NEXT_PUBLIC_SEND_TOKEN_ADDRESS ||
-  "0x3f14920c99beb920afa163031c4e47a3e03b3e4a";
+  "0xEab49138BA2Ea6dd776220fE26b7b8E446638956";
 
 // Exchange Rate (default, should be fetched from API)
 export const DEFAULT_EXCHANGE_RATE = parseFloat(

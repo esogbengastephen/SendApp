@@ -118,7 +118,7 @@ export async function GET(request: NextRequest) {
     const poolAddress = walletClient.account.address;
     
     console.log(`[Test Transfer] Checking balance for pool address: ${poolAddress}`);
-    console.log(`[Test Transfer] Token contract: ${process.env.NEXT_PUBLIC_SEND_TOKEN_ADDRESS || "0x3f14920c99beb920afa163031c4e47a3e03b3e4a"}`);
+    console.log(`[Test Transfer] Token contract: ${process.env.NEXT_PUBLIC_SEND_TOKEN_ADDRESS || "0xEab49138BA2Ea6dd776220fE26b7b8E446638956"}`);
     
     let poolBalance;
     try {
@@ -135,7 +135,7 @@ export async function GET(request: NextRequest) {
         poolAddress,
         balance: poolBalance,
         token: "SEND",
-        tokenContract: process.env.NEXT_PUBLIC_SEND_TOKEN_ADDRESS || "0x3f14920c99beb920afa163031c4e47a3e03b3e4a",
+        tokenContract: process.env.NEXT_PUBLIC_SEND_TOKEN_ADDRESS || "0xEab49138BA2Ea6dd776220fE26b7b8E446638956",
         network: "Base",
       },
     });
