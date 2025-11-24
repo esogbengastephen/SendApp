@@ -16,13 +16,14 @@ export async function GET(request: NextRequest) {
     console.log(`[API Rate] Current settings:`, settings);
     console.log(`[API Rate] Returning exchange rate: ${rate}`);
 
-    // Set cache headers to prevent caching
+    // Set cache headers to prevent caching and ensure fresh data
     const headers = new Headers();
     headers.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
     headers.set("Pragma", "no-cache");
     headers.set("Expires", "0");
     headers.set("X-Rate", rate.toString()); // Add rate in header for debugging
     headers.set("X-Timestamp", new Date().toISOString());
+    headers.set("Last-Modified", new Date().toUTCString());
 
     return NextResponse.json(
       {

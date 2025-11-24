@@ -35,3 +35,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# settings file (contains admin-configured exchange rate)
+.settings.json
+

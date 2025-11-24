@@ -71,13 +71,13 @@ export default function PaymentForm() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            transactionId: storedTxId,
-            ngnAmount: storedAmount,
-            sendAmount: "",
-            walletAddress: storedWallet,
-            exchangeRate: exchangeRate,
-          }),
+            body: JSON.stringify({
+              transactionId: storedTxId,
+              ngnAmount: storedAmount,
+              sendAmount: "",
+              walletAddress: storedWallet,
+              // Note: exchangeRate is not sent - backend uses admin-set rate from settings
+            }),
         });
         
         const data = await response.json();
@@ -172,7 +172,7 @@ export default function PaymentForm() {
     }
   };
 
-  // Fetch exchange rate on mount and periodically
+  // Fetch exchange rate on mount and periodically to get admin updates
   useEffect(() => {
     const fetchExchangeRate = async () => {
       try {
@@ -187,11 +187,8 @@ export default function PaymentForm() {
         console.log("[PaymentForm] Fetched exchange rate:", data);
         if (data.success && data.rate) {
           const newRate = parseFloat(data.rate);
-          console.log(`[PaymentForm] Updating exchange rate from ${exchangeRate} to ${newRate}`);
-          if (newRate !== exchangeRate) {
-            setExchangeRate(newRate);
-            console.log(`[PaymentForm] Exchange rate updated to: ${newRate}`);
-          }
+          console.log(`[PaymentForm] Updating exchange rate to: ${newRate} (from admin settings)`);
+          setExchangeRate(newRate);
         }
       } catch (error) {
         console.error("Failed to fetch exchange rate:", error);
@@ -199,21 +196,40 @@ export default function PaymentForm() {
       }
     };
 
-    // Fetch immediately
+    // Fetch immediately on mount
     fetchExchangeRate();
 
-    // Refresh every 30 seconds to get updated rate
-    const interval = setInterval(fetchExchangeRate, 30000);
+    // Refresh every 10 seconds to get admin updates immediately
+    const interval = setInterval(fetchExchangeRate, 10000);
 
     // Refresh when window regains focus (user comes back to tab)
     const handleFocus = () => {
+      console.log("[PaymentForm] Window focused, refreshing exchange rate");
       fetchExchangeRate();
     };
     window.addEventListener("focus", handleFocus);
 
+    // Refresh when page becomes visible (user switches back to tab)
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        console.log("[PaymentForm] Page visible, refreshing exchange rate");
+        fetchExchangeRate();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    // Listen for exchange rate updates from admin dashboard (cross-tab communication)
+    const handleRateUpdate = (event: CustomEvent) => {
+      console.log("[PaymentForm] Exchange rate updated event received:", event.detail);
+      fetchExchangeRate();
+    };
+    window.addEventListener("exchangeRateUpdated" as any, handleRateUpdate as EventListener);
+
     return () => {
       clearInterval(interval);
       window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("exchangeRateUpdated" as any, handleRateUpdate as EventListener);
     };
   }, []);
 
@@ -249,7 +265,7 @@ export default function PaymentForm() {
           transactionId,
           ngnAmount: amount,
           sendAmount: sendAmt,
-          exchangeRate,
+          // Note: exchangeRate is not sent - backend uses admin-set rate from settings
         }),
       });
 
@@ -294,13 +310,13 @@ export default function PaymentForm() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            transactionId: storedTxId,
-            ngnAmount: storedAmount,
-            sendAmount: "",
-            walletAddress: storedWallet,
-            exchangeRate: exchangeRate,
-          }),
+            body: JSON.stringify({
+              transactionId: storedTxId,
+              ngnAmount: storedAmount,
+              sendAmount: "",
+              walletAddress: storedWallet,
+              // Note: exchangeRate is not sent - backend uses admin-set rate from settings
+            }),
         });
         
         const data = await response.json();
@@ -520,13 +536,13 @@ export default function PaymentForm() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          ngnAmount,
-          sendAmount,
-          walletAddress: finalWalletAddress,
-          transactionId,
-          exchangeRate: exchangeRate, // Add exchangeRate
-        }),
+          body: JSON.stringify({
+            ngnAmount,
+            sendAmount,
+            walletAddress: finalWalletAddress,
+            transactionId,
+            // Note: exchangeRate is not sent - backend uses admin-set rate from settings
+          }),
       });
 
       if (!processResponse.ok) {

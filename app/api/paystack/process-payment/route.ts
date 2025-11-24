@@ -5,6 +5,7 @@ import { createOrUpdateUser } from "@/lib/users";
 import { distributeTokens } from "@/lib/token-distribution";
 import { isValidWalletOrTag, isValidAmount } from "@/utils/validation";
 import { verifyPaymentForTransaction } from "@/lib/payment-verification";
+import { getExchangeRate } from "@/lib/settings";
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const PAYSTACK_API_BASE = "https://api.paystack.co";
@@ -104,13 +105,13 @@ async function findClaimablePendingTransaction(
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { ngnAmount, sendAmount, walletAddress, transactionId, exchangeRate } = body;
+    const { ngnAmount, sendAmount, walletAddress, transactionId } = body;
+    // Note: exchangeRate is no longer accepted from frontend - we use admin-set rate
     
     console.log(`[Process Payment] Received request:`, {
       transactionId,
       ngnAmount,
       walletAddress: walletAddress ? (walletAddress.length > 6 ? `${walletAddress.slice(0, 6)}...` : walletAddress) : 'missing',
-      exchangeRate,
     });
 
     // Validate inputs
@@ -148,15 +149,13 @@ export async function POST(request: NextRequest) {
     
     const amountInKobo = Math.round(parsedAmount * 100);
     
-    // Validate and parse exchangeRate
-    let parsedExchangeRate: number = 50; // Default fallback
-    if (exchangeRate !== undefined && exchangeRate !== null && exchangeRate !== "") {
-      // Handle both string and number types
-      const rateValue = typeof exchangeRate === "string" ? parseFloat(exchangeRate) : exchangeRate;
-      if (!isNaN(rateValue) && rateValue > 0) {
-        parsedExchangeRate = rateValue;
-      }
-    }
+    // Get exchange rate from admin settings (not from frontend)
+    // This ensures all calculations use the admin-set rate
+    const adminExchangeRate = getExchangeRate();
+    console.log(`[Process Payment] Using admin-set exchange rate: ${adminExchangeRate}`);
+    
+    // Use admin-set exchange rate (ignore frontend rate to ensure consistency)
+    const parsedExchangeRate = adminExchangeRate;
     
     // First, check if this specific transaction ID is already completed
     let transaction = getTransaction(transactionId);

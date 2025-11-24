@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { nanoid } from "nanoid";
-import { createTransaction, getTransaction, updateTransaction } from "@/lib/transactions";
+import { createTransaction, getTransaction, updateTransaction, calculateSendAmount } from "@/lib/transactions";
 import { createOrUpdateUser } from "@/lib/users";
-import { calculateSendAmount } from "@/lib/transactions";
+import { getExchangeRate } from "@/lib/settings";
 
 /**
  * Create or update a transaction ID
@@ -52,13 +52,8 @@ export async function POST(request: NextRequest) {
     // Otherwise, create minimal transaction record (will be updated later)
     if (ngnAmount && walletAddress) {
       const normalizedWallet = walletAddress.trim().toLowerCase();
-      let currentExchangeRate = 50; // Default
-      if (exchangeRate) {
-        const parsed = parseFloat(exchangeRate);
-        if (!isNaN(parsed) && parsed > 0) {
-          currentExchangeRate = parsed;
-        }
-      }
+      // Use admin-set exchange rate (not from frontend)
+      const currentExchangeRate = getExchangeRate();
       const calculatedSendAmount = sendAmount || calculateSendAmount(parseFloat(ngnAmount), currentExchangeRate);
       
       const transaction = createTransaction({
