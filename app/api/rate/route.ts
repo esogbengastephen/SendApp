@@ -9,8 +9,7 @@ export const revalidate = 0;
 export async function GET(request: NextRequest) {
   try {
     // Get the current exchange rate from settings (can be updated by admin)
-    // Import fresh to avoid module caching issues
-    const settings = getSettings();
+    const settings = await getSettings();
     const rate = settings.exchangeRate;
     
     console.log(`[API Rate] Current settings:`, settings);

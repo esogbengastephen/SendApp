@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     if (ngnAmount && walletAddress) {
       const normalizedWallet = walletAddress.trim().toLowerCase();
       // Use admin-set exchange rate (not from frontend)
-      const currentExchangeRate = getExchangeRate();
+      const currentExchangeRate = await getExchangeRate();
       const calculatedSendAmount = sendAmount || calculateSendAmount(parseFloat(ngnAmount), currentExchangeRate);
       
       const transaction = createTransaction({

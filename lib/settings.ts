@@ -1,8 +1,7 @@
-// Persistent storage for platform settings using file system
-// Settings are saved to a JSON file to persist across server restarts
+// Persistent storage for platform settings using Supabase
+// Settings are saved to Supabase database to persist across server restarts and work in serverless environments
 
-import fs from "fs";
-import path from "path";
+import { supabase } from "./supabase";
 
 interface PlatformSettings {
   exchangeRate: number;
@@ -10,39 +9,160 @@ interface PlatformSettings {
   updatedBy?: string;
 }
 
-// Path to settings file
-const SETTINGS_FILE_PATH = path.join(process.cwd(), ".settings.json");
-
 // Initialize with default rate from environment or constant
 const defaultRate = parseFloat(process.env.SEND_NGN_EXCHANGE_RATE || "50");
 
-// Use a global object to ensure it's shared across all module instances
+// Use a global object to cache settings in memory (for performance)
 declare global {
   // eslint-disable-next-line no-var
   var __sendSettings: PlatformSettings | undefined;
   // eslint-disable-next-line no-var
-  var __sendSettingsLoaded: boolean | undefined;
+  var __sendSettingsCacheTime: number | undefined;
+}
+
+// Cache settings for 5 minutes to reduce database calls
+const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Load settings from Supabase, or create default if not found
+ */
+async function loadSettings(): Promise<PlatformSettings> {
+  try {
+    const { data, error } = await supabase
+      .from("platform_settings")
+      .select("setting_value")
+      .eq("setting_key", "exchange_rate")
+      .maybeSingle();
+
+    if (error && error.code !== "PGRST116") {
+      // PGRST116 is "not found" error, which is fine
+      console.error("[Settings] Error loading from Supabase:", error);
+      // Fall back to default
+      return {
+        exchangeRate: defaultRate,
+        updatedAt: new Date(),
+      };
+    }
+
+    if (data && data.setting_value) {
+      const value = data.setting_value as any;
+      return {
+        exchangeRate: value.exchangeRate || defaultRate,
+        updatedAt: value.updatedAt ? new Date(value.updatedAt) : new Date(),
+        updatedBy: value.updatedBy,
+      };
+    }
+
+    // If no settings found, create default in database
+    const defaultSettings: PlatformSettings = {
+      exchangeRate: defaultRate,
+      updatedAt: new Date(),
+      updatedBy: "system",
+    };
+
+    // Try to insert default settings (ignore if already exists)
+    await supabase
+      .from("platform_settings")
+      .upsert({
+        setting_key: "exchange_rate",
+        setting_value: {
+          exchangeRate: defaultSettings.exchangeRate,
+          updatedAt: defaultSettings.updatedAt.toISOString(),
+          updatedBy: defaultSettings.updatedBy,
+        },
+        updated_by: "system",
+      }, {
+        onConflict: "setting_key",
+      });
+
+    return defaultSettings;
+  } catch (error) {
+    console.error("[Settings] Error loading settings:", error);
+    // Fall back to default
+    return {
+      exchangeRate: defaultRate,
+      updatedAt: new Date(),
+    };
+  }
 }
 
 /**
- * Load settings from file, or create default if file doesn't exist
+ * Save settings to Supabase
  */
-function loadSettings(): PlatformSettings {
+async function saveSettings(settings: PlatformSettings): Promise<void> {
   try {
-    if (fs.existsSync(SETTINGS_FILE_PATH)) {
-      const fileContent = fs.readFileSync(SETTINGS_FILE_PATH, "utf-8");
-      const parsed = JSON.parse(fileContent);
-      return {
-        exchangeRate: parsed.exchangeRate || defaultRate,
-        updatedAt: parsed.updatedAt ? new Date(parsed.updatedAt) : new Date(),
-        updatedBy: parsed.updatedBy,
-      };
+    const { error } = await supabase
+      .from("platform_settings")
+      .upsert({
+        setting_key: "exchange_rate",
+        setting_value: {
+          exchangeRate: settings.exchangeRate,
+          updatedAt: settings.updatedAt.toISOString(),
+          updatedBy: settings.updatedBy,
+        },
+        updated_by: settings.updatedBy || "system",
+      }, {
+        onConflict: "setting_key",
+      });
+
+    if (error) {
+      console.error("[Settings] Error saving to Supabase:", error);
+      throw error;
     }
+
+    // Update cache
+    global.__sendSettings = settings;
+    global.__sendSettingsCacheTime = Date.now();
+
+    console.log(`[Settings] Saved settings to Supabase: exchange rate = ${settings.exchangeRate}`);
   } catch (error) {
-    console.error("[Settings] Error loading settings file:", error);
+    console.error("[Settings] Error saving settings:", error);
+    throw error;
   }
-  
-  // Return default settings if file doesn't exist or error occurred
+}
+
+// Initialize default settings in memory
+if (!global.__sendSettings) {
+  global.__sendSettings = {
+    exchangeRate: defaultRate,
+    updatedAt: new Date(),
+  };
+}
+
+// Reference the global settings
+let settings: PlatformSettings = global.__sendSettings!;
+
+/**
+ * Get current platform settings (with caching)
+ */
+export async function getSettings(): Promise<PlatformSettings> {
+  // Check if cache is still valid
+  const now = Date.now();
+  const cacheTime = global.__sendSettingsCacheTime || 0;
+  const isCacheValid = global.__sendSettings && (now - cacheTime) < CACHE_DURATION;
+
+  if (isCacheValid && global.__sendSettings) {
+    return { ...global.__sendSettings };
+  }
+
+  // Load from database
+  const loadedSettings = await loadSettings();
+  global.__sendSettings = loadedSettings;
+  global.__sendSettingsCacheTime = now;
+  settings = loadedSettings;
+
+  return { ...settings };
+}
+
+/**
+ * Get current platform settings (synchronous version - uses cache)
+ * Use this when you need synchronous access and can accept cached data
+ */
+export function getSettingsSync(): PlatformSettings {
+  if (global.__sendSettings) {
+    return { ...global.__sendSettings };
+  }
+  // Return default if cache not available
   return {
     exchangeRate: defaultRate,
     updatedAt: new Date(),
@@ -50,70 +170,29 @@ function loadSettings(): PlatformSettings {
 }
 
 /**
- * Save settings to file
+ * Get current exchange rate (async - loads from database if cache expired)
  */
-function saveSettings(settings: PlatformSettings): void {
-  try {
-    const dataToSave = {
-      exchangeRate: settings.exchangeRate,
-      updatedAt: settings.updatedAt.toISOString(),
-      updatedBy: settings.updatedBy,
-    };
-    fs.writeFileSync(SETTINGS_FILE_PATH, JSON.stringify(dataToSave, null, 2), "utf-8");
-    console.log(`[Settings] Saved settings to file: ${SETTINGS_FILE_PATH}`);
-  } catch (error) {
-    console.error("[Settings] Error saving settings file:", error);
-  }
-}
-
-// Initialize settings - load from file or use default
-if (!global.__sendSettingsLoaded) {
-  const loadedSettings = loadSettings();
-  global.__sendSettings = loadedSettings;
-  global.__sendSettingsLoaded = true;
-  console.log(`[Settings] Initialized with exchange rate: ${loadedSettings.exchangeRate} (from ${fs.existsSync(SETTINGS_FILE_PATH) ? 'file' : 'default'})`);
-}
-
-// Reference the global settings
-let settings: PlatformSettings = global.__sendSettings!;
-
-/**
- * Get current platform settings
- */
-export function getSettings(): PlatformSettings {
-  // Always read from global to ensure we get the latest value
-  if (global.__sendSettings) {
-    settings = global.__sendSettings;
-  } else {
-    // Reload from file if global is not set
-    settings = loadSettings();
-    global.__sendSettings = settings;
-  }
-  return { ...settings };
+export async function getExchangeRate(): Promise<number> {
+  const loadedSettings = await getSettings();
+  return loadedSettings.exchangeRate;
 }
 
 /**
- * Get current exchange rate
+ * Get current exchange rate (synchronous - uses cache)
+ * Use this when you need synchronous access and can accept cached data
  */
-export function getExchangeRate(): number {
-  // Always read from global to ensure we get the latest value
-  if (global.__sendSettings) {
-    settings = global.__sendSettings;
-  } else {
-    // Reload from file if global is not set
-    settings = loadSettings();
-    global.__sendSettings = settings;
-  }
-  return settings.exchangeRate;
+export function getExchangeRateSync(): number {
+  const cachedSettings = getSettingsSync();
+  return cachedSettings.exchangeRate;
 }
 
 /**
  * Update exchange rate
  */
-export function updateExchangeRate(
+export async function updateExchangeRate(
   rate: number,
   updatedBy?: string
-): PlatformSettings {
+): Promise<PlatformSettings> {
   if (rate <= 0) {
     throw new Error("Exchange rate must be greater than 0");
   }
@@ -130,11 +209,11 @@ export function updateExchangeRate(
   // Also update global to ensure persistence
   global.__sendSettings = settings;
   
-  // Save to file for persistence across server restarts
-  saveSettings(settings);
+  // Save to Supabase for persistence across server restarts
+  await saveSettings(settings);
 
   console.log(`[Settings] Exchange rate updated: ${oldRate} -> ${rate} by ${updatedBy || 'system'}`);
-  console.log(`[Settings] Settings saved to file`);
+  console.log(`[Settings] Settings saved to Supabase`);
   
   return { ...settings };
 }
@@ -142,7 +221,7 @@ export function updateExchangeRate(
 /**
  * Reset to default exchange rate
  */
-export function resetExchangeRate(): PlatformSettings {
+export async function resetExchangeRate(): Promise<PlatformSettings> {
   const defaultRate = parseFloat(process.env.SEND_NGN_EXCHANGE_RATE || "50");
-  return updateExchangeRate(defaultRate);
+  return await updateExchangeRate(defaultRate);
 }

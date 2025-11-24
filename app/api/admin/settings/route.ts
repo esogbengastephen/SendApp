@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const settings = getSettings();
+    const settings = await getSettings();
 
     return NextResponse.json({
       success: true,
@@ -83,7 +83,7 @@ export async function PUT(request: NextRequest) {
     const rateValue = parseFloat(exchangeRate);
     console.log(`[Admin Settings] Updating exchange rate to: ${rateValue}`);
     
-    const updatedSettings = updateExchangeRate(
+    const updatedSettings = await updateExchangeRate(
       rateValue,
       walletAddress.toLowerCase()
     );

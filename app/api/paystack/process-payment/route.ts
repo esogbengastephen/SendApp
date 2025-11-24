@@ -151,7 +151,7 @@ export async function POST(request: NextRequest) {
     
     // Get exchange rate from admin settings (not from frontend)
     // This ensures all calculations use the admin-set rate
-    const adminExchangeRate = getExchangeRate();
+    const adminExchangeRate = await getExchangeRate();
     console.log(`[Process Payment] Using admin-set exchange rate: ${adminExchangeRate}`);
     
     // Use admin-set exchange rate (ignore frontend rate to ensure consistency)

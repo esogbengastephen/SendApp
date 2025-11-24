@@ -6,8 +6,8 @@ import { getExchangeRate, getSettings } from "@/lib/settings";
  * This helps debug if the rate is being updated correctly
  */
 export async function GET() {
-  const rate = getExchangeRate();
-  const settings = getSettings();
+  const rate = await getExchangeRate();
+  const settings = await getSettings();
 
   return NextResponse.json({
     currentRate: rate,
