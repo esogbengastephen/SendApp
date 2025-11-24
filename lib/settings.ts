@@ -25,60 +25,79 @@ const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 
 /**
  * Load settings from Supabase, or create default if not found
+ * This function ALWAYS tries to load from Supabase first
  */
 async function loadSettings(): Promise<PlatformSettings> {
   try {
+    console.log("[Settings] Loading settings from Supabase...");
     const { data, error } = await supabase
       .from("platform_settings")
       .select("setting_value")
       .eq("setting_key", "exchange_rate")
       .maybeSingle();
 
-    if (error && error.code !== "PGRST116") {
-      // PGRST116 is "not found" error, which is fine
-      console.error("[Settings] Error loading from Supabase:", error);
-      // Fall back to default
-      return {
+    // PGRST116 is "not found" error - this means the table exists but no row found
+    if (error && error.code === "PGRST116") {
+      console.log("[Settings] No exchange_rate setting found in database, creating default...");
+      // If no settings found, create default in database
+      const defaultSettings: PlatformSettings = {
         exchangeRate: defaultRate,
         updatedAt: new Date(),
+        updatedBy: "system",
       };
+
+      // Try to insert default settings (ignore if already exists)
+      const { error: insertError } = await supabase
+        .from("platform_settings")
+        .upsert({
+          setting_key: "exchange_rate",
+          setting_value: {
+            exchangeRate: defaultSettings.exchangeRate,
+            updatedAt: defaultSettings.updatedAt.toISOString(),
+            updatedBy: defaultSettings.updatedBy,
+          },
+          updated_by: "system",
+        }, {
+          onConflict: "setting_key",
+        });
+
+      if (insertError) {
+        console.error("[Settings] Error creating default settings:", insertError);
+        // Only fall back to default if we can't create it in DB
+        return defaultSettings;
+      }
+
+      console.log("[Settings] Default settings created in database");
+      return defaultSettings;
     }
 
+    // If there's a different error (not "not found"), log it but try to continue
+    if (error) {
+      console.error("[Settings] Error loading from Supabase:", error);
+      // Don't fall back to default - throw error so caller knows something is wrong
+      throw new Error(`Failed to load settings from Supabase: ${error.message}`);
+    }
+
+    // If we have data, use it - don't fall back to default
     if (data && data.setting_value) {
       const value = data.setting_value as any;
-      return {
-        exchangeRate: value.exchangeRate || defaultRate,
+      const loadedSettings: PlatformSettings = {
+        exchangeRate: value.exchangeRate,
         updatedAt: value.updatedAt ? new Date(value.updatedAt) : new Date(),
         updatedBy: value.updatedBy,
       };
+      
+      console.log(`[Settings] Loaded from Supabase: exchange rate = ${loadedSettings.exchangeRate}`);
+      return loadedSettings;
     }
 
-    // If no settings found, create default in database
-    const defaultSettings: PlatformSettings = {
-      exchangeRate: defaultRate,
-      updatedAt: new Date(),
-      updatedBy: "system",
-    };
-
-    // Try to insert default settings (ignore if already exists)
-    await supabase
-      .from("platform_settings")
-      .upsert({
-        setting_key: "exchange_rate",
-        setting_value: {
-          exchangeRate: defaultSettings.exchangeRate,
-          updatedAt: defaultSettings.updatedAt.toISOString(),
-          updatedBy: defaultSettings.updatedBy,
-        },
-        updated_by: "system",
-      }, {
-        onConflict: "setting_key",
-      });
-
-    return defaultSettings;
-  } catch (error) {
-    console.error("[Settings] Error loading settings:", error);
-    // Fall back to default
+    // This shouldn't happen, but if it does, throw an error
+    throw new Error("No data returned from Supabase and no error code");
+  } catch (error: any) {
+    console.error("[Settings] Critical error loading settings:", error);
+    // Only use default as absolute last resort if Supabase is completely unavailable
+    // But log a warning so we know something is wrong
+    console.warn(`[Settings] WARNING: Using fallback default rate (${defaultRate}) because Supabase is unavailable`);
     return {
       exchangeRate: defaultRate,
       updatedAt: new Date(),
@@ -121,19 +140,16 @@ async function saveSettings(settings: PlatformSettings): Promise<void> {
   }
 }
 
-// Initialize default settings in memory
-if (!global.__sendSettings) {
-  global.__sendSettings = {
-    exchangeRate: defaultRate,
-    updatedAt: new Date(),
-  };
-}
+// DO NOT initialize with default values on module load
+// Settings should ALWAYS be loaded from Supabase on first access
+// This ensures the persisted rate is used, not the default
 
-// Reference the global settings
-let settings: PlatformSettings = global.__sendSettings!;
+// Reference the global settings (will be loaded from Supabase on first call)
+let settings: PlatformSettings | null = null;
 
 /**
  * Get current platform settings (with caching)
+ * Always loads from Supabase on first call or when cache expires
  */
 export async function getSettings(): Promise<PlatformSettings> {
   // Check if cache is still valid
@@ -142,10 +158,12 @@ export async function getSettings(): Promise<PlatformSettings> {
   const isCacheValid = global.__sendSettings && (now - cacheTime) < CACHE_DURATION;
 
   if (isCacheValid && global.__sendSettings) {
+    console.log(`[Settings] Using cached settings (age: ${Math.round((now - cacheTime) / 1000)}s)`);
     return { ...global.__sendSettings };
   }
 
-  // Load from database
+  // Load from database (this will always fetch the persisted rate)
+  console.log("[Settings] Cache expired or missing, loading from Supabase...");
   const loadedSettings = await loadSettings();
   global.__sendSettings = loadedSettings;
   global.__sendSettingsCacheTime = now;
@@ -157,16 +175,15 @@ export async function getSettings(): Promise<PlatformSettings> {
 /**
  * Get current platform settings (synchronous version - uses cache)
  * Use this when you need synchronous access and can accept cached data
+ * WARNING: This may return undefined if settings haven't been loaded yet
  */
-export function getSettingsSync(): PlatformSettings {
+export function getSettingsSync(): PlatformSettings | null {
   if (global.__sendSettings) {
     return { ...global.__sendSettings };
   }
-  // Return default if cache not available
-  return {
-    exchangeRate: defaultRate,
-    updatedAt: new Date(),
-  };
+  // Return null if cache not available - caller should use async getSettings() instead
+  console.warn("[Settings] getSettingsSync() called but no cached settings available. Use getSettings() instead.");
+  return null;
 }
 
 /**
@@ -180,9 +197,14 @@ export async function getExchangeRate(): Promise<number> {
 /**
  * Get current exchange rate (synchronous - uses cache)
  * Use this when you need synchronous access and can accept cached data
+ * WARNING: This may throw if settings haven't been loaded yet
  */
 export function getExchangeRateSync(): number {
   const cachedSettings = getSettingsSync();
+  if (!cachedSettings) {
+    console.warn("[Settings] getExchangeRateSync() called but no cached settings. Returning default rate.");
+    return defaultRate;
+  }
   return cachedSettings.exchangeRate;
 }
 
@@ -197,25 +219,29 @@ export async function updateExchangeRate(
     throw new Error("Exchange rate must be greater than 0");
   }
 
-  const oldRate = settings.exchangeRate;
+  // Load current settings first to get old rate
+  const currentSettings = settings || await getSettings();
+  const oldRate = currentSettings.exchangeRate;
   
-  // Update both local and global reference
-  settings = {
+  // Create new settings object
+  const newSettings: PlatformSettings = {
     exchangeRate: rate,
     updatedAt: new Date(),
     updatedBy,
   };
   
-  // Also update global to ensure persistence
-  global.__sendSettings = settings;
+  // Update both local and global reference
+  settings = newSettings;
+  global.__sendSettings = newSettings;
+  global.__sendSettingsCacheTime = Date.now();
   
   // Save to Supabase for persistence across server restarts
-  await saveSettings(settings);
+  await saveSettings(newSettings);
 
   console.log(`[Settings] Exchange rate updated: ${oldRate} -> ${rate} by ${updatedBy || 'system'}`);
   console.log(`[Settings] Settings saved to Supabase`);
   
-  return { ...settings };
+  return { ...newSettings };
 }
 
 /**

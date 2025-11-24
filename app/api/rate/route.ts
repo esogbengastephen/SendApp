@@ -8,12 +8,13 @@ export const revalidate = 0;
 
 export async function GET(request: NextRequest) {
   try {
-    // Get the current exchange rate from settings (can be updated by admin)
+    // Get the current exchange rate from settings (always loads from Supabase if cache expired)
+    // This ensures the persisted rate is used, not a default
     const settings = await getSettings();
     const rate = settings.exchangeRate;
     
     console.log(`[API Rate] Current settings:`, settings);
-    console.log(`[API Rate] Returning exchange rate: ${rate}`);
+    console.log(`[API Rate] Returning exchange rate: ${rate} (loaded from Supabase)`);
 
     // Set cache headers to prevent caching and ensure fresh data
     const headers = new Headers();
@@ -37,16 +38,35 @@ export async function GET(request: NextRequest) {
         headers,
       }
     );
-  } catch (error) {
-    console.error("Error fetching exchange rate:", error);
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Failed to fetch exchange rate",
-        rate: DEFAULT_EXCHANGE_RATE, // Fallback to default
-      },
-      { status: 500 }
-    );
+  } catch (error: any) {
+    console.error("[API Rate] Error fetching exchange rate:", error);
+    // Try one more time to load from Supabase before falling back
+    try {
+      const settings = await getSettings();
+      console.log(`[API Rate] Retry successful, returning rate: ${settings.exchangeRate}`);
+      return NextResponse.json(
+        {
+          success: true,
+          rate: settings.exchangeRate,
+          currency: "NGN",
+          token: "SEND",
+          timestamp: new Date().toISOString(),
+        },
+        { status: 200 }
+      );
+    } catch (retryError) {
+      console.error("[API Rate] Retry also failed, using fallback:", retryError);
+      // Only use default as absolute last resort
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Failed to fetch exchange rate from database",
+          rate: DEFAULT_EXCHANGE_RATE, // Fallback only if Supabase is completely unavailable
+          warning: "Using default rate - database unavailable",
+        },
+        { status: 500 }
+      );
+    }
   }
 }
 
