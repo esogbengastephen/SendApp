@@ -77,24 +77,72 @@ export async function POST(request: NextRequest) {
         }
         
         // Find user by their virtual account number
-        const { data: userWallet, error: walletError } = await supabase
+        // Check user_wallets first (for wallet-generated accounts)
+        let { data: userWallet, error: walletError } = await supabase
           .from("user_wallets")
           .select("*, users!inner(*)")
           .eq("virtual_account_number", accountNumber)
           .single();
-        
-        if (walletError || !userWallet) {
-          console.error(`❌ [Webhook] Virtual account ${accountNumber} not found in database`);
-          console.error(`Error:`, walletError);
+
+        let walletAddress: string | null = null;
+        let userId: string | null = null;
+        let userEmail: string | null = null;
+
+        if (userWallet) {
+          // Found in user_wallets
+          walletAddress = userWallet.wallet_address;
+          userId = userWallet.user_id;
+          userEmail = userWallet.users.email;
+          console.log(`✅ [Webhook] Found in user_wallets: User ${userEmail}, Wallet ${walletAddress}`);
+        } else {
+          // Not in user_wallets, check users table (for signup-generated accounts)
+          console.log(`🔍 [Webhook] Not in user_wallets, checking users table...`);
+          
+          const { data: user, error: userError } = await supabase
+            .from("users")
+            .select("*")
+            .eq("default_virtual_account_number", accountNumber)
+            .single();
+          
+          if (user) {
+            userId = user.id;
+            userEmail = user.email;
+            console.log(`✅ [Webhook] Found in users table: ${userEmail}`);
+            
+            // Check if this user has linked any wallet in user_wallets
+            const { data: linkedWallets } = await supabase
+              .from("user_wallets")
+              .select("wallet_address")
+              .eq("user_id", userId)
+              .order("created_at", { ascending: false })
+              .limit(1);
+            
+            if (linkedWallets && linkedWallets.length > 0) {
+              walletAddress = linkedWallets[0].wallet_address;
+              console.log(`✅ [Webhook] Found linked wallet: ${walletAddress}`);
+            } else {
+              console.error(`❌ [Webhook] User ${userEmail} has no linked wallet yet`);
+              return NextResponse.json(
+                { success: false, error: "User has no wallet address. Please complete a transaction first." },
+                { status: 400 }
+              );
+            }
+          } else {
+            console.error(`❌ [Webhook] Virtual account ${accountNumber} not found in any table`);
+            return NextResponse.json(
+              { success: false, error: "Virtual account not found" },
+              { status: 404 }
+            );
+          }
+        }
+
+        if (!walletAddress || !userId || !userEmail) {
+          console.error(`❌ [Webhook] Missing required data for virtual account ${accountNumber}`);
           return NextResponse.json(
-            { success: false, error: "Virtual account not found" },
-            { status: 404 }
+            { success: false, error: "Incomplete user data" },
+            { status: 400 }
           );
         }
-        
-        const walletAddress = userWallet.wallet_address;
-        const userId = userWallet.user_id;
-        const userEmail = userWallet.users.email;
         
         console.log(`✅ [Webhook] Payment identified: User ${userEmail}, Wallet ${walletAddress}`);
         

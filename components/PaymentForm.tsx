@@ -1052,6 +1052,25 @@ export default function PaymentForm() {
                     }
 
                     try {
+                      // Link wallet to user by creating transaction record
+                      console.log("[Generate Payment] Linking wallet to user...");
+                      const linkResponse = await fetch("/api/transactions/create-id", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          transactionId: transactionId,
+                          walletAddress: walletAddress,
+                          ngnAmount: parseFloat(ngnAmount),
+                          sendAmount: parseFloat(sendAmount),
+                        }),
+                      });
+                      
+                      if (!linkResponse.ok) {
+                        console.error("[Generate Payment] Failed to link wallet to user");
+                      } else {
+                        console.log("[Generate Payment] ✅ Wallet linked to user");
+                      }
+                      
                       // Create virtual account
                       const createResponse = await fetch("/api/paystack/create-virtual-account", {
                         method: "POST",
@@ -1115,7 +1134,7 @@ export default function PaymentForm() {
                       }
                       setIsPollingPayment(false);
                       setToast({
-                        message: "Payment check stopped",
+                        message: "Payment check stopped. Click 'I have sent' to check again.",
                         type: "info",
                         isVisible: true,
                       });
@@ -1133,10 +1152,27 @@ export default function PaymentForm() {
                     // Check immediately first
                     await checkForPayment();
                     
-                    // Then poll every 5 seconds
+                    // Set up polling interval (every 5 seconds)
                     pollingIntervalRef.current = setInterval(async () => {
                       await checkForPayment();
-                    }, 5000); // Check every 5 seconds
+                    }, 5000);
+                    
+                    // Set 1-minute timeout to stop polling and allow retry
+                    setTimeout(() => {
+                      if (pollingIntervalRef.current) {
+                        clearInterval(pollingIntervalRef.current);
+                        pollingIntervalRef.current = null;
+                      }
+                      setIsPollingPayment(false);
+                      
+                      if (!isTransactionCompleted) {
+                        setToast({
+                          message: "⏱️ Payment not found yet. Please check your bank app and click 'I have sent' again if you've already sent the payment.",
+                          type: "info",
+                          isVisible: true,
+                        });
+                      }
+                    }, 60000); // 60 seconds = 1 minute
                   }}
                   disabled={isTransactionCompleted}
                   className={`w-full font-bold py-3 px-4 rounded-md transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-slate-900 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed ${
