@@ -29,22 +29,37 @@ export async function GET(request: Request) {
 
         const paystackTransactions = response.data.data || [];
         
+        // Get existing transactions to preserve wallet addresses and SEND amounts
+        const existingTransactions = getAllTransactions();
+        
         // Convert Paystack transactions to our transaction format
-        // Note: These won't have all our fields, but will show in the dashboard
-        transactions = paystackTransactions.map((ptx: any) => ({
-          transactionId: ptx.reference || `paystack_${ptx.id}`,
-          idempotencyKey: ptx.reference || `paystack_${ptx.id}`,
-          paystackReference: ptx.reference,
-          ngnAmount: ptx.amount / 100, // Convert from kobo
-          sendAmount: "0.00", // We don't know this from Paystack alone
-          walletAddress: "", // We don't know this from Paystack alone
-          status: ptx.status === "success" ? "completed" as const : 
-                  ptx.status === "pending" ? "pending" as const : "failed" as const,
-          createdAt: new Date(ptx.created_at),
-          completedAt: ptx.status === "success" ? new Date(ptx.paid_at || ptx.created_at) : undefined,
-          verificationAttempts: 0,
-          verificationHistory: [],
-        }));
+        // Try to match with existing transactions to preserve wallet addresses and SEND amounts
+        transactions = paystackTransactions.map((ptx: any) => {
+          // Try to find existing transaction by Paystack reference
+          const existingTx = existingTransactions.find(
+            tx => tx.paystackReference === ptx.reference || tx.transactionId === ptx.reference
+          );
+          
+          return {
+            transactionId: ptx.reference || `paystack_${ptx.id}`,
+            idempotencyKey: ptx.reference || `paystack_${ptx.id}`,
+            paystackReference: ptx.reference,
+            ngnAmount: ptx.amount / 100, // Convert from kobo
+            // Preserve wallet address and SEND amount from existing transaction if available
+            walletAddress: existingTx?.walletAddress || "",
+            sendAmount: existingTx?.sendAmount || "0.00",
+            status: ptx.status === "success" ? "completed" as const : 
+                    ptx.status === "pending" ? "pending" as const : "failed" as const,
+            createdAt: new Date(ptx.created_at),
+            completedAt: ptx.status === "success" ? new Date(ptx.paid_at || ptx.created_at) : undefined,
+            // Preserve additional fields from existing transaction
+            txHash: existingTx?.txHash,
+            exchangeRate: existingTx?.exchangeRate,
+            sendtag: existingTx?.sendtag,
+            verificationAttempts: existingTx?.verificationAttempts || 0,
+            verificationHistory: existingTx?.verificationHistory || [],
+          };
+        });
       } catch (error) {
         console.error("Error fetching Paystack transactions:", error);
         // Continue with empty transactions array

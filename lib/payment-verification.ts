@@ -46,7 +46,7 @@ export async function verifyPaymentForTransaction(
   // ============================================
   // POINT 1: Transaction ID Verification
   // ============================================
-  transaction = getTransaction(transactionId);
+  transaction = await getTransaction(transactionId);
   
   if (!transaction) {
     errors.push("Point 1 Failed: Transaction ID does not exist in database");

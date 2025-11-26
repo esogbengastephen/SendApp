@@ -16,11 +16,23 @@ export default function SettingsPage() {
   const [coingeckoPrice, setCoingeckoPrice] = useState<{ usd: number; ngn: number | null } | null>(null);
   const [loadingCoingecko, setLoadingCoingecko] = useState(false);
   const [coingeckoError, setCoingeckoError] = useState<string | null>(null);
+  
+  // Referral program state
+  const [referralUsers, setReferralUsers] = useState<any[]>([]);
+  const [referralStats, setReferralStats] = useState<any>(null);
+  const [loadingReferrals, setLoadingReferrals] = useState(false);
+  const [minReferrals, setMinReferrals] = useState("");
+  const [maxReferrals, setMaxReferrals] = useState("");
+  const [emailSubject, setEmailSubject] = useState("");
+  const [emailMessage, setEmailMessage] = useState("");
+  const [sendingBulkEmail, setSendingBulkEmail] = useState(false);
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
 
   // Fetch current settings on mount
   useEffect(() => {
     fetchSettings();
     fetchCoingeckoPrice();
+    fetchReferrals();
   }, [address]);
 
   const fetchCoingeckoPrice = async () => {
@@ -179,6 +191,132 @@ export default function SettingsPage() {
       setError(err.message || "Failed to save settings");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const fetchReferrals = async () => {
+    if (!address) return;
+    
+    setLoadingReferrals(true);
+    setSelectedUsers([]); // Clear selection when fetching new data
+    try {
+      const params = new URLSearchParams();
+      if (minReferrals) params.append("minReferrals", minReferrals);
+      if (maxReferrals) params.append("maxReferrals", maxReferrals);
+      
+      const response = await fetch(`/api/admin/referrals?${params.toString()}`);
+      const data = await response.json();
+
+      if (data.success) {
+        setReferralUsers(data.users || []);
+        setReferralStats(data.stats || null);
+      } else {
+        setError(data.error || "Failed to fetch referral data");
+      }
+    } catch (err: any) {
+      console.error("Failed to fetch referrals:", err);
+      setError("Failed to load referral data");
+    } finally {
+      setLoadingReferrals(false);
+    }
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedUsers(referralUsers.map(user => user.email));
+    } else {
+      setSelectedUsers([]);
+    }
+  };
+
+  const handleSelectUser = (email: string, checked: boolean) => {
+    if (checked) {
+      setSelectedUsers([...selectedUsers, email]);
+    } else {
+      setSelectedUsers(selectedUsers.filter(e => e !== email));
+    }
+  };
+
+  const isAllSelected = referralUsers.length > 0 && selectedUsers.length === referralUsers.length;
+  const isIndeterminate = selectedUsers.length > 0 && selectedUsers.length < referralUsers.length;
+
+  const handleSendEmailToUser = async (userEmail: string) => {
+    if (!emailSubject || !emailMessage) {
+      setError("Please fill in email subject and message");
+      return;
+    }
+
+    setSendingBulkEmail(true);
+    try {
+      const response = await fetch("/api/admin/referrals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          emailList: [userEmail],
+          subject: emailSubject,
+          message: emailMessage,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setSuccess(true);
+        setError(null);
+        setTimeout(() => setSuccess(false), 3000);
+      } else {
+        setError(data.error || "Failed to send email");
+      }
+    } catch (err: any) {
+      console.error("Failed to send email:", err);
+      setError(err.message || "Failed to send email");
+    } finally {
+      setSendingBulkEmail(false);
+    }
+  };
+
+  const handleBulkEmail = async () => {
+    if (!emailSubject || !emailMessage) {
+      setError("Please fill in email subject and message");
+      return;
+    }
+
+    if (selectedUsers.length === 0) {
+      setError("Please select at least one user to send email to");
+      return;
+    }
+
+    setSendingBulkEmail(true);
+    try {
+      const response = await fetch("/api/admin/referrals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          emailList: selectedUsers,
+          subject: emailSubject,
+          message: emailMessage,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setSuccess(true);
+        setError(null);
+        setEmailSubject("");
+        setEmailMessage("");
+        setSelectedUsers([]);
+        setTimeout(() => setSuccess(false), 5000);
+        // Refresh referral list
+        fetchReferrals();
+      } else {
+        setError(data.error || "Failed to send bulk email");
+      }
+    } catch (err: any) {
+      console.error("Failed to send bulk email:", err);
+      setError(err.message || "Failed to send bulk email");
+    } finally {
+      setSendingBulkEmail(false);
     }
   };
 
@@ -384,6 +522,214 @@ export default function SettingsPage() {
               Bank
             </label>
             <p className="text-slate-900 dark:text-slate-100">{DEPOSIT_ACCOUNT.bank}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Referral Program Management */}
+      <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
+        <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 mb-3 sm:mb-4">
+          Referral Program
+        </h2>
+        
+        {/* Filters */}
+        <div className="space-y-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                Minimum Referrals
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={minReferrals}
+                onChange={(e) => setMinReferrals(e.target.value)}
+                placeholder="0"
+                className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                Maximum Referrals
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={maxReferrals}
+                onChange={(e) => setMaxReferrals(e.target.value)}
+                placeholder="No limit"
+                className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary"
+              />
+            </div>
+          </div>
+          <button
+            onClick={fetchReferrals}
+            disabled={loadingReferrals}
+            className="bg-primary text-slate-900 font-bold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {loadingReferrals ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-slate-900"></div>
+                Loading...
+              </>
+            ) : (
+              "Filter Users"
+            )}
+          </button>
+        </div>
+
+        {/* Referral Stats */}
+        {referralStats && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+            <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-lg">
+              <p className="text-sm text-slate-600 dark:text-slate-400">Total Users</p>
+              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+                {referralStats.totalUsers}
+              </p>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-lg">
+              <p className="text-sm text-slate-600 dark:text-slate-400">Total Referrals</p>
+              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
+                {referralStats.totalReferrals}
+              </p>
+            </div>
+            <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-lg">
+              <p className="text-sm text-slate-600 dark:text-slate-400">Top Referrer</p>
+              <p className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                {referralStats.topReferrer?.referral_count || 0} referrals
+              </p>
+              {referralStats.topReferrer?.email && (
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  {referralStats.topReferrer.email}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Users Table */}
+        {referralUsers.length > 0 && (
+          <div className="overflow-x-auto mb-6">
+            <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
+              <thead className="bg-slate-50 dark:bg-slate-800">
+                <tr>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase w-12">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      ref={(input) => {
+                        if (input) input.indeterminate = isIndeterminate;
+                      }}
+                      onChange={(e) => handleSelectAll(e.target.checked)}
+                      className="w-4 h-4 text-primary bg-slate-100 border-slate-300 rounded focus:ring-primary focus:ring-2 dark:bg-slate-700 dark:border-slate-600 cursor-pointer"
+                    />
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
+                    Email
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
+                    Referral Code
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
+                    Referrals
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                {referralUsers.map((user) => (
+                  <tr key={user.id} className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors">
+                    <td className="px-4 py-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedUsers.includes(user.email)}
+                        onChange={(e) => handleSelectUser(user.email, e.target.checked)}
+                        className="w-4 h-4 text-primary bg-slate-100 border-slate-300 rounded focus:ring-primary focus:ring-2 dark:bg-slate-700 dark:border-slate-600 cursor-pointer"
+                      />
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-900 dark:text-slate-100">
+                      {user.email}
+                    </td>
+                    <td className="px-4 py-3 text-sm font-mono text-primary">
+                      {user.referral_code}
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-900 dark:text-slate-100">
+                      {user.referral_count || 0}
+                    </td>
+                    <td className="px-4 py-3">
+                      <button
+                        onClick={() => handleSendEmailToUser(user.email)}
+                        disabled={!emailSubject || !emailMessage || sendingBulkEmail}
+                        className="text-xs bg-primary text-slate-900 px-3 py-1 rounded hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Send Email
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {referralUsers.length === 0 && !loadingReferrals && (
+          <div className="text-center py-8 text-slate-500 dark:text-slate-400">
+            No users found. Try adjusting your filters.
+          </div>
+        )}
+
+        {/* Bulk Email Section */}
+        <div className="mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-4">
+            Send Bulk Email
+          </h3>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                Email Subject
+              </label>
+              <input
+                type="text"
+                placeholder="Enter email subject"
+                value={emailSubject}
+                onChange={(e) => setEmailSubject(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                Email Message
+              </label>
+              <textarea
+                placeholder="Enter email message"
+                value={emailMessage}
+                onChange={(e) => setEmailMessage(e.target.value)}
+                rows={4}
+                className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary"
+              />
+            </div>
+            <button
+              onClick={handleBulkEmail}
+              disabled={!emailSubject || !emailMessage || sendingBulkEmail || selectedUsers.length === 0}
+              className="bg-primary text-slate-900 font-bold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {sendingBulkEmail ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-slate-900"></div>
+                  Sending...
+                </>
+              ) : (
+                `Send to Selected Users (${selectedUsers.length})`
+              )}
+            </button>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {selectedUsers.length > 0 
+                ? `Emails will be sent to ${selectedUsers.length} selected user${selectedUsers.length === 1 ? '' : 's'}`
+                : `Select users from the table above to send emails. ${referralUsers.length} user${referralUsers.length === 1 ? '' : 's'} available.`
+              }
+            </p>
           </div>
         </div>
       </div>

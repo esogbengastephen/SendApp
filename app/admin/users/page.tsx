@@ -4,14 +4,20 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 
 interface User {
-  walletAddress: string;
-  firstTransactionAt: string;
-  lastTransactionAt: string;
+  id: string;
+  email: string | null;
+  walletAddress: string | null;
+  referralCode: string | null;
+  referralCount: number;
+  referredBy: string | null;
+  sendtag?: string | null;
   totalTransactions: number;
   totalSpentNGN: number;
   totalReceivedSEND: string;
-  transactionIds: string[];
-  sendtag?: string;
+  firstTransactionAt: string;
+  lastTransactionAt: string;
+  createdAt: string;
+  userType: "email" | "wallet";
 }
 
 export default function UsersPage() {
@@ -63,7 +69,7 @@ export default function UsersPage() {
           Users
         </h1>
         <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 mt-1 sm:mt-2">
-          All users who have made transactions
+          All registered users (email and wallet-based)
         </p>
       </div>
 
@@ -103,7 +109,16 @@ export default function UsersPage() {
             <thead className="bg-slate-50 dark:bg-slate-800">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
+                  Email
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
                   Wallet Address
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
+                  Referral Code
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
+                  Referrals
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
                   SendTag
@@ -128,25 +143,46 @@ export default function UsersPage() {
             <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-8 text-center text-slate-500">
+                  <td colSpan={10} className="px-6 py-8 text-center text-slate-500">
                     Loading users...
                   </td>
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-6 py-8 text-center text-slate-500">
+                  <td colSpan={10} className="px-6 py-8 text-center text-slate-500">
                     No users found
                   </td>
                 </tr>
               ) : (
                 users.map((user) => (
                   <tr
-                    key={user.walletAddress}
+                    key={user.id}
                     className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                   >
                     <td className="px-6 py-4">
+                      <div className="text-sm text-slate-900 dark:text-slate-100">
+                        {user.email || <span className="text-slate-400">—</span>}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
                       <div className="text-sm font-mono text-slate-900 dark:text-slate-100">
-                        {user.walletAddress}
+                        {user.walletAddress ? (
+                          <span className="text-xs">{user.walletAddress.slice(0, 6)}...{user.walletAddress.slice(-4)}</span>
+                        ) : (
+                          <span className="text-slate-400">—</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      {user.referralCode ? (
+                        <span className="text-sm font-mono text-primary">{user.referralCode}</span>
+                      ) : (
+                        <span className="text-sm text-slate-400">—</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                        {user.referralCount || 0}
                       </div>
                     </td>
                     <td className="px-6 py-4">
@@ -174,10 +210,16 @@ export default function UsersPage() {
                       </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">
-                      {new Date(user.firstTransactionAt).toLocaleString()}
+                      {user.firstTransactionAt 
+                        ? new Date(user.firstTransactionAt).toLocaleString()
+                        : "—"
+                      }
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">
-                      {new Date(user.lastTransactionAt).toLocaleString()}
+                      {user.lastTransactionAt 
+                        ? new Date(user.lastTransactionAt).toLocaleString()
+                        : "—"
+                      }
                     </td>
                   </tr>
                 ))

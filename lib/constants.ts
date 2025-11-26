@@ -18,8 +18,8 @@ export const DEFAULT_EXCHANGE_RATE = parseFloat(
 
 // Deposit Account Information
 export const DEPOSIT_ACCOUNT = {
-  name: "FlashPhotogra/Badmus O. U",
-  accountNumber: "9327908332",
-  bank: "Wema",
+  name: "FLASHPHOTOGRA/ SEND APP",
+  accountNumber: "9327975691",
+  bank: "Wema Bank",
 };
 

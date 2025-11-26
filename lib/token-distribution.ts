@@ -12,7 +12,7 @@ export async function distributeTokens(
 ): Promise<{ success: boolean; txHash?: string; error?: string }> {
   try {
     // Check if tokens have already been distributed for this transaction
-    const transaction = getTransaction(transactionId);
+    const transaction = await getTransaction(transactionId);
     if (transaction?.txHash) {
       console.log(`Tokens already distributed for transaction ${transactionId}, txHash: ${transaction.txHash}`);
       return {
@@ -50,11 +50,23 @@ export async function distributeTokens(
     const result = await transferTokens(walletAddress, sendAmount);
 
     if (result.success) {
-      // Update transaction with blockchain tx hash
-      updateTransaction(transactionId, {
+      // Get current transaction to preserve existing data
+      const transaction = await getTransaction(transactionId);
+      
+      // Update transaction with blockchain tx hash, wallet address, and SEND amount
+      // This ensures the transaction record has all the information about token distribution
+      await updateTransaction(transactionId, {
         txHash: result.hash,
         status: "completed",
+        walletAddress: walletAddress, // Ensure wallet address is stored
+        sendAmount: sendAmount, // Ensure SEND amount is stored (the actual amount distributed)
+        completedAt: new Date(), // Mark completion time
       });
+
+      console.log(`[Token Distribution] Transaction ${transactionId} updated:`);
+      console.log(`  - Wallet: ${walletAddress}`);
+      console.log(`  - Amount: ${sendAmount} SEND`);
+      console.log(`  - TX Hash: ${result.hash}`);
 
       return {
         success: true,
@@ -70,7 +82,7 @@ export async function distributeTokens(
     console.error("Token distribution error:", error);
     
     // Update transaction status to failed
-    updateTransaction(transactionId, {
+    await updateTransaction(transactionId, {
       status: "failed",
     });
 

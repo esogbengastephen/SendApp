@@ -3,14 +3,20 @@
 import { useState, useEffect, useRef } from "react";
 import { nanoid } from "nanoid";
 import { isValidWalletOrTag, isValidAmount } from "@/utils/validation";
-import { DEPOSIT_ACCOUNT } from "@/lib/constants";
 import Modal from "./Modal";
 import Toast from "./Toast";
 import { calculateSendAmount } from "@/lib/transactions";
+import { getUserFromStorage } from "@/lib/session";
 
 interface SendTagSuggestion {
   name: string;
   displayName: string;
+}
+
+interface VirtualAccount {
+  accountNumber: string;
+  bankName: string;
+  hasVirtualAccount: boolean;
 }
 
 export default function PaymentForm() {
@@ -39,6 +45,11 @@ export default function PaymentForm() {
     type: "success" | "error" | "info";
     isVisible: boolean;
   }>({ message: "", type: "info", isVisible: false });
+  const [virtualAccount, setVirtualAccount] = useState<VirtualAccount | null>(null);
+  const [isLoadingVirtualAccount, setIsLoadingVirtualAccount] = useState(true);
+  const [paymentGenerated, setPaymentGenerated] = useState(false);
+  const [isPollingPayment, setIsPollingPayment] = useState(false);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Autocomplete state
   const [sendTagSuggestions, setSendTagSuggestions] = useState<SendTagSuggestion[]>([]);
@@ -47,6 +58,73 @@ export default function PaymentForm() {
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
+
+  // Fetch or create virtual account when wallet address is entered
+  useEffect(() => {
+    const setupVirtualAccount = async () => {
+      const user = getUserFromStorage();
+      if (!user || !walletAddress) {
+        setIsLoadingVirtualAccount(false);
+        return;
+      }
+
+      try {
+        console.log("[Virtual Account] Fetching virtual account for user...");
+        
+        // Try to get existing virtual account
+        const getResponse = await fetch(
+          `/api/user/virtual-account?userId=${user.id}&walletAddress=${walletAddress}`
+        );
+        const getData = await getResponse.json();
+
+        if (getData.success && getData.data.hasVirtualAccount) {
+          console.log("[Virtual Account] Found existing virtual account");
+          setVirtualAccount({
+            accountNumber: getData.data.accountNumber,
+            bankName: getData.data.bankName,
+            hasVirtualAccount: true,
+          });
+          setIsLoadingVirtualAccount(false);
+          return;
+        }
+
+        // No virtual account exists, create one
+        console.log("[Virtual Account] Creating new virtual account...");
+        const createResponse = await fetch("/api/paystack/create-virtual-account", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId: user.id,
+            email: user.email,
+            walletAddress: walletAddress,
+          }),
+        });
+        const createData = await createResponse.json();
+
+        if (createData.success) {
+          console.log("[Virtual Account] ✅ Virtual account created successfully");
+          setVirtualAccount({
+            accountNumber: createData.data.accountNumber,
+            bankName: createData.data.bankName,
+            hasVirtualAccount: true,
+          });
+        } else {
+          console.error("[Virtual Account] Failed to create:", createData.error);
+        }
+      } catch (error) {
+        console.error("[Virtual Account] Error:", error);
+      } finally {
+        setIsLoadingVirtualAccount(false);
+      }
+    };
+
+    // Only setup virtual account if we have a wallet address
+    if (walletAddress) {
+      setupVirtualAccount();
+    } else {
+      setIsLoadingVirtualAccount(false);
+    }
+  }, [walletAddress]); // Run when wallet address changes
 
   // Auto-claim pending transactions on mount
   useEffect(() => {
@@ -451,25 +529,6 @@ export default function PaymentForm() {
     return Object.keys(newErrors).length === 0;
   };
 
-  const handleCopyAccount = async () => {
-    const accountInfo = DEPOSIT_ACCOUNT.accountNumber;
-    try {
-      await navigator.clipboard.writeText(accountInfo);
-      setToast({
-        message: "Account number copied to clipboard!",
-        type: "success",
-        isVisible: true,
-      });
-    } catch (err) {
-      console.error("Failed to copy:", err);
-      setToast({
-        message: "Failed to copy account number",
-        type: "error",
-        isVisible: true,
-      });
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -695,6 +754,67 @@ export default function PaymentForm() {
     };
   }, []);
 
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+    };
+  }, []);
+
+  // Check for payment and process automatically
+  const checkForPayment = async () => {
+    const user = getUserFromStorage();
+    if (!user || !virtualAccount?.accountNumber) return;
+    
+    try {
+      console.log("[Payment Check] Looking for payments to account:", virtualAccount.accountNumber);
+      
+      // Query for any completed transactions for this user/wallet
+      const response = await fetch(
+        `/api/user/check-payment?userId=${user.id}&walletAddress=${walletAddress}&accountNumber=${virtualAccount.accountNumber}`
+      );
+      const data = await response.json();
+      
+      if (data.success && data.transactions && data.transactions.length > 0) {
+        // Payment found!
+        const latestTransaction = data.transactions[0];
+        
+        // Stop polling
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+        }
+        setIsPollingPayment(false);
+        setIsTransactionCompleted(true);
+        
+        setModalData({
+          title: "Payment Received! 🎉",
+          message: `Your payment of ${latestTransaction.ngnAmount} NGN has been received and ${latestTransaction.sendAmount} SEND tokens have been sent to your wallet!`,
+          type: "success",
+          txHash: latestTransaction.txHash,
+          explorerUrl: latestTransaction.txHash ? `https://basescan.org/tx/${latestTransaction.txHash}` : undefined,
+        });
+        setShowModal(true);
+        
+        // Clear stored transaction data
+        localStorage.removeItem("transactionId");
+        localStorage.removeItem("walletAddress");
+        localStorage.removeItem("ngnAmount");
+        
+        // Refresh page after 3 seconds
+        setTimeout(() => {
+          window.location.reload();
+        }, 3000);
+      } else {
+        console.log("[Payment Check] No completed transactions found yet");
+      }
+    } catch (error) {
+      console.error("[Payment Check] Error:", error);
+    }
+  };
+
   return (
     <div className="w-full max-w-lg p-8">
       <div className="flex flex-col items-center">
@@ -837,46 +957,201 @@ export default function PaymentForm() {
 
             {/* Deposit Account Info */}
             <div className="border-t border-slate-200 dark:border-slate-700 pt-6">
-              <h3 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">
-                Deposit naira to this account
-              </h3>
-              <div className="bg-slate-100 dark:bg-slate-800 p-4 rounded-lg flex items-center justify-between">
-                <div>
-                  <p className="font-semibold text-slate-900 dark:text-slate-100">
-                    {DEPOSIT_ACCOUNT.name}
-                  </p>
-                  <p className="text-slate-600 dark:text-slate-400">
-                    {DEPOSIT_ACCOUNT.accountNumber}
-                  </p>
-                  <p className="text-sm text-slate-500 dark:text-slate-500">
-                    {DEPOSIT_ACCOUNT.bank}
-                  </p>
+              {virtualAccount && virtualAccount.hasVirtualAccount ? (
+                /* Virtual Account - Personalized */
+                <>
+                  <div className="mb-3 flex items-center gap-2">
+                    <span className="text-primary text-2xl">🏦</span>
+                    <h3 className="text-sm font-bold text-primary">
+                      YOUR PERSONAL ACCOUNT
+                    </h3>
+                  </div>
+                  <div className="bg-gradient-to-br from-primary/10 to-primary/5 dark:from-primary/20 dark:to-primary/10 p-4 rounded-lg border-2 border-primary/30">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex-1">
+                        <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Account Number</p>
+                        <p className="text-2xl font-bold text-slate-900 dark:text-slate-100 tracking-wider">
+                          {virtualAccount.accountNumber}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(virtualAccount.accountNumber);
+                            setToast({
+                              message: "Account number copied!",
+                              type: "success",
+                              isVisible: true,
+                            });
+                            setTimeout(() => setToast(prev => ({ ...prev, isVisible: false })), 3000);
+                          } catch (err) {
+                            console.error("Failed to copy:", err);
+                          }
+                        }}
+                        className="p-3 rounded-full bg-primary/20 hover:bg-primary/30 text-slate-900 dark:text-slate-100 transition-colors"
+                      >
+                        <span className="material-icons-outlined text-xl">
+                          content_copy
+                        </span>
+                      </button>
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-600 dark:text-slate-400 mb-1">Bank</p>
+                      <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                        {virtualAccount.bankName}
+                      </p>
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-primary/20">
+                      <p className="text-xs text-slate-600 dark:text-slate-400">
+                        💡 This account is unique to you. Send ANY amount and get SEND tokens instantly!
+                      </p>
+                    </div>
+                  </div>
+                </>
+              ) : isLoadingVirtualAccount ? (
+                /* Loading State */
+                <div className="flex items-center justify-center gap-2 text-slate-600 dark:text-slate-400 py-4">
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
+                  <p className="text-sm">Setting up your personal account...</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleCopyAccount}
-                  className="p-2 rounded-full hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 dark:text-slate-400 transition-colors"
-                >
-                  <span className="material-icons-outlined text-xl">
-                    content_copy
-                  </span>
-                </button>
-              </div>
+              ) : null}
             </div>
 
             {/* Submit Button */}
             <div>
-              <button
-                type="submit"
-                disabled={isLoading || isTransactionCompleted}
-                className="w-full bg-primary text-slate-900 font-bold py-3 px-4 rounded-md hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-slate-900 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isTransactionCompleted 
-                  ? "Transaction Completed - Refreshing..." 
-                  : isLoading 
-                    ? "Processing..." 
-                    : "I have sent"}
-              </button>
+              {!virtualAccount || !virtualAccount.hasVirtualAccount ? (
+                /* Generate Payment Button - Shows first */
+                <button
+                  type="button"
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    
+                    // Validate form first
+                    if (!validateForm()) {
+                      setToast({
+                        message: "Please fill in all fields correctly",
+                        type: "error",
+                        isVisible: true,
+                      });
+                      return;
+                    }
+                    
+                    // Trigger virtual account creation
+                    setIsLoadingVirtualAccount(true);
+                    const user = getUserFromStorage();
+                    
+                    if (!user || !walletAddress) {
+                      setToast({
+                        message: "Please enter a wallet address first",
+                        type: "error",
+                        isVisible: true,
+                      });
+                      setIsLoadingVirtualAccount(false);
+                      return;
+                    }
+
+                    try {
+                      // Create virtual account
+                      const createResponse = await fetch("/api/paystack/create-virtual-account", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                          userId: user.id,
+                          email: user.email,
+                          walletAddress: walletAddress,
+                        }),
+                      });
+                      const createData = await createResponse.json();
+
+                      if (createData.success) {
+                        setVirtualAccount({
+                          accountNumber: createData.data.accountNumber,
+                          bankName: createData.data.bankName,
+                          hasVirtualAccount: true,
+                        });
+                        setPaymentGenerated(true);
+                        
+                        setToast({
+                          message: "✅ Payment account generated! Send payment to your account above.",
+                          type: "success",
+                          isVisible: true,
+                        });
+                      } else {
+                        setToast({
+                          message: createData.error || "Failed to generate payment account",
+                          type: "error",
+                          isVisible: true,
+                        });
+                      }
+                    } catch (error) {
+                      console.error("Error generating payment:", error);
+                      setToast({
+                        message: "Failed to generate payment account",
+                        type: "error",
+                        isVisible: true,
+                      });
+                    } finally {
+                      setIsLoadingVirtualAccount(false);
+                    }
+                  }}
+                  disabled={isLoadingVirtualAccount || !ngnAmount || !walletAddress}
+                  className="w-full bg-primary text-slate-900 font-bold py-3 px-4 rounded-md hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-slate-900 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isLoadingVirtualAccount ? "Generating..." : "Generate Payment"}
+                </button>
+              ) : (
+                /* I Have Sent Button - Shows after virtual account is generated */
+                <button
+                  type="button"
+                  onClick={async (e) => {
+                    e.preventDefault();
+                    
+                    if (isPollingPayment) {
+                      // Stop polling
+                      if (pollingIntervalRef.current) {
+                        clearInterval(pollingIntervalRef.current);
+                        pollingIntervalRef.current = null;
+                      }
+                      setIsPollingPayment(false);
+                      setToast({
+                        message: "Payment check stopped",
+                        type: "info",
+                        isVisible: true,
+                      });
+                      return;
+                    }
+                    
+                    // Start polling for payment
+                    setIsPollingPayment(true);
+                    setToast({
+                      message: "🔍 Checking for payment... This may take a moment.",
+                      type: "info",
+                      isVisible: true,
+                    });
+                    
+                    // Check immediately first
+                    await checkForPayment();
+                    
+                    // Then poll every 5 seconds
+                    pollingIntervalRef.current = setInterval(async () => {
+                      await checkForPayment();
+                    }, 5000); // Check every 5 seconds
+                  }}
+                  disabled={isTransactionCompleted}
+                  className={`w-full font-bold py-3 px-4 rounded-md transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-slate-900 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed ${
+                    isPollingPayment
+                      ? "bg-yellow-500 hover:bg-yellow-600 text-slate-900 animate-pulse"
+                      : "bg-primary hover:opacity-90 text-slate-900"
+                  }`}
+                >
+                  {isTransactionCompleted 
+                    ? "✅ Payment Received - Refreshing..." 
+                    : isPollingPayment 
+                      ? "🔍 Checking for payment..." 
+                      : "I have sent"}
+                </button>
+              )}
             </div>
           </form>
         </div>

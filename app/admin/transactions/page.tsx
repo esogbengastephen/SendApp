@@ -321,14 +321,29 @@ export default function TransactionsPage() {
                       <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
                         ₦{tx.ngnAmount.toLocaleString()}
                       </div>
-                      <div className="text-xs text-slate-500 dark:text-slate-400">
+                      <div className={`text-xs font-medium ${
+                        parseFloat(getSendAmountForTransaction(tx)) > 0 
+                          ? "text-green-600 dark:text-green-400" 
+                          : "text-slate-500 dark:text-slate-400"
+                      }`}>
                         {getSendAmountForTransaction(tx)} SEND
+                        {tx.txHash && (
+                          <span className="ml-1 text-green-600 dark:text-green-400" title="Tokens distributed">
+                            ✓
+                          </span>
+                        )}
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <div className="text-sm font-mono text-slate-900 dark:text-slate-100 max-w-xs truncate">
-                        {tx.walletAddress}
-                      </div>
+                      {tx.walletAddress ? (
+                        <div className="text-sm font-mono text-slate-900 dark:text-slate-100 max-w-xs truncate" title={tx.walletAddress}>
+                          {tx.walletAddress}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-slate-400 dark:text-slate-500 italic">
+                          Not recorded
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       {getStatusBadge(tx.status)}

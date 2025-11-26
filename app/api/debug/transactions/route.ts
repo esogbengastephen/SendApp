@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
 
     if (transactionId) {
       // Get specific transaction
-      const transaction = getTransaction(transactionId);
+      const transaction = await getTransaction(transactionId);
       return NextResponse.json({
         success: true,
         transaction: transaction ? {

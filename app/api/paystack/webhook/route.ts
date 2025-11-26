@@ -5,8 +5,12 @@ import {
   updateTransaction,
   isTransactionProcessed,
   calculateSendAmount,
+  createTransaction,
 } from "@/lib/transactions";
 import { distributeTokens } from "@/lib/token-distribution";
+import { getExchangeRate } from "@/lib/settings";
+import { supabase } from "@/lib/supabase";
+import { nanoid } from "nanoid";
 
 export async function POST(request: NextRequest) {
   try {
@@ -39,15 +43,138 @@ export async function POST(request: NextRequest) {
       const transactionData = event.data;
       const reference = transactionData.reference;
       const paystackAmount = transactionData.amount / 100; // Convert from kobo to NGN
+      const channel = transactionData.channel; // "dedicated_nuban" for virtual accounts
+      const metadata = transactionData.metadata || {};
+
+      console.log(`📥 [Webhook] Payment received: ${paystackAmount} NGN via ${channel}`);
+      console.log(`📥 [Webhook] Reference: ${reference}`);
 
       // Check if transaction has already been processed
       if (isTransactionProcessed(reference)) {
-        console.log(`Transaction ${reference} already processed`);
+        console.log(`[Webhook] Transaction ${reference} already processed`);
         return NextResponse.json({ success: true, message: "Already processed" });
       }
 
+      // ============================================
+      // VIRTUAL ACCOUNT PAYMENT DETECTION
+      // ============================================
+      if (channel === "dedicated_nuban") {
+        console.log(`🏦 [Webhook] Virtual account payment detected!`);
+        
+        // Extract virtual account details
+        const authorization = transactionData.authorization || {};
+        const accountNumber = authorization.receiver_bank_account_number;
+        const accountName = authorization.account_name;
+        
+        console.log(`🏦 [Webhook] Account: ${accountNumber} (${accountName})`);
+        
+        if (!accountNumber) {
+          console.error(`❌ [Webhook] No account number in virtual account payment`);
+          return NextResponse.json(
+            { success: false, error: "Missing account number" },
+            { status: 400 }
+          );
+        }
+        
+        // Find user by their virtual account number
+        const { data: userWallet, error: walletError } = await supabase
+          .from("user_wallets")
+          .select("*, users!inner(*)")
+          .eq("virtual_account_number", accountNumber)
+          .single();
+        
+        if (walletError || !userWallet) {
+          console.error(`❌ [Webhook] Virtual account ${accountNumber} not found in database`);
+          console.error(`Error:`, walletError);
+          return NextResponse.json(
+            { success: false, error: "Virtual account not found" },
+            { status: 404 }
+          );
+        }
+        
+        const walletAddress = userWallet.wallet_address;
+        const userId = userWallet.user_id;
+        const userEmail = userWallet.users.email;
+        
+        console.log(`✅ [Webhook] Payment identified: User ${userEmail}, Wallet ${walletAddress}`);
+        
+        // Get exchange rate
+        const exchangeRate = await getExchangeRate();
+        const sendAmount = calculateSendAmount(paystackAmount, exchangeRate);
+        
+        console.log(`💰 [Webhook] Converting ${paystackAmount} NGN → ${sendAmount} SEND (rate: ${exchangeRate})`);
+        
+        // Create transaction record
+        const transactionId = nanoid();
+        await createTransaction({
+          transactionId,
+          userId,
+          walletAddress,
+          ngnAmount: paystackAmount,
+          sendAmount,
+          paystackReference: reference,
+          exchangeRate,
+          completedAt: new Date(),
+        });
+        
+        // Update to completed status immediately since payment was received
+        await updateTransaction(transactionId, {
+          status: "completed",
+          completedAt: new Date(),
+        });
+        
+        console.log(`📝 [Webhook] Transaction created: ${transactionId}`);
+        
+        // Distribute tokens immediately
+        try {
+          const distributionResult = await distributeTokens(
+            transactionId,
+            walletAddress,
+            sendAmount
+          );
+          
+          if (distributionResult.success) {
+            console.log(`🎉 [Webhook] Tokens distributed successfully! TX: ${distributionResult.txHash}`);
+            return NextResponse.json({
+              success: true,
+              message: "Virtual account payment processed and tokens distributed",
+              txHash: distributionResult.txHash,
+              transactionId,
+            });
+          } else {
+            console.error(`❌ [Webhook] Token distribution failed: ${distributionResult.error}`);
+            // Update transaction status to show distribution failed
+            await updateTransaction(transactionId, {
+              status: "failed",
+              errorMessage: distributionResult.error,
+            });
+            return NextResponse.json({
+              success: false,
+              error: "Token distribution failed",
+              details: distributionResult.error,
+            });
+          }
+        } catch (distError: any) {
+          console.error(`❌ [Webhook] Token distribution error:`, distError);
+          await updateTransaction(transactionId, {
+            status: "failed",
+            errorMessage: distError.message,
+          });
+          return NextResponse.json({
+            success: false,
+            error: "Token distribution error",
+            details: distError.message,
+          });
+        }
+      }
+      
+      // ============================================
+      // FALLBACK: Manual payment (old flow)
+      // ============================================
+      console.log(`🔍 [Webhook] Manual payment - searching for transaction by reference`);
+
       // Get our transaction record
-      let transaction = getTransactionByReference(reference);
+      let transaction = await getTransactionByReference(reference);
       
       // If not found by reference, try to find by amount + timestamp
       if (!transaction) {
@@ -77,7 +204,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Update transaction with both amounts and status
-      updateTransaction(transaction.transactionId, {
+      await updateTransaction(transaction.transactionId, {
         status: "completed",
         ngnAmount: paystackAmount, // Use Paystack amount as source of truth
         sendAmount: finalSendAmount, // Use recalculated amount
@@ -126,9 +253,9 @@ export async function POST(request: NextRequest) {
       const transactionData = event.data;
       const reference = transactionData.reference;
 
-      const transaction = getTransactionByReference(reference);
+      const transaction = await getTransactionByReference(reference);
       if (transaction) {
-        updateTransaction(transaction.transactionId, {
+        await updateTransaction(transaction.transactionId, {
           status: "failed",
         });
       }

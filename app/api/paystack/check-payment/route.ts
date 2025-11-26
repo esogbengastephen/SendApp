@@ -34,10 +34,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Get transaction record - try by transactionId first, then by reference
-    let transaction = getTransaction(transactionId);
+    let transaction = await getTransaction(transactionId);
     if (!transaction) {
       // Try by reference as fallback
-      transaction = getTransactionByReference(transactionId);
+      transaction = await getTransactionByReference(transactionId);
     }
     
     if (!transaction) {

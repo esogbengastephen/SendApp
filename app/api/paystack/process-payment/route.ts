@@ -6,6 +6,7 @@ import { distributeTokens } from "@/lib/token-distribution";
 import { isValidWalletOrTag, isValidAmount } from "@/utils/validation";
 import { verifyPaymentForTransaction } from "@/lib/payment-verification";
 import { getExchangeRate } from "@/lib/settings";
+import { updateWalletStats } from "@/lib/supabase-users";
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const PAYSTACK_API_BASE = "https://api.paystack.co";
@@ -25,7 +26,7 @@ async function findClaimablePendingTransaction(
   
   // First, try to find by transactionId if provided
   if (transactionId) {
-    const txById = getTransaction(transactionId);
+    const txById = await getTransaction(transactionId);
     if (txById && txById.walletAddress.toLowerCase() === normalizedWallet && 
         Math.abs(txById.ngnAmount - ngnAmount) < 0.01) {
       return txById;
@@ -158,7 +159,7 @@ export async function POST(request: NextRequest) {
     const parsedExchangeRate = adminExchangeRate;
     
     // First, check if this specific transaction ID is already completed
-    let transaction = getTransaction(transactionId);
+    let transaction = await getTransaction(transactionId);
     if (transaction && transaction.status === "completed") {
       console.log(`Transaction ${transactionId} already completed, preventing duplicate processing`);
       return NextResponse.json({
@@ -272,7 +273,7 @@ export async function POST(request: NextRequest) {
         const currentExchangeRate = parsedExchangeRate || claimableTx.exchangeRate || 50;
         const recalculatedSendAmount = calculateSendAmount(parsedAmount, currentExchangeRate);
         
-        updateTransaction(claimableTx.transactionId, {
+        await updateTransaction(claimableTx.transactionId, {
           ngnAmount: parsedAmount,
           sendAmount: recalculatedSendAmount,
           walletAddress: normalizedWallet,
@@ -301,7 +302,7 @@ export async function POST(request: NextRequest) {
           const recalculatedSendAmount = calculateSendAmount(parsedAmount, currentExchangeRate);
           
           // Update the existing transaction with latest data
-          updateTransaction(existingPending.transactionId, {
+          await updateTransaction(existingPending.transactionId, {
             ngnAmount: parsedAmount,
             sendAmount: recalculatedSendAmount,
             walletAddress: normalizedWallet,
@@ -318,7 +319,7 @@ export async function POST(request: NextRequest) {
             body.sendtag
           );
           
-          transaction = getTransaction(existingPending.transactionId);
+          transaction = await getTransaction(existingPending.transactionId);
         } else if (!transaction) {
           // No existing pending transaction found, create new one
           console.log(`Creating new transaction: ${transactionId} for wallet ${normalizedWallet}, amount ${parsedAmount} NGN`);
@@ -327,7 +328,7 @@ export async function POST(request: NextRequest) {
           const currentExchangeRate = parsedExchangeRate || 50;
           const calculatedSendAmount = calculateSendAmount(parsedAmount, currentExchangeRate);
           
-          transaction = createTransaction({
+          transaction = await createTransaction({
             transactionId,
             paystackReference: transactionId,
             ngnAmount: parsedAmount,
@@ -348,7 +349,7 @@ export async function POST(request: NextRequest) {
           );
           
           // Verify it was stored
-          const verifyStored = getTransaction(transactionId);
+          const verifyStored = await getTransaction(transactionId);
           if (!verifyStored) {
             console.error(`CRITICAL: Transaction ${transactionId} was not stored after creation!`);
           } else {
@@ -362,7 +363,7 @@ export async function POST(request: NextRequest) {
           const currentExchangeRate = parsedExchangeRate || transaction.exchangeRate || 50;
           const recalculatedSendAmount = calculateSendAmount(parsedAmount, currentExchangeRate);
           
-          updateTransaction(transactionId, {
+          await updateTransaction(transactionId, {
             ngnAmount: parsedAmount,
             sendAmount: recalculatedSendAmount,
             walletAddress: normalizedWallet,
@@ -386,7 +387,7 @@ export async function POST(request: NextRequest) {
 
     // Verify transaction exists
     const finalTransactionId = transaction?.transactionId || transactionId;
-    transaction = getTransaction(finalTransactionId);
+    transaction = await getTransaction(finalTransactionId);
     if (!transaction) {
       console.error(`Failed to store/retrieve transaction ${finalTransactionId}`);
       
@@ -409,7 +410,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`Transaction ready: ${transaction.transactionId} for wallet ${transaction.walletAddress}, amount: ${transaction.ngnAmount} NGN, status: ${transaction.status}, created at: ${transaction.createdAt.toISOString()}`);
+    console.log(`Transaction ready: ${transaction.transactionId} for wallet ${transaction.walletAddress}, amount: ${transaction.ngnAmount} NGN, status: ${transaction.status}, created at: ${transaction.createdAt ? (transaction.createdAt instanceof Date ? transaction.createdAt.toISOString() : transaction.createdAt) : 'unknown'}`);
     
     // Debug: Log transaction storage state
     const allTransactions = getAllTransactions();
@@ -519,21 +520,47 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    updateTransaction(transaction.transactionId, {
+    await updateTransaction(transaction.transactionId, {
       status: "completed",
       paystackReference: verifiedTx.reference,
       sendAmount: finalSendAmount, // Update with recalculated amount
+      walletAddress: transaction.walletAddress, // Ensure wallet address is preserved
       completedAt: new Date(),
     });
     
     // Update user record when transaction is completed
-    createOrUpdateUser(
-      transaction.walletAddress,
-      transaction.transactionId,
-      transaction.ngnAmount,
-      finalSendAmount,
-      transaction.sendtag
-    );
+    if (transaction.userId) {
+      // User is logged in - update wallet stats in Supabase
+      try {
+        const statsResult = await updateWalletStats(
+          transaction.userId,
+          transaction.walletAddress,
+          transaction.ngnAmount,
+          finalSendAmount,
+          transaction.sendtag
+        );
+        
+        if (statsResult.success) {
+          console.log(`[Payment Processing] ✅ Updated Supabase wallet stats for user ${transaction.userId}`);
+        } else {
+          console.error(`[Payment Processing] ⚠️ Failed to update Supabase wallet stats:`, statsResult.error);
+          // Continue anyway - stats can be synced later
+        }
+      } catch (error) {
+        console.error(`[Payment Processing] ⚠️ Exception updating Supabase wallet stats:`, error);
+        // Continue anyway
+      }
+    } else {
+      // No userId - fall back to in-memory user tracking
+      createOrUpdateUser(
+        transaction.walletAddress,
+        transaction.transactionId,
+        transaction.ngnAmount,
+        finalSendAmount,
+        transaction.sendtag
+      );
+      console.log(`[Payment Processing] Updated in-memory user stats for wallet ${transaction.walletAddress}`);
+    }
     
     console.log(`[Payment Processing] Transaction ${finalTransactionId} marked as completed with Paystack reference ${verifiedTx.reference}`);
 

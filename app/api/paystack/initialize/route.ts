@@ -35,10 +35,10 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if transaction already exists
-    const existingTransaction = getTransaction(transactionId);
+    const existingTransaction = await getTransaction(transactionId);
     if (existingTransaction) {
       console.log(`Transaction ${transactionId} already exists, updating...`);
-      updateTransaction(transactionId, {
+      await updateTransaction(transactionId, {
         ngnAmount: parseFloat(ngnAmount),
         sendAmount,
         walletAddress: walletAddress.trim(),
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
       // 1. Link the wallet address the user provided
       // 2. Verify the payment amount when checking Paystack
       // 3. Distribute tokens to the correct wallet
-      createTransaction({
+      await createTransaction({
         transactionId,
         paystackReference: transactionId, // Use transaction ID as reference (will be updated when payment is found)
         ngnAmount: parseFloat(ngnAmount),

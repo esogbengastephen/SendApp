@@ -1,13 +1,44 @@
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "https://ksdzzqdafodlstfkqzuv.supabase.co";
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzZHp6cWRhZm9kbHN0ZmtxenV2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ4MjQ2NTAsImV4cCI6MjA1MDQwMDY1MH0.placeholder";
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-// Create Supabase client with fallback key if not provided
-export const supabase = createClient(
-  supabaseUrl,
-  supabaseAnonKey || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtzZHp6cWRhZm9kbHN0ZmtxenV2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzQ4MjQ2NTAsImV4cCI6MjA1MDQwMDY1MH0.placeholder"
-);
+// Validate that we have a valid anon key
+let validAnonKey = supabaseAnonKey;
+if (!validAnonKey || validAnonKey.trim() === "" || validAnonKey.includes("placeholder")) {
+  console.error("[Supabase] ERROR: NEXT_PUBLIC_SUPABASE_ANON_KEY is not set or is invalid!");
+  console.error("[Supabase] Current value:", validAnonKey ? `${validAnonKey.substring(0, 20)}...` : "undefined");
+  console.error("[Supabase] Please set it in your .env.local file.");
+  console.error("[Supabase] Get it from: https://supabase.com/dashboard/project/ksdzzqdafodlstfkqzuv/settings/api");
+  // Use a dummy key to prevent app crash, but operations will fail with clear error messages
+  validAnonKey = "INVALID_KEY_PLEASE_SET_NEXT_PUBLIC_SUPABASE_ANON_KEY";
+} else {
+  // Check if it's a valid format (JWT or sb_ format)
+  const isJWT = validAnonKey.startsWith("eyJ");
+  const isNewFormat = validAnonKey.startsWith("sb_");
+  
+  if (!isJWT && !isNewFormat) {
+    console.warn("[Supabase] WARNING: Key format might be invalid. Expected JWT (starts with 'eyJ') or new format (starts with 'sb_')");
+  }
+  
+  console.log(`[Supabase] ✅ Anon key loaded successfully (${isJWT ? 'JWT' : isNewFormat ? 'New format' : 'Unknown format'})`);
+}
+
+// Create Supabase client - use anon key (required)
+export const supabase = createClient(supabaseUrl, validAnonKey);
+
+// Create server-side Supabase client with service role key (bypasses RLS)
+// Use this for server-side operations that need to bypass RLS
+// Falls back to anon key if service role key not available
+export const supabaseAdmin = supabaseServiceRoleKey && !supabaseServiceRoleKey.includes("placeholder")
+  ? createClient(supabaseUrl, supabaseServiceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    })
+  : supabase; // Fallback to anon key if service role key not available
 
 // Admin wallet addresses (in production, store in Supabase table)
 export const ADMIN_WALLETS = process.env.NEXT_PUBLIC_ADMIN_WALLETS

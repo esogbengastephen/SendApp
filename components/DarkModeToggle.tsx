@@ -2,7 +2,11 @@
 
 import { useEffect, useState } from "react";
 
-export default function DarkModeToggle() {
+interface DarkModeToggleProps {
+  fixed?: boolean; // If true, uses fixed positioning. If false, uses relative positioning.
+}
+
+export default function DarkModeToggle({ fixed = true }: DarkModeToggleProps) {
   const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
@@ -28,10 +32,12 @@ export default function DarkModeToggle() {
     }
   };
 
+  const positionClass = fixed ? "fixed top-4 right-4" : "";
+
   return (
     <button
       onClick={toggleDarkMode}
-      className="fixed top-4 right-4 p-2 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors"
+      className={`${positionClass} p-2 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-300 dark:hover:bg-slate-600 transition-colors`}
       aria-label="Toggle dark mode"
     >
       {isDark ? (
