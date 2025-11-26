@@ -74,6 +74,7 @@ export async function POST(request: NextRequest) {
             email: email,
             first_name: `App`,
             last_name: `Send`,
+            phone: "+2348000000000", // Default phone number for virtual accounts
             metadata: {
               user_id: userId,
               wallet_address: walletAddress,
