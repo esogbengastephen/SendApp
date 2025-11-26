@@ -63,6 +63,36 @@ export async function POST(request: NextRequest) {
       }
     }
     
+    // Create Paystack customer and virtual account automatically
+    if (result.user?.id && result.user?.email) {
+      try {
+        console.log(`[Signup] Creating virtual account for ${email}`);
+        
+        const virtualAccountResponse = await fetch(
+          `${request.nextUrl.origin}/api/paystack/create-virtual-account-signup`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              userId: result.user.id, 
+              email: result.user.email 
+            }),
+          }
+        );
+        
+        if (virtualAccountResponse.ok) {
+          const vaData = await virtualAccountResponse.json();
+          console.log(`[Signup] ✅ Virtual account created: ${vaData.data?.accountNumber} (${vaData.data?.bankName})`);
+        } else {
+          const errorData = await virtualAccountResponse.json();
+          console.error(`[Signup] ⚠️ Failed to create virtual account:`, errorData.error);
+        }
+      } catch (vaError) {
+        console.error(`[Signup] Error creating virtual account:`, vaError);
+        // Don't fail signup if virtual account creation fails
+      }
+    }
+    
     // Set httpOnly cookie
     const response = NextResponse.json({
       success: true,

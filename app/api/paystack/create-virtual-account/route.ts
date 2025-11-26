@@ -72,8 +72,8 @@ export async function POST(request: NextRequest) {
           `${PAYSTACK_API_BASE}/customer`,
           {
             email: email,
-            first_name: `Send`,
-            last_name: `Africa`,
+            first_name: `App`,
+            last_name: `Send`,
             metadata: {
               user_id: userId,
               wallet_address: walletAddress,
