@@ -811,7 +811,7 @@ export default function PaymentForm() {
                     </div>
                     <div className="mt-3 pt-3 border-t border-primary/20">
                       <p className="text-xs text-slate-600 dark:text-slate-400">
-                        💡 This account is unique to you. Send ANY amount and get SEND tokens instantly!
+                        💡 This account is unique to you. Send the exact amount and get SEND tokens instantly!
                       </p>
                     </div>
                   </div>
