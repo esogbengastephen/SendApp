@@ -140,6 +140,14 @@ function AdminLayoutContent({
                 <span>Users</span>
               </Link>
               <Link
+                href="/admin/referrals"
+                onClick={() => setSidebarOpen(false)}
+                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <span className="material-icons-outlined text-lg sm:text-xl">group_add</span>
+                <span>Referrals</span>
+              </Link>
+              <Link
                 href="/admin/token-distribution"
                 onClick={() => setSidebarOpen(false)}
                 className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
