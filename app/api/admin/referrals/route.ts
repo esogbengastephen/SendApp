@@ -8,10 +8,12 @@ export async function GET(request: NextRequest) {
     const maxReferrals = searchParams.get("maxReferrals");
     const sortBy = searchParams.get("sortBy") || "referral_count";
     const order = searchParams.get("order") || "desc";
+    const page = parseInt(searchParams.get("page") || "1");
+    const pageSize = parseInt(searchParams.get("pageSize") || "25");
 
     let query = supabase
       .from("users")
-      .select("id, email, referral_code, referral_count, referred_by, created_at")
+      .select("id, email, referral_code, referral_count, referred_by, created_at", { count: "exact" })
       .not("email", "is", null);
 
     // Filter by minimum referrals
@@ -27,7 +29,14 @@ export async function GET(request: NextRequest) {
     // Sort
     query = query.order(sortBy, { ascending: order === "asc" });
 
-    const { data, error } = await query;
+    // Get total count
+    const { count: totalCount } = await query;
+
+    // Apply pagination
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+    
+    const { data, error } = await query.range(from, to);
 
     if (error) {
       console.error("Error fetching referrals:", error);
@@ -37,7 +46,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Get referred users for each user
+    // Get referred users for each user (for detailed view if needed)
     const usersWithReferred = await Promise.all(
       (data || []).map(async (user) => {
         const { data: referredUsers } = await supabase
@@ -52,13 +61,35 @@ export async function GET(request: NextRequest) {
       })
     );
 
+    // Calculate overall stats (not just current page)
+    const { data: allUsers } = await supabase
+      .from("users")
+      .select("referral_count")
+      .not("email", "is", null);
+
+    const totalReferrals = (allUsers || []).reduce((sum, u) => sum + (u.referral_count || 0), 0);
+    
+    // Get top referrer
+    const { data: topReferrerData } = await supabase
+      .from("users")
+      .select("email, referral_count")
+      .not("email", "is", null)
+      .order("referral_count", { ascending: false })
+      .limit(1);
+
     return NextResponse.json({
       success: true,
       users: usersWithReferred,
+      pagination: {
+        page,
+        pageSize,
+        totalCount: totalCount || 0,
+        totalPages: Math.ceil((totalCount || 0) / pageSize),
+      },
       stats: {
-        totalUsers: usersWithReferred.length,
-        totalReferrals: usersWithReferred.reduce((sum, u) => sum + (u.referral_count || 0), 0),
-        topReferrer: usersWithReferred[0] || null,
+        totalUsers: totalCount || 0,
+        totalReferrals,
+        topReferrer: topReferrerData && topReferrerData.length > 0 ? topReferrerData[0] : null,
       },
     });
   } catch (error: any) {
@@ -140,4 +171,3 @@ export async function POST(request: NextRequest) {
     );
   }
 }
-
