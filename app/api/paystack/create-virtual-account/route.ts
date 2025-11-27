@@ -30,6 +30,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check if user was reset (to create new Paystack customer)
+    const { data: userData } = await supabase
+      .from("users")
+      .select("account_reset_at, is_blocked")
+      .eq("id", userId)
+      .single();
+
+    if (userData?.is_blocked) {
+      console.log(`[Create Virtual Account] ❌ User ${userId} is blocked. Cannot create DVA.`);
+      return NextResponse.json(
+        { 
+          success: false, 
+          error: "Your account has been blocked. Please contact support." 
+        },
+        { status: 403 }
+      );
+    }
+
+    const wasReset = !!userData?.account_reset_at;
+
     // Check if user already has a virtual account for this wallet
     const { data: existingWallet, error: checkError } = await supabase
       .from("user_wallets")
@@ -62,22 +82,29 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 1: Create or update Paystack customer
-    console.log(`[Create Virtual Account] Creating Paystack customer for ${email}`);
+    console.log(`[Create Virtual Account] Creating Paystack customer for ${email}${wasReset ? ' (reset user - will create new customer)' : ''}`);
     
     let customerCode = existingWallet?.paystack_customer_code;
     
     if (!customerCode) {
       try {
+        // If user was reset, use unique email to force new customer creation
+        const customerEmail = wasReset 
+          ? `${email.split('@')[0]}+reset${Date.now()}@${email.split('@')[1]}` // email+reset1234567890@domain.com
+          : email;
+        
         const customerResponse = await axios.post(
           `${PAYSTACK_API_BASE}/customer`,
           {
-            email: email,
+            email: customerEmail,
             first_name: `App`,
             last_name: `Send`,
             phone: "+2348000000000", // Default phone number for virtual accounts
             metadata: {
               user_id: userId,
               wallet_address: walletAddress,
+              original_email: email, // Store original email
+              reset_user: wasReset, // Flag if this is a reset user
             },
           },
           {
@@ -89,28 +116,63 @@ export async function POST(request: NextRequest) {
         );
 
         customerCode = customerResponse.data.data.customer_code;
-        console.log(`[Create Virtual Account] ✅ Customer created: ${customerCode}`);
+        console.log(`[Create Virtual Account] ✅ Customer created: ${customerCode}${wasReset ? ' (for reset user)' : ''}`);
       } catch (customerError: any) {
-        // If customer already exists, fetch it
-        if (customerError.response?.status === 400) {
-          console.log(`[Create Virtual Account] Customer might exist, fetching...`);
+        // If user was reset, don't fetch old customer - force new creation
+        if (wasReset) {
+          console.log(`[Create Virtual Account] Reset user - forcing new customer creation with unique email`);
+          // Try again with timestamp-based email
           try {
-            const fetchResponse = await axios.get(
-              `${PAYSTACK_API_BASE}/customer/${email}`,
+            const uniqueEmail = `${email.split('@')[0]}+reset${Date.now()}@${email.split('@')[1]}`;
+            const retryResponse = await axios.post(
+              `${PAYSTACK_API_BASE}/customer`,
+              {
+                email: uniqueEmail,
+                first_name: `App`,
+                last_name: `Send`,
+                phone: "+2348000000000",
+                metadata: {
+                  user_id: userId,
+                  wallet_address: walletAddress,
+                  original_email: email,
+                  reset_user: true,
+                },
+              },
               {
                 headers: {
                   Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+                  "Content-Type": "application/json",
                 },
               }
             );
-            customerCode = fetchResponse.data.data.customer_code;
-            console.log(`[Create Virtual Account] ✅ Fetched existing customer: ${customerCode}`);
-          } catch (fetchError) {
-            console.error("[Create Virtual Account] Failed to fetch customer:", fetchError);
-            throw customerError;
+            customerCode = retryResponse.data.data.customer_code;
+            console.log(`[Create Virtual Account] ✅ New customer created for reset user: ${customerCode}`);
+          } catch (retryError: any) {
+            console.error("[Create Virtual Account] Failed to create new customer for reset user:", retryError.response?.data || retryError.message);
+            throw retryError;
           }
         } else {
-          throw customerError;
+          // Original logic for non-reset users
+          if (customerError.response?.status === 400) {
+            console.log(`[Create Virtual Account] Customer might exist, fetching...`);
+            try {
+              const fetchResponse = await axios.get(
+                `${PAYSTACK_API_BASE}/customer/${email}`,
+                {
+                  headers: {
+                    Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+                  },
+                }
+              );
+              customerCode = fetchResponse.data.data.customer_code;
+              console.log(`[Create Virtual Account] ✅ Fetched existing customer: ${customerCode}`);
+            } catch (fetchError) {
+              console.error("[Create Virtual Account] Failed to fetch customer:", fetchError);
+              throw customerError;
+            }
+          } else {
+            throw customerError;
+          }
         }
       }
     }
