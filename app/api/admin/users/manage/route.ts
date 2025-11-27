@@ -136,17 +136,60 @@ export async function POST(request: NextRequest) {
     }
 
     // Update user in database
-    const { error: updateError } = await supabase
+    const { error: updateError, data: updatedUser } = await supabase
       .from("users")
       .update(updateData)
-      .eq("id", userId);
+      .eq("id", userId)
+      .select();
 
     if (updateError) {
       console.error("Error updating user:", updateError);
-      return NextResponse.json(
-        { success: false, error: "Failed to update user" },
-        { status: 500 }
-      );
+      console.error("Update data attempted:", JSON.stringify(updateData, null, 2));
+      console.error("User ID:", userId);
+      
+      // Check if error is due to missing column
+      const isColumnError = updateError.message?.includes("column") || 
+                           updateError.message?.includes("does not exist") ||
+                           updateError.code === "42703"; // PostgreSQL undefined column error
+      
+      if (isColumnError && action === "permanent_reset" && updateData.account_reset_at) {
+        // Try again without account_reset_at (column might not exist yet)
+        console.log("[Admin] Retrying update without account_reset_at column...");
+        const { account_reset_at, ...updateDataWithoutReset } = updateData;
+        
+        const { error: retryError } = await supabase
+          .from("users")
+          .update(updateDataWithoutReset)
+          .eq("id", userId);
+        
+        if (retryError) {
+          console.error("Error on retry:", retryError);
+          return NextResponse.json(
+            { 
+              success: false, 
+              error: "Failed to update user",
+              details: retryError.message,
+              code: retryError.code,
+              hint: retryError.hint || "Please ensure all database migrations have been run",
+            },
+            { status: 500 }
+          );
+        }
+        
+        console.log("[Admin] ✅ Update succeeded without account_reset_at column");
+      } else {
+        // Return actual error message for debugging
+        return NextResponse.json(
+          { 
+            success: false, 
+            error: "Failed to update user",
+            details: updateError.message,
+            code: updateError.code,
+            hint: updateError.hint || "Check database schema and migrations",
+          },
+          { status: 500 }
+        );
+      }
     }
 
     // Deactivate Paystack customer (if exists) - only for permanent_reset
