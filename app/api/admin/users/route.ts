@@ -58,7 +58,7 @@ export async function GET(request: Request) {
     // Get all users with pagination
     let query = supabase
       .from("users")
-      .select("id, email, referral_code, referral_count, referred_by, created_at, sendtag", { count: "exact" });
+      .select("id, email, referral_code, referral_count, referred_by, created_at, sendtag, is_blocked, requires_reset, blocked_at, blocked_reason", { count: "exact" });
 
     // Apply search filter
     if (search) {
@@ -143,6 +143,10 @@ export async function GET(request: Request) {
           lastTransactionAt: lastTransaction?.created_at || null,
           createdAt: user.created_at,
           userType: "email" as const,
+          isBlocked: user.is_blocked || false,
+          requiresReset: user.requires_reset || false,
+          blockedAt: user.blocked_at,
+          blockedReason: user.blocked_reason,
         };
       })
     );
