@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { nanoid } from "nanoid";
 
 export async function POST(request: NextRequest) {
   try {
@@ -91,9 +92,12 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        // 3. Reset all user data (keep only id, email, created_at)
+        // 3. Generate new referral code (required field - cannot be null)
+        const newReferralCode = nanoid(8).toUpperCase();
+
+        // 4. Reset all user data (keep only id, email, created_at)
         updateData = {
-          referral_code: null,
+          referral_code: newReferralCode,
           referral_count: 0,
           referred_by: null,
           sendtag: null,
@@ -110,9 +114,10 @@ export async function POST(request: NextRequest) {
         deletedData = {
           walletsDeleted: deletedWallets?.length || 0,
           transactionsDissociated: updatedTransactions?.length || 0,
+          newReferralCode: newReferralCode,
         };
 
-        message = `Account permanently reset for ${user.email}. Deleted ${deletedData.walletsDeleted} wallets, dissociated ${deletedData.transactionsDissociated} transactions. User can now re-register.`;
+        message = `Account permanently reset for ${user.email}. Deleted ${deletedData.walletsDeleted} wallets, dissociated ${deletedData.transactionsDissociated} transactions. New referral code: ${newReferralCode}. User can now re-register.`;
         console.log(`[Admin] PERMANENT RESET completed for ${user.email}:`, deletedData);
         break;
     }
@@ -131,8 +136,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // TODO: Send email notification to user
-    // You can implement email notification here using your email service
+    // Send email with new referral code (only for permanent_reset)
+    if (action === "permanent_reset") {
+      try {
+        const emailResponse = await fetch(`${request.nextUrl.origin}/api/admin/send-bulk-email`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: user.email,
+            subject: "Your Account Has Been Reset - New Referral Code",
+            message: `Hello,\n\nYour account has been reset by an administrator. Your account data has been cleared, and you can now register again as a new user.\n\nYour new referral code is: ${deletedData.newReferralCode}\n\nYou can use this code to refer friends and earn rewards.\n\nIf you have any questions, please contact support.\n\nBest regards,\nSendAfrica Team`,
+            referralCode: deletedData.newReferralCode,
+            referralCount: 0,
+          }),
+        });
+
+        if (emailResponse.ok) {
+          console.log(`[Admin] ✅ Reset email sent to ${user.email} with new referral code: ${deletedData.newReferralCode}`);
+        } else {
+          const emailData = await emailResponse.json();
+          console.error(`[Admin] ⚠️ Failed to send reset email to ${user.email}:`, emailData.error);
+        }
+      } catch (emailError: any) {
+        // Don't fail the reset if email fails - just log it
+        console.error(`[Admin] ⚠️ Error sending reset email:`, emailError);
+      }
+    }
 
     console.log(`[Admin] User management action: ${action} on ${user.email}`);
 
