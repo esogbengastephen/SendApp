@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const validActions = ["block", "unblock", "reset", "clear_reset"];
+    const validActions = ["block", "unblock", "permanent_reset"];
     if (!validActions.includes(action)) {
       return NextResponse.json(
         { success: false, error: "Invalid action" },
@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
     // Get user info first
     const { data: user, error: fetchError } = await supabase
       .from("users")
-      .select("email, is_blocked, requires_reset")
+      .select("email, is_blocked")
       .eq("id", userId)
       .single();
 
@@ -36,6 +36,7 @@ export async function POST(request: NextRequest) {
 
     let updateData: any = {};
     let message = "";
+    let deletedData: any = {};
 
     switch (action) {
       case "block":
@@ -56,20 +57,63 @@ export async function POST(request: NextRequest) {
         message = `User ${user.email} has been unblocked`;
         break;
 
-      case "reset":
-        updateData = {
-          requires_reset: true,
-          reset_requested_at: new Date().toISOString(),
-        };
-        message = `Account reset requested for ${user.email}. User will need to re-setup on next login.`;
-        break;
+      case "permanent_reset":
+        // This is a destructive action - delete all user data except email
+        console.log(`[Admin] PERMANENT RESET initiated for ${user.email}`);
 
-      case "clear_reset":
+        // 1. Delete all user wallets
+        const { data: deletedWallets, error: walletsError } = await supabase
+          .from("user_wallets")
+          .delete()
+          .eq("user_id", userId)
+          .select("wallet_address");
+
+        if (walletsError) {
+          console.error("Error deleting wallets:", walletsError);
+          return NextResponse.json(
+            { success: false, error: "Failed to delete user wallets" },
+            { status: 500 }
+          );
+        }
+
+        // 2. Dissociate transactions (keep for audit, but remove user_id)
+        const { data: updatedTransactions, error: transactionsError } = await supabase
+          .from("transactions")
+          .update({ user_id: null })
+          .eq("user_id", userId)
+          .select("transaction_id");
+
+        if (transactionsError) {
+          console.error("Error dissociating transactions:", transactionsError);
+          return NextResponse.json(
+            { success: false, error: "Failed to dissociate transactions" },
+            { status: 500 }
+          );
+        }
+
+        // 3. Reset all user data (keep only id, email, created_at)
         updateData = {
+          referral_code: null,
+          referral_count: 0,
+          referred_by: null,
+          sendtag: null,
+          default_virtual_account_number: null,
+          paystack_customer_code: null,
+          virtual_account_assigned_at: null,
+          is_blocked: false,
+          blocked_at: null,
+          blocked_reason: null,
           requires_reset: false,
           reset_requested_at: null,
         };
-        message = `Reset flag cleared for ${user.email}`;
+
+        deletedData = {
+          walletsDeleted: deletedWallets?.length || 0,
+          transactionsDissociated: updatedTransactions?.length || 0,
+        };
+
+        message = `Account permanently reset for ${user.email}. Deleted ${deletedData.walletsDeleted} wallets, dissociated ${deletedData.transactionsDissociated} transactions. User can now re-register.`;
+        console.log(`[Admin] PERMANENT RESET completed for ${user.email}:`, deletedData);
         break;
     }
 
@@ -99,6 +143,7 @@ export async function POST(request: NextRequest) {
         email: user.email,
         ...updateData,
       },
+      deletedData: action === "permanent_reset" ? deletedData : undefined,
     });
   } catch (error: any) {
     console.error("Error in user management API:", error);

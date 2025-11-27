@@ -52,6 +52,14 @@ export default function UsersPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
+  
+  // Reset user search
+  const [resetEmail, setResetEmail] = useState("");
+  const [searchedUser, setSearchedUser] = useState<any>(null);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [deleteConfirmation, setDeleteConfirmation] = useState("");
+  const [resetting, setResetting] = useState(false);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -107,12 +115,10 @@ export default function UsersPage() {
     }
   };
 
-  const handleUserAction = async (userId: string, action: "block" | "unblock" | "reset" | "clear_reset", userEmail: string) => {
+  const handleUserAction = async (userId: string, action: "block" | "unblock", userEmail: string) => {
     const actionMessages = {
       block: `block ${userEmail}`,
       unblock: `unblock ${userEmail}`,
-      reset: `reset account for ${userEmail}`,
-      clear_reset: `clear reset flag for ${userEmail}`,
     };
 
     if (!confirm(`Are you sure you want to ${actionMessages[action]}?`)) {
@@ -149,6 +155,78 @@ export default function UsersPage() {
       setActionError(err.message || "Failed to perform action");
     } finally {
       setActionLoading(null);
+    }
+  };
+
+  const handleSearchUser = async () => {
+    if (!resetEmail.trim()) {
+      setSearchError("Please enter an email address");
+      return;
+    }
+
+    setSearchLoading(true);
+    setSearchError(null);
+    setSearchedUser(null);
+    setDeleteConfirmation("");
+
+    try {
+      const response = await fetch(`/api/admin/users/search?email=${encodeURIComponent(resetEmail)}`);
+      const data = await response.json();
+
+      if (data.success) {
+        setSearchedUser(data.user);
+      } else {
+        setSearchError(data.error || "User not found");
+      }
+    } catch (err: any) {
+      console.error("Failed to search user:", err);
+      setSearchError("Failed to search user");
+    } finally {
+      setSearchLoading(false);
+    }
+  };
+
+  const handlePermanentReset = async () => {
+    if (deleteConfirmation !== "DELETE") {
+      setSearchError("Please type DELETE to confirm");
+      return;
+    }
+
+    if (!confirm(`⚠️ FINAL CONFIRMATION\n\nThis will PERMANENTLY delete all data for ${searchedUser.email}.\n\nThis action CANNOT be undone!\n\nClick OK to proceed.`)) {
+      return;
+    }
+
+    setResetting(true);
+    setSearchError(null);
+
+    try {
+      const response = await fetch("/api/admin/users/manage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: searchedUser.id,
+          action: "permanent_reset",
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setActionSuccess(data.message);
+        setSearchedUser(null);
+        setResetEmail("");
+        setDeleteConfirmation("");
+        setTimeout(() => setActionSuccess(null), 10000);
+        // Refresh users list
+        fetchUsers();
+      } else {
+        setSearchError(data.error || "Failed to reset account");
+      }
+    } catch (err: any) {
+      console.error("Failed to reset account:", err);
+      setSearchError(err.message || "Failed to reset account");
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -320,10 +398,6 @@ export default function UsersPage() {
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300" title={user.blockedReason || "Blocked"}>
                           🔴 Blocked
                         </span>
-                      ) : user.requiresReset ? (
-                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300">
-                          🟡 Reset Required
-                        </span>
                       ) : (
                         <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300">
                           🟢 Active
@@ -360,42 +434,23 @@ export default function UsersPage() {
                       </div>
                     </td>
                     <td className="px-4 py-4">
-                      <div className="flex flex-col gap-2">
-                        {user.isBlocked ? (
-                          <button
-                            onClick={() => handleUserAction(user.id, "unblock", user.email || "")}
-                            disabled={actionLoading === user.id}
-                            className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {actionLoading === user.id ? "..." : "Unblock"}
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => handleUserAction(user.id, "block", user.email || "")}
-                            disabled={actionLoading === user.id}
-                            className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {actionLoading === user.id ? "..." : "Block"}
-                          </button>
-                        )}
-                        {user.requiresReset ? (
-                          <button
-                            onClick={() => handleUserAction(user.id, "clear_reset", user.email || "")}
-                            disabled={actionLoading === user.id}
-                            className="text-xs bg-slate-600 hover:bg-slate-700 text-white px-3 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {actionLoading === user.id ? "..." : "Clear Reset"}
-                          </button>
-                        ) : (
-                          <button
-                            onClick={() => handleUserAction(user.id, "reset", user.email || "")}
-                            disabled={actionLoading === user.id}
-                            className="text-xs bg-orange-600 hover:bg-orange-700 text-white px-3 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {actionLoading === user.id ? "..." : "Reset Account"}
-                          </button>
-                        )}
-                      </div>
+                      {user.isBlocked ? (
+                        <button
+                          onClick={() => handleUserAction(user.id, "unblock", user.email || "")}
+                          disabled={actionLoading === user.id}
+                          className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {actionLoading === user.id ? "..." : "Unblock"}
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => handleUserAction(user.id, "block", user.email || "")}
+                          disabled={actionLoading === user.id}
+                          className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {actionLoading === user.id ? "..." : "Block"}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -434,6 +489,152 @@ export default function UsersPage() {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Danger Zone - Reset User Account */}
+      <div className="bg-red-50 dark:bg-red-900/10 border-2 border-red-300 dark:border-red-800 p-4 sm:p-6 rounded-xl">
+        <h2 className="text-lg sm:text-xl font-bold text-red-900 dark:text-red-100 mb-2 flex items-center gap-2">
+          <span className="text-2xl">🚨</span>
+          DANGER ZONE - Reset User Account
+        </h2>
+        <p className="text-sm text-red-700 dark:text-red-300 mb-4">
+          Search for a user by email to permanently reset their account. This action is IRREVERSIBLE.
+        </p>
+
+        {/* Search Section */}
+        <div className="bg-white dark:bg-slate-900 p-4 rounded-lg mb-4">
+          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+            Search User by Email
+          </label>
+          <div className="flex gap-2">
+            <input
+              type="email"
+              placeholder="user@example.com"
+              value={resetEmail}
+              onChange={(e) => setResetEmail(e.target.value)}
+              onKeyPress={(e) => e.key === "Enter" && handleSearchUser()}
+              className="flex-1 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary"
+            />
+            <button
+              onClick={handleSearchUser}
+              disabled={searchLoading || !resetEmail.trim()}
+              className="bg-slate-600 hover:bg-slate-700 text-white px-6 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {searchLoading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  Searching...
+                </>
+              ) : (
+                <>🔍 Search</>
+              )}
+            </button>
+          </div>
+          {searchError && (
+            <p className="text-sm text-red-600 dark:text-red-400 mt-2">{searchError}</p>
+          )}
+        </div>
+
+        {/* User Found - Preview and Reset */}
+        {searchedUser && (
+          <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-lg border-2 border-yellow-300 dark:border-yellow-700">
+            <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+              ✅ User Found
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Email</p>
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{searchedUser.email}</p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Created</p>
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                  {new Date(searchedUser.createdAt).toLocaleDateString()}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Status</p>
+                <p className="text-sm font-medium">
+                  {searchedUser.isBlocked ? (
+                    <span className="text-red-600">🔴 Blocked</span>
+                  ) : (
+                    <span className="text-green-600">🟢 Active</span>
+                  )}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Linked Wallets</p>
+                <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{searchedUser.linkedWallets}</p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-800 p-4 rounded-lg mb-4">
+              <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Current Data:</p>
+              <ul className="text-sm text-slate-600 dark:text-slate-400 space-y-1">
+                <li>• Total Transactions: <span className="font-bold">{searchedUser.totalTransactions}</span></li>
+                <li>• Total Spent: <span className="font-bold">₦{searchedUser.totalSpentNGN.toLocaleString()}</span></li>
+                <li>• Total Received: <span className="font-bold">{searchedUser.totalReceivedSEND.toFixed(2)} SEND</span></li>
+                <li>• Referrals: <span className="font-bold">{searchedUser.referralCount}</span></li>
+                {searchedUser.sendtag && <li>• SendTag: <span className="font-bold">/{searchedUser.sendtag}</span></li>}
+              </ul>
+            </div>
+
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 rounded-lg mb-4">
+              <p className="text-sm font-bold text-red-900 dark:text-red-100 mb-2">⚠️ WARNING: This action will:</p>
+              <ul className="text-sm text-red-700 dark:text-red-300 space-y-1 mb-4">
+                <li>• Delete {searchedUser.linkedWallets} wallet address(es)</li>
+                <li>• Dissociate {searchedUser.totalTransactions} transaction(s) (kept for audit)</li>
+                <li>• Clear all statistics and referral data</li>
+                <li>• Clear virtual account assignment</li>
+                <li>• Keep only the email for re-registration</li>
+              </ul>
+              <p className="text-sm font-bold text-red-900 dark:text-red-100">
+                The user will be able to sign up again as a completely new user.
+              </p>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                Type <span className="font-bold text-red-600">DELETE</span> to confirm:
+              </label>
+              <input
+                type="text"
+                placeholder="Type DELETE to confirm"
+                value={deleteConfirmation}
+                onChange={(e) => setDeleteConfirmation(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-red-500 focus:border-red-500"
+              />
+            </div>
+
+            <button
+              onClick={handlePermanentReset}
+              disabled={deleteConfirmation !== "DELETE" || resetting}
+              className="w-full bg-red-600 hover:bg-red-700 text-white font-bold px-6 py-3 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {resetting ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  Resetting Account...
+                </>
+              ) : (
+                <>⚠️ PERMANENTLY RESET THIS ACCOUNT</>
+              )}
+            </button>
+
+            <button
+              onClick={() => {
+                setSearchedUser(null);
+                setResetEmail("");
+                setDeleteConfirmation("");
+                setSearchError(null);
+              }}
+              className="w-full mt-2 bg-slate-200 hover:bg-slate-300 dark:bg-slate-700 dark:hover:bg-slate-600 text-slate-900 dark:text-slate-100 px-6 py-2 rounded-lg transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
