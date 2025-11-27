@@ -7,7 +7,8 @@ ADD COLUMN IF NOT EXISTS is_blocked BOOLEAN DEFAULT FALSE,
 ADD COLUMN IF NOT EXISTS blocked_at TIMESTAMP WITH TIME ZONE,
 ADD COLUMN IF NOT EXISTS blocked_reason TEXT,
 ADD COLUMN IF NOT EXISTS requires_reset BOOLEAN DEFAULT FALSE,
-ADD COLUMN IF NOT EXISTS reset_requested_at TIMESTAMP WITH TIME ZONE;
+ADD COLUMN IF NOT EXISTS reset_requested_at TIMESTAMP WITH TIME ZONE,
+ADD COLUMN IF NOT EXISTS account_reset_at TIMESTAMP WITH TIME ZONE;
 
 -- Add indexes for performance
 CREATE INDEX IF NOT EXISTS idx_users_is_blocked ON users(is_blocked);
@@ -19,6 +20,7 @@ COMMENT ON COLUMN users.blocked_at IS 'Timestamp when the user was blocked';
 COMMENT ON COLUMN users.blocked_reason IS 'Reason for blocking the user';
 COMMENT ON COLUMN users.requires_reset IS 'Whether the user needs to reset their account on next login';
 COMMENT ON COLUMN users.reset_requested_at IS 'Timestamp when account reset was requested';
+COMMENT ON COLUMN users.account_reset_at IS 'Timestamp when account was permanently reset (never cleared)';
 
 -- Update RLS policies to respect blocked status
 -- (Users should not be able to access their data when blocked)

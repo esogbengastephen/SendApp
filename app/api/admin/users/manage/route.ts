@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { nanoid } from "nanoid";
+import axios from "axios";
 
 export async function POST(request: NextRequest) {
   try {
@@ -95,7 +96,17 @@ export async function POST(request: NextRequest) {
         // 3. Generate new referral code (required field - cannot be null)
         const newReferralCode = nanoid(8).toUpperCase();
 
-        // 4. Reset all user data (keep only id, email, created_at)
+        // 4. Get Paystack customer code before clearing it
+        const { data: userData } = await supabase
+          .from("users")
+          .select("paystack_customer_code, default_virtual_account_number")
+          .eq("id", userId)
+          .single();
+
+        const paystackCustomerCode = userData?.paystack_customer_code;
+        const virtualAccountNumber = userData?.default_virtual_account_number;
+
+        // 5. Reset all user data (keep only id, email, created_at)
         updateData = {
           referral_code: newReferralCode,
           referral_count: 0,
@@ -109,6 +120,7 @@ export async function POST(request: NextRequest) {
           blocked_reason: null,
           requires_reset: false,
           reset_requested_at: null,
+          account_reset_at: new Date().toISOString(), // Track reset time (never cleared)
         };
 
         deletedData = {
@@ -134,6 +146,51 @@ export async function POST(request: NextRequest) {
         { success: false, error: "Failed to update user" },
         { status: 500 }
       );
+    }
+
+    // Deactivate Paystack customer (if exists) - only for permanent_reset
+    if (action === "permanent_reset" && paystackCustomerCode) {
+      try {
+        const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
+        const PAYSTACK_API_BASE = "https://api.paystack.co";
+
+        if (PAYSTACK_SECRET_KEY) {
+          // Blacklist customer in Paystack (set risk_action to deny)
+          try {
+            await axios.put(
+              `${PAYSTACK_API_BASE}/customer/${paystackCustomerCode}`,
+              {
+                first_name: "Deleted",
+                last_name: "User",
+                email: `deleted_${Date.now()}@deleted.local`, // Anonymize email
+                phone: "+2340000000000", // Anonymize phone
+                metadata: {
+                  deleted: true,
+                  deleted_at: new Date().toISOString(),
+                  original_user_id: userId,
+                },
+                risk_action: "deny", // Blacklist customer
+              },
+              {
+                headers: {
+                  Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+                  "Content-Type": "application/json",
+                },
+              }
+            );
+            console.log(`[Admin] ✅ Paystack customer ${paystackCustomerCode} deactivated/blacklisted`);
+            deletedData.paystackCustomerDeactivated = true;
+          } catch (paystackError: any) {
+            console.error(`[Admin] ⚠️ Failed to deactivate Paystack customer:`, paystackError.response?.data || paystackError.message);
+            // Don't fail the reset if Paystack deactivation fails
+            deletedData.paystackCustomerDeactivated = false;
+            deletedData.paystackError = paystackError.response?.data?.message || paystackError.message;
+          }
+        }
+      } catch (error: any) {
+        console.error(`[Admin] ⚠️ Error in Paystack deactivation process:`, error);
+        // Don't fail the reset if Paystack deactivation fails
+      }
     }
 
     // Send email with new referral code (only for permanent_reset)
