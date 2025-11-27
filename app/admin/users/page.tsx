@@ -18,6 +18,10 @@ interface User {
   lastTransactionAt: string | null;
   createdAt: string;
   userType: "email" | "wallet";
+  isBlocked?: boolean;
+  requiresReset?: boolean;
+  blockedAt?: string | null;
+  blockedReason?: string | null;
 }
 
 interface Pagination {
@@ -45,6 +49,9 @@ export default function UsersPage() {
   const [search, setSearch] = useState("");
   const [sortBy, setSortBy] = useState("created_at");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -100,6 +107,51 @@ export default function UsersPage() {
     }
   };
 
+  const handleUserAction = async (userId: string, action: "block" | "unblock" | "reset" | "clear_reset", userEmail: string) => {
+    const actionMessages = {
+      block: `block ${userEmail}`,
+      unblock: `unblock ${userEmail}`,
+      reset: `reset account for ${userEmail}`,
+      clear_reset: `clear reset flag for ${userEmail}`,
+    };
+
+    if (!confirm(`Are you sure you want to ${actionMessages[action]}?`)) {
+      return;
+    }
+
+    setActionLoading(userId);
+    setActionError(null);
+    setActionSuccess(null);
+
+    try {
+      const response = await fetch("/api/admin/users/manage", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          action,
+          reason: action === "block" ? "Blocked by administrator" : undefined,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setActionSuccess(data.message);
+        setTimeout(() => setActionSuccess(null), 5000);
+        // Refresh users list
+        fetchUsers();
+      } else {
+        setActionError(data.error || "Failed to perform action");
+      }
+    } catch (err: any) {
+      console.error("Failed to perform user action:", err);
+      setActionError(err.message || "Failed to perform action");
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
   return (
     <div className="space-y-4 sm:space-y-6">
       <div>
@@ -110,6 +162,22 @@ export default function UsersPage() {
           All registered users
         </p>
       </div>
+
+      {/* Success Message */}
+      {actionSuccess && (
+        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-4 rounded-lg">
+          <p className="text-sm text-green-600 dark:text-green-400">
+            ✓ {actionSuccess}
+          </p>
+        </div>
+      )}
+
+      {/* Error Message */}
+      {actionError && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-4 rounded-lg">
+          <p className="text-sm text-red-600 dark:text-red-400">{actionError}</p>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -201,16 +269,13 @@ export default function UsersPage() {
                   Email
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
+                  Status
+                </th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
                   Wallet
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
-                  Referral Code
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
                   Referrals
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
-                  SendTag
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
                   Transactions
@@ -222,20 +287,20 @@ export default function UsersPage() {
                   Total Received
                 </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
-                  First Trans
+                  Actions
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-8 text-center text-slate-500">
+                  <td colSpan={8} className="px-6 py-8 text-center text-slate-500">
                     Loading users...
                   </td>
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-6 py-8 text-center text-slate-500">
+                  <td colSpan={8} className="px-6 py-8 text-center text-slate-500">
                     No users found
                   </td>
                 </tr>
@@ -251,6 +316,21 @@ export default function UsersPage() {
                       </div>
                     </td>
                     <td className="px-4 py-4">
+                      {user.isBlocked ? (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300" title={user.blockedReason || "Blocked"}>
+                          🔴 Blocked
+                        </span>
+                      ) : user.requiresReset ? (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300">
+                          🟡 Reset Required
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300">
+                          🟢 Active
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-4">
                       <div className="text-xs font-mono text-slate-900 dark:text-slate-100">
                         {user.walletAddress ? (
                           <span>{user.walletAddress.slice(0, 6)}...{user.walletAddress.slice(-4)}</span>
@@ -260,25 +340,9 @@ export default function UsersPage() {
                       </div>
                     </td>
                     <td className="px-4 py-4">
-                      {user.referralCode ? (
-                        <span className="text-sm font-mono text-primary">{user.referralCode}</span>
-                      ) : (
-                        <span className="text-sm text-slate-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-4">
                       <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
                         {user.referralCount || 0}
                       </div>
-                    </td>
-                    <td className="px-4 py-4">
-                      {user.sendtag ? (
-                        <span className="text-sm text-primary font-medium">
-                          /{user.sendtag}
-                        </span>
-                      ) : (
-                        <span className="text-sm text-slate-400">—</span>
-                      )}
                     </td>
                     <td className="px-4 py-4">
                       <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
@@ -295,11 +359,43 @@ export default function UsersPage() {
                         {parseFloat(user.totalReceivedSEND).toLocaleString()} SEND
                       </div>
                     </td>
-                    <td className="px-4 py-4 text-xs text-slate-500 dark:text-slate-400">
-                      {user.firstTransactionAt 
-                        ? new Date(user.firstTransactionAt).toLocaleDateString()
-                        : <span className="text-slate-400">—</span>
-                      }
+                    <td className="px-4 py-4">
+                      <div className="flex flex-col gap-2">
+                        {user.isBlocked ? (
+                          <button
+                            onClick={() => handleUserAction(user.id, "unblock", user.email || "")}
+                            disabled={actionLoading === user.id}
+                            className="text-xs bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {actionLoading === user.id ? "..." : "Unblock"}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleUserAction(user.id, "block", user.email || "")}
+                            disabled={actionLoading === user.id}
+                            className="text-xs bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {actionLoading === user.id ? "..." : "Block"}
+                          </button>
+                        )}
+                        {user.requiresReset ? (
+                          <button
+                            onClick={() => handleUserAction(user.id, "clear_reset", user.email || "")}
+                            disabled={actionLoading === user.id}
+                            className="text-xs bg-slate-600 hover:bg-slate-700 text-white px-3 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {actionLoading === user.id ? "..." : "Clear Reset"}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleUserAction(user.id, "reset", user.email || "")}
+                            disabled={actionLoading === user.id}
+                            className="text-xs bg-orange-600 hover:bg-orange-700 text-white px-3 py-1 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {actionLoading === user.id ? "..." : "Reset Account"}
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
