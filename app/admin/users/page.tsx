@@ -141,9 +141,9 @@ export default function UsersPage() {
 
       {/* Filters and Controls */}
       <div className="bg-white dark:bg-slate-900 p-4 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
-        <div className="flex flex-col sm:flex-row gap-4">
+        <div className="flex flex-col lg:flex-row gap-4">
           {/* Search */}
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <input
               type="text"
               placeholder="Search by email or referral code..."
@@ -153,37 +153,41 @@ export default function UsersPage() {
             />
           </div>
 
-          {/* Sort By */}
-          <div className="flex gap-2">
+          {/* Sort By and Page Size Container */}
+          <div className="flex flex-col sm:flex-row gap-4 lg:flex-shrink-0">
+            {/* Sort By */}
+            <div className="flex gap-2">
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value)}
+                className="flex-1 sm:flex-initial px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary min-w-[140px]"
+              >
+                <option value="created_at">Date Joined</option>
+                <option value="email">Email</option>
+                <option value="referral_count">Referrals</option>
+              </select>
+
+              <button
+                onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+                className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors flex-shrink-0"
+                title={sortOrder === "asc" ? "Ascending" : "Descending"}
+              >
+                {sortOrder === "asc" ? "↑" : "↓"}
+              </button>
+            </div>
+
+            {/* Page Size */}
             <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-              className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary"
+              value={pagination.pageSize}
+              onChange={(e) => handlePageSizeChange(parseInt(e.target.value))}
+              className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary min-w-[140px]"
             >
-              <option value="created_at">Date Joined</option>
-              <option value="email">Email</option>
-              <option value="referral_count">Referrals</option>
+              <option value="10">10 per page</option>
+              <option value="25">25 per page</option>
+              <option value="50">50 per page</option>
+              <option value="100">100 per page</option>
             </select>
-
-            <button
-              onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-              className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
-            >
-              {sortOrder === "asc" ? "↑" : "↓"}
-            </button>
           </div>
-
-          {/* Page Size */}
-          <select
-            value={pagination.pageSize}
-            onChange={(e) => handlePageSizeChange(parseInt(e.target.value))}
-            className="px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-primary"
-          >
-            <option value="10">10 per page</option>
-            <option value="25">25 per page</option>
-            <option value="50">50 per page</option>
-            <option value="100">100 per page</option>
-          </select>
         </div>
       </div>
 
