@@ -1,41 +1,61 @@
 import { NextResponse } from "next/server";
-import { getAllTransactions } from "@/lib/transactions";
+import { supabase } from "@/lib/supabase";
 import { formatDistanceToNow } from "date-fns";
 
 export async function GET() {
   try {
-    const allTransactions = getAllTransactions();
-    
-    // Sort by date (newest first) and take last 10
-    const recentTransactions = allTransactions
-      .sort((a, b) => {
-        const dateA = a.completedAt || a.createdAt;
-        const dateB = b.completedAt || b.createdAt;
-        return dateB.getTime() - dateA.getTime();
-      })
-      .slice(0, 10)
-      .map((tx) => ({
-        id: tx.transactionId,
-        type: tx.status === "completed" ? "completed" : tx.status === "failed" ? "failed" : "pending",
-        message: tx.status === "completed" 
-          ? `Transaction ${tx.transactionId.slice(0, 8)}... completed`
+    // Query Supabase for recent transactions (last 10)
+    const { data: recentTransactions, error } = await supabase
+      .from("transactions")
+      .select("*")
+      .order("completed_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .limit(10);
+
+    if (error) {
+      console.error("Supabase error:", error);
+      throw error;
+    }
+
+    // Format activities
+    const activities = (recentTransactions || []).map((tx) => {
+      const timestamp = tx.completed_at || tx.created_at;
+      const walletShort = tx.wallet_address 
+        ? `${tx.wallet_address.slice(0, 6)}...${tx.wallet_address.slice(-4)}`
+        : "Unknown";
+
+      return {
+        id: tx.transaction_id,
+        type: tx.status === "completed" 
+          ? "completed" 
+          : tx.status === "failed" 
+          ? "failed" 
+          : "pending",
+        message: tx.status === "completed"
+          ? `₦${parseFloat(tx.ngn_amount).toLocaleString()} → ${parseFloat(tx.send_amount).toLocaleString()} SEND`
           : tx.status === "failed"
-          ? `Transaction ${tx.transactionId.slice(0, 8)}... failed`
-          : `Transaction ${tx.transactionId.slice(0, 8)}... pending`,
-        time: formatDistanceToNow(tx.completedAt || tx.createdAt, { addSuffix: true }),
-        amount: tx.ngnAmount,
-        wallet: tx.walletAddress.slice(0, 6) + "..." + tx.walletAddress.slice(-4),
-        txHash: tx.txHash,
-      }));
-    
+          ? `Transaction failed: ${tx.error_message || "Unknown error"}`
+          : `Pending payment of ₦${parseFloat(tx.ngn_amount).toLocaleString()}`,
+        time: timestamp ? formatDistanceToNow(new Date(timestamp), { addSuffix: true }) : "Just now",
+        amount: parseFloat(tx.ngn_amount),
+        wallet: walletShort,
+        txHash: tx.tx_hash,
+        timestamp: timestamp,
+      };
+    });
+
     return NextResponse.json({
       success: true,
-      activities: recentTransactions,
+      activities,
     });
   } catch (error: any) {
     console.error("Error fetching recent activity:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to fetch recent activity" },
+      {
+        success: false,
+        error: "Failed to fetch recent activity",
+        details: error.message,
+      },
       { status: 500 }
     );
   }

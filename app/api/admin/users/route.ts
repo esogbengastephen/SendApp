@@ -10,41 +10,34 @@ export async function GET(request: Request) {
 
     // Return user statistics
     if (stats === "true") {
-      // Get email-based users from Supabase
+      // Get all users from Supabase
       const { data: emailUsers, error: emailError } = await supabase
         .from("users")
         .select("id, email, created_at, total_transactions, total_spent_ngn")
         .not("email", "is", null);
 
-      // Get wallet-based users from memory
-      const walletUsers = getAllUsers();
+      if (emailError) {
+        console.error("Error fetching user stats:", emailError);
+      }
 
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      // Count new email users today
-      const newEmailUsersToday = (emailUsers || []).filter(
+      // Count new users today
+      const newUsersToday = (emailUsers || []).filter(
         (user) => new Date(user.created_at) >= today
       ).length;
 
-      // Count new wallet users today
-      const newWalletUsersToday = walletUsers.filter(
-        (user) => user.firstTransactionAt >= today
-      ).length;
-
-      // Calculate totals
-      const totalEmailUsers = emailUsers?.length || 0;
-      const totalWalletUsers = walletUsers.length;
-      const totalUsers = totalEmailUsers + totalWalletUsers;
-      const newUsersToday = newEmailUsersToday + newWalletUsersToday;
+      // Calculate totals from Supabase users only (email-based)
+      const totalUsers = emailUsers?.length || 0;
 
       const totalTransactions = 
-        (emailUsers?.reduce((sum, u) => sum + (u.total_transactions || 0), 0) || 0) +
-        walletUsers.reduce((sum, u) => sum + u.totalTransactions, 0);
+        emailUsers?.reduce((sum, u) => sum + (u.total_transactions || 0), 0) || 0;
 
       const totalRevenue = 
-        (emailUsers?.reduce((sum, u) => sum + parseFloat(u.total_spent_ngn?.toString() || "0"), 0) || 0) +
-        walletUsers.reduce((sum, u) => sum + u.totalSpentNGN, 0);
+        emailUsers?.reduce((sum, u) => sum + parseFloat(u.total_spent_ngn?.toString() || "0"), 0) || 0;
+
+      console.log(`[Users API Stats] ${totalUsers} users, ${newUsersToday} new today, ${totalTransactions} transactions, ₦${totalRevenue.toLocaleString()} revenue`);
 
       return NextResponse.json({
         success: true,
@@ -60,13 +53,28 @@ export async function GET(request: Request) {
     // Return top users by spending
     if (top) {
       const limit = parseInt(top) || 10;
-      const topUsers = getTopUsersBySpending(limit);
+      
+      // Get top users from Supabase
+      const { data: topUsers, error: topError } = await supabase
+        .from("users")
+        .select("id, email, total_spent_ngn, total_transactions, total_received_send, first_transaction_at, last_transaction_at, created_at")
+        .not("email", "is", null)
+        .order("total_spent_ngn", { ascending: false })
+        .limit(limit);
+
+      if (topError) {
+        console.error("Error fetching top users:", topError);
+      }
+
       return NextResponse.json({
         success: true,
-        users: topUsers.map((user) => ({
-          ...user,
-          firstTransactionAt: user.firstTransactionAt.toISOString(),
-          lastTransactionAt: user.lastTransactionAt.toISOString(),
+        users: (topUsers || []).map((user) => ({
+          email: user.email,
+          totalSpentNGN: parseFloat(user.total_spent_ngn?.toString() || "0"),
+          totalReceivedSEND: user.total_received_send || "0.00",
+          totalTransactions: user.total_transactions || 0,
+          firstTransactionAt: user.first_transaction_at || user.created_at,
+          lastTransactionAt: user.last_transaction_at || user.created_at,
         })),
       });
     }
