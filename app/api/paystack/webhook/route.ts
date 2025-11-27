@@ -152,26 +152,60 @@ export async function POST(request: NextRequest) {
         
         console.log(`💰 [Webhook] Converting ${paystackAmount} NGN → ${sendAmount} SEND (rate: ${exchangeRate})`);
         
-        // Create transaction record
-        const transactionId = nanoid();
-        await createTransaction({
-          transactionId,
-          userId,
-          walletAddress,
-          ngnAmount: paystackAmount,
-          sendAmount,
-          paystackReference: reference,
-          exchangeRate,
-          completedAt: new Date(),
-        });
-        
-        // Update to completed status immediately since payment was received
-        await updateTransaction(transactionId, {
-          status: "completed",
-          completedAt: new Date(),
-        });
-        
-        console.log(`📝 [Webhook] Transaction created: ${transactionId}`);
+        // Try to find existing pending transaction for this user and wallet
+        const { data: existingTransactions } = await supabase
+          .from("transactions")
+          .select("*")
+          .eq("user_id", userId)
+          .eq("wallet_address", walletAddress.toLowerCase())
+          .eq("status", "pending")
+          .gte("created_at", new Date(Date.now() - 10 * 60 * 1000).toISOString()) // Last 10 minutes
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        let transactionId: string;
+
+        if (existingTransactions && existingTransactions.length > 0) {
+          // Found existing pending transaction - update it
+          const existingTx = existingTransactions[0];
+          transactionId = existingTx.transaction_id;
+          
+          console.log(`📝 [Webhook] Found existing pending transaction: ${transactionId}`);
+          
+          // Update the existing transaction
+          await updateTransaction(transactionId, {
+            status: "completed",
+            paystackReference: reference,
+            ngnAmount: paystackAmount,
+            sendAmount,
+            exchangeRate,
+            completedAt: new Date(),
+          });
+          
+          console.log(`✅ [Webhook] Updated existing transaction to completed`);
+        } else {
+          // No pending transaction found - create new one
+          transactionId = nanoid();
+          
+          console.log(`📝 [Webhook] No pending transaction found, creating new: ${transactionId}`);
+          
+          await createTransaction({
+            transactionId,
+            userId,
+            walletAddress,
+            ngnAmount: paystackAmount,
+            sendAmount,
+            paystackReference: reference,
+            exchangeRate,
+            completedAt: new Date(),
+          });
+
+          // Update to completed status immediately
+          await updateTransaction(transactionId, {
+            status: "completed",
+            completedAt: new Date(),
+          });
+        }
         
         // Distribute tokens immediately
         try {
