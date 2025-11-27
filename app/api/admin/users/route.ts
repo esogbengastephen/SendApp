@@ -71,10 +71,10 @@ export async function GET(request: Request) {
       });
     }
 
-    // Return all users (combine email and wallet users)
+    // Return all users (email-based users only)
     const { data: emailUsers, error: emailError } = await supabase
       .from("users")
-      .select("id, email, wallet_address, referral_code, referral_count, referred_by, created_at, total_transactions, total_spent_ngn, total_received_send, first_transaction_at, last_transaction_at, sendtag")
+      .select("id, email, referral_code, referral_count, referred_by, created_at, total_transactions, total_spent_ngn, total_received_send, first_transaction_at, last_transaction_at, sendtag")
       .order("created_at", { ascending: false });
 
     const walletUsers = getAllUsers();
@@ -88,7 +88,7 @@ export async function GET(request: Request) {
         allUsers.push({
           id: user.id,
           email: user.email,
-          walletAddress: user.wallet_address || null,
+          // Note: walletAddress removed - users can have multiple wallets in user_wallets table
           referralCode: user.referral_code,
           referralCount: user.referral_count || 0,
           referredBy: user.referred_by || null,
