@@ -39,6 +39,7 @@ export async function POST(request: NextRequest) {
     let updateData: any = {};
     let message = "";
     let deletedData: any = {};
+    let paystackCustomerCode: string | null = null; // Declare outside switch for scope
 
     switch (action) {
       case "block":
@@ -103,7 +104,7 @@ export async function POST(request: NextRequest) {
           .eq("id", userId)
           .single();
 
-        const paystackCustomerCode = userData?.paystack_customer_code;
+        paystackCustomerCode = userData?.paystack_customer_code || null;
         const virtualAccountNumber = userData?.default_virtual_account_number;
 
         // 5. Reset all user data (keep only id, email, created_at)
