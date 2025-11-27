@@ -361,25 +361,31 @@ export async function getUserByEmail(
 }
 
 /**
- * Link wallet address to email user (for future use)
+ * @deprecated This function is deprecated. Use linkWalletToUser from lib/supabase-users.ts instead.
+ * 
+ * The users table no longer has a wallet_address column (removed in migration 009).
+ * Wallet addresses are now stored in the user_wallets table to support multiple wallets per user.
+ * 
+ * Migration path:
+ * - Old: users.wallet_address (single wallet, now removed)
+ * - New: user_wallets table (multiple wallets per user)
+ * 
+ * Use: import { linkWalletToUser } from "@/lib/supabase-users";
  */
 export async function linkWalletToUser(
   email: string,
   walletAddress: string
 ): Promise<{ success: boolean; error?: string }> {
-  try {
-    const { error } = await supabase
-      .from("users")
-      .update({ wallet_address: walletAddress.toLowerCase().trim() })
-      .eq("email", email.toLowerCase().trim());
-
-    if (error) {
-      return { success: false, error: "Failed to link wallet address" };
-    }
-
-    return { success: true };
-  } catch (error: any) {
-    return { success: false, error: error.message };
-  }
+  console.warn(
+    "[DEPRECATED] lib/auth.ts linkWalletToUser is deprecated. " +
+    "Use linkWalletToUser from lib/supabase-users.ts instead."
+  );
+  
+  // This function is kept for backward compatibility but does nothing
+  // Wallet linking now happens automatically during transactions
+  return { 
+    success: false, 
+    error: "This function is deprecated. Wallet linking happens automatically during transactions." 
+  };
 }
 
