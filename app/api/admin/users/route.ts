@@ -77,6 +77,15 @@ export async function GET(request: Request) {
       .select("id, email, referral_code, referral_count, referred_by, created_at, total_transactions, total_spent_ngn, total_received_send, first_transaction_at, last_transaction_at, sendtag")
       .order("created_at", { ascending: false });
 
+    // Get all wallet addresses that are linked to email users
+    const { data: linkedWallets } = await supabase
+      .from("user_wallets")
+      .select("wallet_address");
+
+    const linkedWalletAddresses = new Set(
+      linkedWallets?.map(w => w.wallet_address.toLowerCase()) || []
+    );
+
     const walletUsers = getAllUsers();
 
     // Combine and format users
@@ -108,14 +117,14 @@ export async function GET(request: Request) {
       });
     }
 
-    // Add wallet-based users (only if they don't have an email)
+    // Add wallet-based users (only if they're not linked to an email user)
     walletUsers.forEach((walletUser) => {
-      // Check if this wallet is already in email users
-      const existsInEmail = emailUsers?.some(
-        (eu) => eu.wallet_address?.toLowerCase() === walletUser.walletAddress.toLowerCase()
+      // Check if this wallet is already linked to any email user
+      const isLinkedToEmailUser = linkedWalletAddresses.has(
+        walletUser.walletAddress.toLowerCase()
       );
 
-      if (!existsInEmail) {
+      if (!isLinkedToEmailUser) {
         allUsers.push({
           id: walletUser.walletAddress,
           email: null,
