@@ -1,19 +1,28 @@
 import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
-import { getAllTransactions } from "@/lib/transactions";
+import { supabase } from "@/lib/supabase";
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const PAYSTACK_API_BASE = "https://api.paystack.co";
 
 /**
- * Fetch Paystack payments and merge with our transaction data
+ * Fetch Paystack payments and merge with our transaction data from Supabase
  */
 export async function GET(request: NextRequest) {
   try {
-    // Get all our transactions with Paystack references
-    const allTransactions = getAllTransactions();
-    const transactionsWithPaystack = allTransactions.filter(
-      (t) => t.paystackReference && t.paystackReference !== t.transactionId
+    // Get all transactions from Supabase
+    const { data: allTransactions, error: supabaseError } = await supabase
+      .from("transactions")
+      .select("*");
+
+    if (supabaseError) {
+      console.error("Supabase error:", supabaseError);
+      throw supabaseError;
+    }
+
+    const transactions = allTransactions || [];
+    const transactionsWithPaystack = transactions.filter(
+      (t) => t.paystack_reference && t.paystack_reference !== t.transaction_id
     );
 
     // Fetch recent Paystack transactions
@@ -44,7 +53,7 @@ export async function GET(request: NextRequest) {
     const payments = paystackPayments.map((paystackTx: any) => {
       // Find matching transaction in our system
       const matchingTx = transactionsWithPaystack.find(
-        (t) => t.paystackReference === paystackTx.reference
+        (t) => t.paystack_reference === paystackTx.reference
       );
 
       return {
@@ -54,10 +63,10 @@ export async function GET(request: NextRequest) {
         customer: paystackTx.customer?.email || paystackTx.customer?.first_name || "N/A",
         createdAt: paystackTx.created_at,
         verified: matchingTx?.status === "completed" || false,
-        transactionId: matchingTx?.transactionId || null,
-        walletAddress: matchingTx?.walletAddress || null,
-        sendAmount: matchingTx?.sendAmount || null,
-        txHash: matchingTx?.txHash || null,
+        transactionId: matchingTx?.transaction_id || null,
+        walletAddress: matchingTx?.wallet_address || null,
+        sendAmount: matchingTx?.send_amount || null,
+        txHash: matchingTx?.tx_hash || null,
       };
     });
 
@@ -66,6 +75,8 @@ export async function GET(request: NextRequest) {
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
 
+    console.log(`[Payments API] Retrieved ${payments.length} payments from Paystack, ${transactionsWithPaystack.length} matched with Supabase`);
+
     return NextResponse.json({
       success: true,
       payments,
@@ -73,9 +84,8 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     console.error("Error fetching payments:", error);
     return NextResponse.json(
-      { success: false, error: "Failed to fetch payments" },
+      { success: false, error: "Failed to fetch payments", details: error.message },
       { status: 500 }
     );
   }
 }
-

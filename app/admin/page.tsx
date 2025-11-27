@@ -103,42 +103,46 @@ export default function AdminDashboard() {
   const statCards = [
     {
       title: "Total Transactions",
-      value: stats.totalTransactions.toLocaleString(),
+      value: loading ? "..." : stats.totalTransactions.toLocaleString(),
       icon: "receipt_long",
       color: "bg-blue-500",
       change: "+12.5%",
     },
     {
       title: "Total Revenue (NGN)",
-      value: `₦${stats.totalRevenue.toLocaleString()}`,
+      value: loading ? "..." : `₦${stats.totalRevenue.toLocaleString()}`,
       icon: "payments",
       color: "bg-green-500",
       change: "+8.2%",
     },
     {
       title: "Tokens Distributed",
-      value: `${stats.totalTokensDistributed.toLocaleString()} SEND`,
+      value: loading 
+        ? "..." 
+        : stats.totalTokensDistributed > 0 
+          ? `${stats.totalTokensDistributed.toLocaleString()} SEND`
+          : "0 SEND",
       icon: "account_balance_wallet",
       color: "bg-primary",
-      change: "+15.3%",
+      change: stats.totalTokensDistributed > 0 ? "+15.3%" : "0%",
     },
     {
       title: "Pending Payments",
-      value: stats.pendingPayments.toString(),
+      value: loading ? "..." : stats.pendingPayments.toString(),
       icon: "schedule",
       color: "bg-yellow-500",
       change: "-3.1%",
     },
     {
       title: "Successful",
-      value: stats.successfulPayments.toString(),
+      value: loading ? "..." : stats.successfulPayments.toString(),
       icon: "check_circle",
       color: "bg-green-500",
       change: "+5.7%",
     },
     {
       title: "Failed",
-      value: stats.failedPayments.toString(),
+      value: loading ? "..." : stats.failedPayments.toString(),
       icon: "error",
       color: "bg-red-500",
       change: "-2.4%",
@@ -246,7 +250,7 @@ export default function AdminDashboard() {
               recentActivities.map((activity, i) => (
                 <div
                   key={i}
-                  className="flex items-center gap-3 p-3 rounded-lg bg-slate-100 dark:bg-slate-800"
+                  className="flex items-center gap-3 p-3 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
                 >
                   <div className={`p-2 rounded-full ${
                     activity.type === "completed" 
@@ -256,16 +260,26 @@ export default function AdminDashboard() {
                       : "bg-yellow-500"
                   }`}>
                     <span className="material-icons-outlined text-white text-sm">
-                      {activity.type === "completed" ? "check" : activity.type === "failed" ? "error" : "schedule"}
+                      {activity.type === "completed" ? "check_circle" : activity.type === "failed" ? "error" : "schedule"}
                     </span>
                   </div>
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
                       {activity.message}
                     </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      {activity.time} • ₦{activity.amount.toLocaleString()} • {activity.wallet}
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      {activity.time} • {activity.wallet}
                     </p>
+                    {activity.txHash && (
+                      <a
+                        href={`https://basescan.org/tx/${activity.txHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-primary hover:underline mt-1 inline-block"
+                      >
+                        View on Basescan →
+                      </a>
+                    )}
                   </div>
                 </div>
               ))
