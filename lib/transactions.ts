@@ -40,6 +40,7 @@ export interface Transaction {
   errorMessage?: string;
   sendtag?: string; // If user used SendTag instead of wallet address
   exchangeRate?: number; // Exchange rate at time of transaction
+  expiresAt?: Date; // Timestamp when pending transaction expires (1 hour after creation)
 }
 
 // In-memory storage (kept for backward compatibility during migration)
@@ -67,6 +68,7 @@ function convertSupabaseTransaction(supabaseTx: SupabaseTransaction): Transactio
     errorMessage: supabaseTx.error_message,
     sendtag: supabaseTx.sendtag,
     exchangeRate: supabaseTx.exchange_rate ? parseFloat(supabaseTx.exchange_rate.toString()) : undefined,
+    expiresAt: supabaseTx.expires_at ? new Date(supabaseTx.expires_at) : undefined,
   };
 }
 

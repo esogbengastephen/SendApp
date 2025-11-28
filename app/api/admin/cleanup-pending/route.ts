@@ -13,15 +13,16 @@ import { supabase } from "@/lib/supabase";
  */
 export async function POST(request: NextRequest) {
   try {
-    // Calculate 1 hour ago
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    // Get all pending transactions where expires_at < NOW()
+    // Each transaction has its own 1-hour expiration timer
+    const now = new Date().toISOString();
 
-    // Get all pending transactions older than 1 hour
+    // Get all expired pending transactions
     const { data: oldPending, error: fetchError } = await supabase
       .from('transactions')
-      .select('transaction_id, ngn_amount, wallet_address, created_at')
+      .select('transaction_id, ngn_amount, wallet_address, created_at, expires_at')
       .eq('status', 'pending')
-      .lt('created_at', oneHourAgo);
+      .lt('expires_at', now);
 
     if (fetchError) {
       console.error('[Cleanup Pending] Error fetching transactions:', fetchError);
@@ -34,7 +35,7 @@ export async function POST(request: NextRequest) {
     if (!oldPending || oldPending.length === 0) {
       return NextResponse.json({
         success: true,
-        message: "No pending transactions older than 1 hour found",
+        message: "No expired pending transactions found",
         deleted: 0,
       });
     }
@@ -62,7 +63,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    console.log(`[Cleanup Pending] ✅ Deleted ${successCount} pending transactions older than 1 hour`);
+    console.log(`[Cleanup Pending] ✅ Deleted ${successCount} expired pending transactions`);
 
     // Get updated stats
     const { data: remaining } = await supabase
@@ -78,7 +79,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `Cleaned up ${successCount} pending transactions older than 1 hour`,
+      message: `Cleaned up ${successCount} expired pending transactions (each had its own 1-hour timer)`,
       deleted: successCount,
       errors: errorCount,
       stats,
@@ -95,15 +96,14 @@ export async function POST(request: NextRequest) {
 // Also support GET for easy testing
 export async function GET(request: NextRequest) {
   try {
-    // Calculate 1 hour ago
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    // Get count of expired pending transactions (expires_at < NOW())
+    const now = new Date().toISOString();
 
-    // Get count of pending transactions older than 1 hour
     const { data: oldPending, error: fetchError } = await supabase
       .from('transactions')
-      .select('transaction_id, ngn_amount, wallet_address, created_at', { count: 'exact' })
+      .select('transaction_id, ngn_amount, wallet_address, created_at, expires_at', { count: 'exact' })
       .eq('status', 'pending')
-      .lt('created_at', oneHourAgo)
+      .lt('expires_at', now)
       .limit(10);
 
     if (fetchError) {
@@ -118,8 +118,8 @@ export async function GET(request: NextRequest) {
       count: oldPending?.length || 0,
       sample: oldPending || [],
       message: oldPending && oldPending.length > 0
-        ? `Found ${oldPending.length} pending transactions older than 1 hour. Use POST to delete them.`
-        : "No pending transactions older than 1 hour found.",
+        ? `Found ${oldPending.length} expired pending transactions. Each had its own 1-hour timer. Use POST to delete them.`
+        : "No expired pending transactions found.",
     });
   } catch (error: any) {
     console.error('[Cleanup Pending] Error:', error);
