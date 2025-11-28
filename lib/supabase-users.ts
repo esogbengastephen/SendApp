@@ -59,6 +59,7 @@ export interface SupabaseTransaction {
   initialized_at?: string;
   completed_at?: string;
   last_checked_at?: string;
+  expires_at?: string; // Timestamp when pending transaction expires (1 hour after creation)
 }
 
 /**
@@ -368,6 +369,14 @@ export async function createSupabaseTransaction(
 
     console.log(`[Supabase Transactions] Creating transaction ${transactionData.transaction_id}`);
 
+    // Calculate expires_at: 1 hour from now for pending transactions
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 60 * 60 * 1000); // +1 hour
+    const status = transactionData.status || "pending";
+    
+    // Only set expires_at for pending transactions
+    const expiresAtValue = status === "pending" ? expiresAt.toISOString() : null;
+
     const { data, error } = await supabase
       .from("transactions")
       .insert({
@@ -377,10 +386,11 @@ export async function createSupabaseTransaction(
         paystack_reference: transactionData.paystack_reference || null,
         ngn_amount: transactionData.ngn_amount,
         send_amount: transactionData.send_amount,
-        status: transactionData.status || "pending",
+        status: status,
         sendtag: transactionData.sendtag || null,
         exchange_rate: transactionData.exchange_rate || null,
-        initialized_at: transactionData.initialized_at || new Date().toISOString(),
+        initialized_at: transactionData.initialized_at || now.toISOString(),
+        expires_at: expiresAtValue,
         verification_attempts: 0,
       })
       .select()

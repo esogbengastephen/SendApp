@@ -48,22 +48,23 @@ interface Transaction {
   send_amount: string;
   status: string;
   created_at: string;
+  expires_at: string | null; // Timestamp when pending transaction expires
   paystack_reference: string | null;
 }
 
 async function findOldPendingTransactions() {
-  console.log('🔍 Searching for pending transactions older than 1 hour...\n');
+  console.log('🔍 Searching for expired pending transactions...\n');
 
-  // Calculate 1 hour ago
-  const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  // Get all pending transactions where expires_at < NOW()
+  // Each transaction has its own 1-hour timer
+  const now = new Date().toISOString();
 
-  // Get all pending transactions older than 1 hour
   const { data: oldPending, error } = await supabase
     .from('transactions')
     .select('*')
     .eq('status', 'pending')
-    .lt('created_at', oneHourAgo)
-    .order('created_at', { ascending: false });
+    .lt('expires_at', now)
+    .order('expires_at', { ascending: false });
 
   if (error) {
     console.error('❌ Error fetching transactions:', error);
@@ -71,11 +72,11 @@ async function findOldPendingTransactions() {
   }
 
   if (!oldPending || oldPending.length === 0) {
-    console.log('✅ No pending transactions older than 1 hour found.\n');
+    console.log('✅ No expired pending transactions found.\n');
     return [];
   }
 
-  console.log(`📊 Found ${oldPending.length} pending transactions older than 1 hour\n`);
+  console.log(`📊 Found ${oldPending.length} expired pending transactions\n`);
 
   return oldPending;
 }
@@ -92,25 +93,34 @@ async function cleanupPending(dryRun: boolean = true) {
     return;
   }
 
-  // Show breakdown by age
+  // Show breakdown by expiration time
   const now = Date.now();
   const ageGroups = {
-    '1-2 hours': 0,
-    '2-6 hours': 0,
-    '6-12 hours': 0,
-    '12-24 hours': 0,
-    '>24 hours': 0,
+    'Just expired (< 1h)': 0,
+    '1-2 hours expired': 0,
+    '2-6 hours expired': 0,
+    '6-12 hours expired': 0,
+    '12-24 hours expired': 0,
+    '>24 hours expired': 0,
   };
 
   oldPendingTransactions.forEach((tx) => {
-    const age = now - new Date(tx.created_at).getTime();
-    const hours = age / (1000 * 60 * 60);
+    const expiresAt = tx.expires_at ? new Date(tx.expires_at).getTime() : null;
+    if (!expiresAt) {
+      // Fallback for transactions without expires_at (shouldn't happen, but handle gracefully)
+      ageGroups['Just expired (< 1h)']++;
+      return;
+    }
     
-    if (hours < 2) ageGroups['1-2 hours']++;
-    else if (hours < 6) ageGroups['2-6 hours']++;
-    else if (hours < 12) ageGroups['6-12 hours']++;
-    else if (hours < 24) ageGroups['12-24 hours']++;
-    else ageGroups['>24 hours']++;
+    const expiredAgo = now - expiresAt;
+    const hours = expiredAgo / (1000 * 60 * 60);
+    
+    if (hours < 1) ageGroups['Just expired (< 1h)']++;
+    else if (hours < 2) ageGroups['1-2 hours expired']++;
+    else if (hours < 6) ageGroups['2-6 hours expired']++;
+    else if (hours < 12) ageGroups['6-12 hours expired']++;
+    else if (hours < 24) ageGroups['12-24 hours expired']++;
+    else ageGroups['>24 hours expired']++;
   });
 
   console.log('📋 BREAKDOWN BY AGE');
@@ -129,13 +139,18 @@ async function cleanupPending(dryRun: boolean = true) {
   oldPendingTransactions.slice(0, 10).forEach((tx, i) => {
     const amount = parseFloat(tx.ngn_amount);
     const wallet = tx.wallet_address || 'N/A';
-    const age = Math.round((Date.now() - new Date(tx.created_at).getTime()) / 1000 / 60); // minutes
+    const expiresAt = tx.expires_at ? new Date(tx.expires_at) : null;
+    const expiredAgo = expiresAt ? Math.round((Date.now() - expiresAt.getTime()) / 1000 / 60) : 0; // minutes
     
     console.log(`\n${i + 1}. ${tx.transaction_id}`);
     console.log(`   Amount: ₦${amount.toLocaleString()}`);
     console.log(`   Wallet: ${wallet.slice(0, 20)}${wallet.length > 20 ? '...' : ''}`);
-    console.log(`   Age: ${age < 60 ? `${age} minutes` : `${Math.round(age / 60)} hours`} ago`);
-    console.log(`   Created: ${new Date(tx.created_at).toLocaleString()}`);
+    if (expiresAt) {
+      console.log(`   Expired: ${expiredAgo < 60 ? `${expiredAgo} minutes` : `${Math.round(expiredAgo / 60)} hours`} ago`);
+      console.log(`   Expired at: ${expiresAt.toLocaleString()}`);
+    } else {
+      console.log(`   Created: ${new Date(tx.created_at).toLocaleString()}`);
+    }
     if (tx.paystack_reference) {
       console.log(`   Paystack Ref: ${tx.paystack_reference}`);
     }
@@ -148,8 +163,8 @@ async function cleanupPending(dryRun: boolean = true) {
   // Summary
   console.log('\n\n📊 CLEANUP SUMMARY');
   console.log('═'.repeat(60));
-  console.log(`Pending transactions to delete: ${oldPendingTransactions.length}`);
-  console.log(`All transactions are older than 1 hour`);
+  console.log(`Expired pending transactions to delete: ${oldPendingTransactions.length}`);
+  console.log(`Each transaction had its own 1-hour expiration timer`);
   console.log(`This will free up the database and improve dashboard accuracy`);
 
   // Execute deletion if not dry run
@@ -201,7 +216,7 @@ async function cleanupPending(dryRun: boolean = true) {
       console.log('\n📊 NEW TRANSACTION STATS');
       console.log('═'.repeat(60));
       console.log(`Total: ${stats.total}`);
-      console.log(`Pending: ${stats.pending} (all < 1 hour old)`);
+      console.log(`Pending: ${stats.pending} (all active, not expired)`);
       console.log(`Completed: ${stats.completed}`);
       console.log(`Failed: ${stats.failed}\n`);
     }
