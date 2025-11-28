@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "next lint",
     "cleanup-transactions": "tsx scripts/cleanup-duplicate-transactions.ts",
-    "cleanup-orphaned": "tsx scripts/cleanup-orphaned-transactions.ts"
+    "cleanup-orphaned": "tsx scripts/cleanup-orphaned-transactions.ts",
+    "cleanup-pending": "tsx scripts/cleanup-pending-transactions.ts"
   },
   "keywords": [],
   "author": "",
