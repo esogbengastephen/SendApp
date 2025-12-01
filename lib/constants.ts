@@ -23,3 +23,7 @@ export const DEPOSIT_ACCOUNT = {
   bank: "Wema Bank",
 };
 
+// Paystack Dummy Email (prevents Paystack from sending emails to users)
+// Real user emails are stored in Paystack customer metadata
+export const PAYSTACK_DUMMY_EMAIL = "payments@sendafrica.com";
+

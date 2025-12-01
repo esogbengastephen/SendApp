@@ -7,6 +7,8 @@ import { isValidWalletOrTag, isValidAmount } from "@/utils/validation";
 import { verifyPaymentForTransaction } from "@/lib/payment-verification";
 import { getExchangeRate } from "@/lib/settings";
 import { updateWalletStats } from "@/lib/supabase-users";
+import { sendPaymentVerificationEmail, sendTokenDistributionEmail } from "@/lib/transaction-emails";
+import { supabase } from "@/lib/supabase";
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const PAYSTACK_API_BASE = "https://api.paystack.co";
@@ -527,6 +529,27 @@ export async function POST(request: NextRequest) {
       walletAddress: transaction.walletAddress, // Ensure wallet address is preserved
       completedAt: new Date(),
     });
+
+    // Get user email for sending notification
+    let userEmail: string | null = null;
+    if (transaction.userId) {
+      const { data: user } = await supabase
+        .from("users")
+        .select("email")
+        .eq("id", transaction.userId)
+        .single();
+      userEmail = user?.email || null;
+    }
+
+    // Send payment verification email
+    if (userEmail) {
+      try {
+        await sendPaymentVerificationEmail(userEmail, transaction.ngnAmount, verifiedTx.reference);
+      } catch (emailError) {
+        console.error(`[Payment Processing] Failed to send payment verification email:`, emailError);
+        // Don't fail the transaction if email fails
+      }
+    }
     
     // Update user record when transaction is completed
     if (transaction.userId) {
@@ -589,6 +612,22 @@ export async function POST(request: NextRequest) {
       );
 
       if (distributionResult.success) {
+        // Send token distribution email
+        if (userEmail) {
+          try {
+            await sendTokenDistributionEmail(
+              userEmail,
+              transaction.ngnAmount,
+              finalSendAmount,
+              transaction.walletAddress,
+              distributionResult.txHash
+            );
+          } catch (emailError) {
+            console.error(`[Payment Processing] Failed to send token distribution email:`, emailError);
+            // Don't fail the transaction if email fails
+          }
+        }
+
         return NextResponse.json({
           success: true,
           message: `Payment verified and ${finalSendAmount} SEND tokens distributed successfully to ${transaction.walletAddress && transaction.walletAddress.length > 10 ? `${transaction.walletAddress.slice(0, 6)}...${transaction.walletAddress.slice(-4)}` : transaction.walletAddress}`,

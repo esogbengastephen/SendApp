@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
 import { supabase } from "@/lib/supabase";
+import { PAYSTACK_DUMMY_EMAIL } from "@/lib/constants";
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const PAYSTACK_API_BASE = "https://api.paystack.co";
@@ -68,20 +69,18 @@ export async function POST(request: NextRequest) {
     
     if (!customerCode) {
       try {
-        // If user was reset, use unique email to force new customer creation
-        const customerEmail = wasReset 
-          ? `${email.split('@')[0]}+reset${Date.now()}@${email.split('@')[1]}` // email+reset1234567890@domain.com
-          : email;
-
+        // Create Paystack customer with DUMMY EMAIL (prevents Paystack from sending emails)
+        // Real user email stored in metadata for our use
         const customerResponse = await axios.post(
           `${PAYSTACK_API_BASE}/customer`,
           {
-            email: customerEmail,
+            email: PAYSTACK_DUMMY_EMAIL, // Dummy email - Paystack won't send emails to users
             first_name: "App",
             last_name: "Send",
             phone: "+2348000000000", // Default phone number for virtual accounts
             metadata: {
               user_id: userId,
+              user_email: email, // Store REAL email in metadata (for our email system)
               original_email: email, // Store original email
               reset_user: wasReset, // Flag if this is a reset user
             },
@@ -99,19 +98,19 @@ export async function POST(request: NextRequest) {
       } catch (customerError: any) {
         // If user was reset, don't fetch old customer - force new creation
         if (wasReset) {
-          console.log(`[Signup VA] Reset user - forcing new customer creation with unique email`);
-          // Try again with timestamp-based email
+          console.log(`[Signup VA] Reset user - forcing new customer creation`);
+          // Try again with dummy email
           try {
-            const uniqueEmail = `${email.split('@')[0]}+reset${Date.now()}@${email.split('@')[1]}`;
             const retryResponse = await axios.post(
               `${PAYSTACK_API_BASE}/customer`,
               {
-                email: uniqueEmail,
+                email: PAYSTACK_DUMMY_EMAIL, // Dummy email - Paystack won't send emails
                 first_name: "App",
                 last_name: "Send",
                 phone: "+2348000000000",
                 metadata: {
                   user_id: userId,
+                  user_email: email, // Real email in metadata
                   original_email: email,
                   reset_user: true,
                 },
@@ -131,21 +130,16 @@ export async function POST(request: NextRequest) {
           }
         } else {
           // Original logic for non-reset users
+          // Note: Since we use dummy email, we can't search by email
+          // We'll check if customer_code exists in database
           if (customerError.response?.status === 400) {
-            console.log(`[Signup VA] Fetching existing customer...`);
-            try {
-              const fetchResponse = await axios.get(
-                `${PAYSTACK_API_BASE}/customer/${email}`,
-                {
-                  headers: {
-                    Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-                  },
-                }
-              );
-              customerCode = fetchResponse.data.data.customer_code;
-              console.log(`[Signup VA] ✅ Fetched customer: ${customerCode}`);
-            } catch (fetchError) {
-              console.error("[Signup VA] Failed to fetch customer:", fetchError);
+            console.log(`[Signup VA] Customer creation failed, checking if customer_code exists in database...`);
+            // Check if we have customer_code stored in users table
+            if (userData?.paystack_customer_code) {
+              customerCode = userData.paystack_customer_code;
+              console.log(`[Signup VA] ✅ Using existing customer_code from database: ${customerCode}`);
+            } else {
+              console.error("[Signup VA] Failed to create/fetch customer:", customerError);
               throw customerError;
             }
           } else {

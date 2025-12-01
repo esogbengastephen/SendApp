@@ -11,6 +11,7 @@ import { distributeTokens } from "@/lib/token-distribution";
 import { getExchangeRate } from "@/lib/settings";
 import { supabase } from "@/lib/supabase";
 import { nanoid } from "nanoid";
+import { sendPaymentVerificationEmail, sendTokenDistributionEmail } from "@/lib/transaction-emails";
 
 export async function POST(request: NextRequest) {
   try {
@@ -76,57 +77,60 @@ export async function POST(request: NextRequest) {
           );
         }
         
-        // Find user by their virtual account number
-        // Check user_wallets first (for wallet-generated accounts)
-        let { data: userWallet, error: walletError } = await supabase
-          .from("user_wallets")
-          .select("*, users!inner(*)")
-          .eq("virtual_account_number", accountNumber)
-          .single();
-
+        // Find user by their virtual account number (EMAIL-BASED)
+        // Virtual accounts are now stored in users table, but we check both for backward compatibility
+        // Priority: users table (email-based) > user_wallets (old wallet-based accounts)
+        
         let walletAddress: string | null = null;
         let userId: string | null = null;
         let userEmail: string | null = null;
 
-        if (userWallet) {
-          // Found in user_wallets
-          walletAddress = userWallet.wallet_address;
-          userId = userWallet.user_id;
-          userEmail = userWallet.users.email;
-          console.log(`✅ [Webhook] Found in user_wallets: User ${userEmail}, Wallet ${walletAddress}`);
+        // First, check users table (EMAIL-BASED - primary location)
+        const { data: user, error: userError } = await supabase
+          .from("users")
+          .select("*")
+          .eq("default_virtual_account_number", accountNumber)
+          .single();
+        
+        if (user) {
+          userId = user.id;
+          userEmail = user.email;
+          console.log(`✅ [Webhook] Found in users table (EMAIL-BASED): ${userEmail}`);
+          
+          // Check if this user has linked any wallet in user_wallets
+          // Use the most recent wallet, or find wallet from pending transaction if available
+          const { data: linkedWallets } = await supabase
+            .from("user_wallets")
+            .select("wallet_address")
+            .eq("user_id", userId)
+            .order("updated_at", { ascending: false })
+            .limit(1);
+          
+          if (linkedWallets && linkedWallets.length > 0) {
+            walletAddress = linkedWallets[0].wallet_address;
+            console.log(`✅ [Webhook] Found linked wallet: ${walletAddress}`);
+          } else {
+            console.error(`❌ [Webhook] User ${userEmail} has no linked wallet yet`);
+            return NextResponse.json(
+              { success: false, error: "User has no wallet address. Please complete a transaction first." },
+              { status: 400 }
+            );
+          }
         } else {
-          // Not in user_wallets, check users table (for signup-generated accounts)
-          console.log(`🔍 [Webhook] Not in user_wallets, checking users table...`);
+          // Fallback: Check user_wallets (for backward compatibility with old wallet-based accounts)
+          console.log(`🔍 [Webhook] Not in users table, checking user_wallets (backward compatibility)...`);
           
-          const { data: user, error: userError } = await supabase
-            .from("users")
-            .select("*")
-            .eq("default_virtual_account_number", accountNumber)
+          let { data: userWallet, error: walletError } = await supabase
+            .from("user_wallets")
+            .select("*, users!inner(*)")
+            .eq("virtual_account_number", accountNumber)
             .single();
-          
-          if (user) {
-            userId = user.id;
-            userEmail = user.email;
-            console.log(`✅ [Webhook] Found in users table: ${userEmail}`);
-            
-            // Check if this user has linked any wallet in user_wallets
-            const { data: linkedWallets } = await supabase
-              .from("user_wallets")
-              .select("wallet_address")
-              .eq("user_id", userId)
-              .order("created_at", { ascending: false })
-              .limit(1);
-            
-            if (linkedWallets && linkedWallets.length > 0) {
-              walletAddress = linkedWallets[0].wallet_address;
-              console.log(`✅ [Webhook] Found linked wallet: ${walletAddress}`);
-            } else {
-              console.error(`❌ [Webhook] User ${userEmail} has no linked wallet yet`);
-              return NextResponse.json(
-                { success: false, error: "User has no wallet address. Please complete a transaction first." },
-                { status: 400 }
-              );
-            }
+
+          if (userWallet) {
+            walletAddress = userWallet.wallet_address;
+            userId = userWallet.user_id;
+            userEmail = userWallet.users.email;
+            console.log(`✅ [Webhook] Found in user_wallets (backward compatibility): User ${userEmail}, Wallet ${walletAddress}`);
           } else {
             console.error(`❌ [Webhook] Virtual account ${accountNumber} not found in any table`);
             return NextResponse.json(
@@ -206,6 +210,14 @@ export async function POST(request: NextRequest) {
             completedAt: new Date(),
           });
         }
+
+        // Send payment verification email
+        try {
+          await sendPaymentVerificationEmail(userEmail, paystackAmount, reference);
+        } catch (emailError) {
+          console.error(`[Webhook] Failed to send payment verification email:`, emailError);
+          // Don't fail the transaction if email fails
+        }
         
         // Distribute tokens immediately
         try {
@@ -217,6 +229,21 @@ export async function POST(request: NextRequest) {
           
           if (distributionResult.success) {
             console.log(`🎉 [Webhook] Tokens distributed successfully! TX: ${distributionResult.txHash}`);
+            
+            // Send token distribution email
+            try {
+              await sendTokenDistributionEmail(
+                userEmail,
+                paystackAmount,
+                sendAmount,
+                walletAddress,
+                distributionResult.txHash
+              );
+            } catch (emailError) {
+              console.error(`[Webhook] Failed to send token distribution email:`, emailError);
+              // Don't fail the transaction if email fails
+            }
+            
             return NextResponse.json({
               success: true,
               message: "Virtual account payment processed and tokens distributed",
@@ -294,6 +321,27 @@ export async function POST(request: NextRequest) {
         completedAt: new Date(),
       });
 
+      // Get user email for sending notification
+      let userEmail: string | null = null;
+      if (transaction.userId) {
+        const { data: user } = await supabase
+          .from("users")
+          .select("email")
+          .eq("id", transaction.userId)
+          .single();
+        userEmail = user?.email || null;
+      }
+
+      // Send payment verification email
+      if (userEmail) {
+        try {
+          await sendPaymentVerificationEmail(userEmail, paystackAmount, reference);
+        } catch (emailError) {
+          console.error(`[Webhook] Failed to send payment verification email:`, emailError);
+          // Don't fail the transaction if email fails
+        }
+      }
+
       // Distribute tokens to user's wallet
       console.log(`Transaction ${reference} verified. Distributing tokens...`);
       console.log(`Wallet: ${transaction.walletAddress}, Amount: ${finalSendAmount} SEND`);
@@ -307,6 +355,23 @@ export async function POST(request: NextRequest) {
 
         if (distributionResult.success) {
           console.log(`Tokens distributed successfully. TX Hash: ${distributionResult.txHash}`);
+          
+          // Send token distribution email
+          if (userEmail) {
+            try {
+              await sendTokenDistributionEmail(
+                userEmail,
+                paystackAmount,
+                finalSendAmount,
+                transaction.walletAddress,
+                distributionResult.txHash
+              );
+            } catch (emailError) {
+              console.error(`[Webhook] Failed to send token distribution email:`, emailError);
+              // Don't fail the transaction if email fails
+            }
+          }
+          
           return NextResponse.json({
             success: true,
             message: "Transaction processed and tokens distributed successfully",

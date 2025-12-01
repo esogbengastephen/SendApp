@@ -23,3 +23,4 @@ WHERE status = 'pending';
 -- Add comment
 COMMENT ON COLUMN transactions.expires_at IS 'Timestamp when pending transaction expires (1 hour after creation). Used for automatic cleanup.';
 
+
