@@ -49,8 +49,13 @@ export default function WalletConnect({ onAuthSuccess }: WalletConnectProps) {
       console.log("Verification response:", data);
 
       if (data.success && data.isAdmin) {
-        // Store session
-        const sessionData = { address: walletAddress.toLowerCase(), timestamp: Date.now() };
+        // Store session with role and permissions
+        const sessionData = { 
+          address: walletAddress.toLowerCase(), 
+          timestamp: Date.now(),
+          role: data.role || "admin",
+          permissions: data.permissions || []
+        };
         localStorage.setItem("admin_wallet", walletAddress.toLowerCase());
         localStorage.setItem("admin_session", JSON.stringify(sessionData));
         
