@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { isAdminWallet } from "@/lib/supabase";
+import { isAdminWallet, getAdminDetails } from "@/lib/supabase";
 import { verifyMessage } from "viem";
 
 export async function POST(request: NextRequest) {
@@ -36,15 +36,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if wallet is admin
+    // Check if wallet is admin and get details
     const normalizedAddress = walletAddress.toLowerCase().trim();
     console.log("Verifying admin wallet:", normalizedAddress);
     console.log("Environment ADMIN_WALLETS:", process.env.NEXT_PUBLIC_ADMIN_WALLETS);
     
-    const isAdmin = await isAdminWallet(normalizedAddress);
-    console.log("Is admin result:", isAdmin);
+    const adminDetails = await getAdminDetails(normalizedAddress);
+    console.log("Admin details result:", adminDetails);
 
-    if (!isAdmin) {
+    if (!adminDetails.isAdmin) {
       return NextResponse.json(
         { 
           success: false, 
@@ -63,6 +63,8 @@ export async function POST(request: NextRequest) {
       success: true,
       isAdmin: true,
       walletAddress,
+      role: adminDetails.role,
+      permissions: adminDetails.permissions || [],
     });
   } catch (error: any) {
     console.error("Admin verification error:", error);

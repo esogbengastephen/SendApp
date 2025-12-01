@@ -99,6 +99,127 @@ export async function isAdminWallet(walletAddress: string): Promise<boolean> {
 }
 
 /**
+ * Get admin details (role and permissions)
+ */
+export async function getAdminDetails(walletAddress: string): Promise<{
+  isAdmin: boolean;
+  role?: "super_admin" | "admin";
+  permissions?: string[];
+}> {
+  const normalizedAddress = walletAddress.toLowerCase().trim();
+  
+  // Check environment variable first (treat as super_admin)
+  if (ADMIN_WALLETS.length > 0 && ADMIN_WALLETS.includes(normalizedAddress)) {
+    return {
+      isAdmin: true,
+      role: "super_admin",
+      permissions: [], // Super admin has all permissions
+    };
+  }
+
+  // Check Supabase for admin wallets
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("admin_wallets")
+      .select("role, permissions")
+      .eq("wallet_address", normalizedAddress)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (error && error.code !== "PGRST116") {
+      console.error("Error checking admin wallet:", error);
+      return { isAdmin: false };
+    }
+
+    if (data) {
+      return {
+        isAdmin: true,
+        role: data.role as "super_admin" | "admin",
+        permissions: (data.permissions as string[]) || [],
+      };
+    }
+  } catch (error) {
+    console.error("Error checking admin wallet:", error);
+  }
+
+  return { isAdmin: false };
+}
+
+/**
+ * Check if wallet is a super admin
+ */
+export async function isSuperAdmin(walletAddress: string): Promise<boolean> {
+  const normalizedAddress = walletAddress.toLowerCase().trim();
+  
+  // Check environment variable first (treat as super_admin)
+  if (ADMIN_WALLETS.length > 0 && ADMIN_WALLETS.includes(normalizedAddress)) {
+    return true;
+  }
+
+  // Check Supabase
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("admin_wallets")
+      .select("role")
+      .eq("wallet_address", normalizedAddress)
+      .eq("is_active", true)
+      .eq("role", "super_admin")
+      .maybeSingle();
+
+    if (error && error.code !== "PGRST116") {
+      console.error("Error checking super admin:", error);
+      return false;
+    }
+
+    return !!data;
+  } catch (error) {
+    console.error("Error checking super admin:", error);
+    return false;
+  }
+}
+
+/**
+ * Check if admin has a specific permission
+ * Super admins have all permissions automatically
+ */
+export async function hasAdminPermission(
+  walletAddress: string,
+  permission: string
+): Promise<boolean> {
+  const normalizedAddress = walletAddress.toLowerCase().trim();
+  
+  // Check if super admin first
+  const isSuper = await isSuperAdmin(normalizedAddress);
+  if (isSuper) {
+    return true; // Super admin has all permissions
+  }
+
+  // Check specific permission
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("admin_wallets")
+      .select("permissions")
+      .eq("wallet_address", normalizedAddress)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (error && error.code !== "PGRST116") {
+      console.error("Error checking admin permission:", error);
+      return false;
+    }
+
+    if (data && data.permissions) {
+      const permissions = data.permissions as string[];
+      return permissions.includes(permission);
+    }
+  } catch (error) {
+    console.error("Error checking admin permission:", error);
+  }
+
+  return false;
+}
+
+/**
  * Create admin session
  */
 export async function createAdminSession(walletAddress: string, signature?: string) {
