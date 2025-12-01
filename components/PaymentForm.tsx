@@ -45,7 +45,9 @@ export default function PaymentForm() {
   const [isPollingPayment, setIsPollingPayment] = useState(false);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Fetch or create virtual account when wallet address is entered
+  // Fetch or create virtual account (EMAIL-BASED - same account for all wallets)
+  // When wallet address is entered, we fetch the user's email-based virtual account
+  // The same account works for all wallet addresses the user uses
   useEffect(() => {
     const setupVirtualAccount = async () => {
       const user = getUserFromStorage();
@@ -55,16 +57,17 @@ export default function PaymentForm() {
       }
 
       try {
-        console.log("[Virtual Account] Fetching virtual account for user...");
+        console.log("[Virtual Account] Fetching virtual account for user (EMAIL-BASED)...");
         
-        // Try to get existing virtual account
+        // Get user's virtual account (EMAIL-BASED - works for all wallets)
+        // walletAddress is passed to link the wallet to the user
         const getResponse = await fetch(
           `/api/user/virtual-account?userId=${user.id}&walletAddress=${walletAddress}`
         );
         const getData = await getResponse.json();
 
         if (getData.success && getData.data.hasVirtualAccount) {
-          console.log("[Virtual Account] Found existing virtual account");
+          console.log("[Virtual Account] ✅ Found existing virtual account (EMAIL-BASED)");
           setVirtualAccount({
             accountNumber: getData.data.accountNumber,
             bankName: getData.data.bankName,
@@ -74,21 +77,21 @@ export default function PaymentForm() {
           return;
         }
 
-        // No virtual account exists, create one
-        console.log("[Virtual Account] Creating new virtual account...");
+        // No virtual account exists, create one (EMAIL-BASED)
+        console.log("[Virtual Account] Creating new virtual account (EMAIL-BASED)...");
         const createResponse = await fetch("/api/paystack/create-virtual-account", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             userId: user.id,
             email: user.email,
-            walletAddress: walletAddress,
+            walletAddress: walletAddress, // Used to link wallet, but account is email-based
           }),
         });
         const createData = await createResponse.json();
 
         if (createData.success) {
-          console.log("[Virtual Account] ✅ Virtual account created successfully");
+          console.log("[Virtual Account] ✅ Virtual account created successfully (EMAIL-BASED)");
           setVirtualAccount({
             accountNumber: createData.data.accountNumber,
             bankName: createData.data.bankName,
@@ -110,7 +113,7 @@ export default function PaymentForm() {
     } else {
       setIsLoadingVirtualAccount(false);
     }
-  }, [walletAddress]); // Run when wallet address changes
+  }, [walletAddress]); // Run when wallet address changes (to link wallet, but account is email-based)
 
   // Auto-claim pending transactions on mount
   useEffect(() => {

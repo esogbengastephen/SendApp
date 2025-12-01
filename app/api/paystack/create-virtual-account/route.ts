@@ -1,19 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
 import { supabase } from "@/lib/supabase";
+import { PAYSTACK_DUMMY_EMAIL } from "@/lib/constants";
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const PAYSTACK_API_BASE = "https://api.paystack.co";
 
 /**
- * Create a dedicated virtual account for a user's wallet
- * This gives each user a unique bank account number for payments
+ * Create a dedicated virtual account for a user (EMAIL-BASED)
+ * Each user (email) gets ONE virtual account that works for ALL their wallets
+ * This ensures payments are always linked to the user's email, not wallet address
  */
 export async function POST(request: NextRequest) {
   try {
     const { userId, email, walletAddress } = await request.json();
 
-    console.log(`[Create Virtual Account] Request for user ${userId}, wallet ${walletAddress}`);
+    console.log(`[Create Virtual Account] Request for user ${userId} (email: ${email}), wallet ${walletAddress}`);
 
     if (!userId || !email || !walletAddress) {
       return NextResponse.json(
@@ -30,12 +32,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check if user was reset (to create new Paystack customer)
-    const { data: userData } = await supabase
+    // ============================================
+    // STEP 1: Check if user already has a virtual account (EMAIL-BASED)
+    // ============================================
+    const { data: userData, error: userError } = await supabase
       .from("users")
-      .select("account_reset_at, is_blocked")
+      .select("default_virtual_account_number, default_virtual_account_bank, paystack_customer_code, account_reset_at, is_blocked")
       .eq("id", userId)
       .single();
+
+    if (userError && userError.code !== "PGRST116") {
+      console.error("[Create Virtual Account] Error fetching user:", userError);
+      return NextResponse.json(
+        { success: false, error: "Database error" },
+        { status: 500 }
+      );
+    }
 
     if (userData?.is_blocked) {
       console.log(`[Create Virtual Account] ❌ User ${userId} is blocked. Cannot create DVA.`);
@@ -50,61 +62,54 @@ export async function POST(request: NextRequest) {
 
     const wasReset = !!userData?.account_reset_at;
 
-    // Check if user already has a virtual account for this wallet
-    const { data: existingWallet, error: checkError } = await supabase
-      .from("user_wallets")
-      .select("*")
-      .eq("user_id", userId)
-      .eq("wallet_address", walletAddress.toLowerCase())
-      .single();
+    // If user already has a virtual account, return it (regardless of wallet address)
+    if (userData?.default_virtual_account_number) {
+      console.log(`[Create Virtual Account] ✅ User already has virtual account: ${userData.default_virtual_account_number} (EMAIL-BASED)`);
+      
+      // Ensure wallet is linked to user (for tracking purposes)
+      await supabase
+        .from("user_wallets")
+        .upsert({
+          user_id: userId,
+          wallet_address: walletAddress.toLowerCase(),
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: "user_id,wallet_address"
+        });
 
-    if (checkError && checkError.code !== "PGRST116") {
-      console.error("[Create Virtual Account] Error checking existing wallet:", checkError);
-      return NextResponse.json(
-        { success: false, error: "Database error" },
-        { status: 500 }
-      );
-    }
-
-    // If already has virtual account, return it
-    if (existingWallet?.virtual_account_number) {
-      console.log(`[Create Virtual Account] User already has virtual account: ${existingWallet.virtual_account_number}`);
       return NextResponse.json({
         success: true,
         data: {
-          accountNumber: existingWallet.virtual_account_number,
-          bankName: existingWallet.virtual_account_bank_name,
+          accountNumber: userData.default_virtual_account_number,
+          bankName: userData.default_virtual_account_bank,
           accountName: `Send Africa`,
-          customerCode: existingWallet.paystack_customer_code,
+          customerCode: userData.paystack_customer_code,
           alreadyExists: true,
         },
       });
     }
 
-    // Step 1: Create or update Paystack customer
-    console.log(`[Create Virtual Account] Creating Paystack customer for ${email}${wasReset ? ' (reset user - will create new customer)' : ''}`);
-    
-    let customerCode = existingWallet?.paystack_customer_code;
+    // ============================================
+    // STEP 2: User doesn't have virtual account - create one (EMAIL-BASED)
+    // ============================================
+    let customerCode = userData?.paystack_customer_code;
     
     if (!customerCode) {
       try {
-        // If user was reset, use unique email to force new customer creation
-        const customerEmail = wasReset 
-          ? `${email.split('@')[0]}+reset${Date.now()}@${email.split('@')[1]}` // email+reset1234567890@domain.com
-          : email;
-        
+        // Create Paystack customer with DUMMY EMAIL (prevents Paystack from sending emails)
+        // Real user email stored in metadata for our use
         const customerResponse = await axios.post(
           `${PAYSTACK_API_BASE}/customer`,
           {
-            email: customerEmail,
+            email: PAYSTACK_DUMMY_EMAIL, // Dummy email - Paystack won't send emails to users
             first_name: `App`,
             last_name: `Send`,
-            phone: "+2348000000000", // Default phone number for virtual accounts
+            phone: "+2348000000000",
             metadata: {
               user_id: userId,
-              wallet_address: walletAddress,
-              original_email: email, // Store original email
-              reset_user: wasReset, // Flag if this is a reset user
+              user_email: email, // Store REAL email in metadata (for our email system)
+              original_email: email,
+              reset_user: wasReset,
             },
           },
           {
@@ -116,24 +121,22 @@ export async function POST(request: NextRequest) {
         );
 
         customerCode = customerResponse.data.data.customer_code;
-        console.log(`[Create Virtual Account] ✅ Customer created: ${customerCode}${wasReset ? ' (for reset user)' : ''}`);
+        console.log(`[Create Virtual Account] ✅ Customer created: ${customerCode} (EMAIL-BASED)`);
       } catch (customerError: any) {
         // If user was reset, don't fetch old customer - force new creation
         if (wasReset) {
-          console.log(`[Create Virtual Account] Reset user - forcing new customer creation with unique email`);
-          // Try again with timestamp-based email
+          console.log(`[Create Virtual Account] Reset user - forcing new customer creation`);
           try {
-            const uniqueEmail = `${email.split('@')[0]}+reset${Date.now()}@${email.split('@')[1]}`;
             const retryResponse = await axios.post(
               `${PAYSTACK_API_BASE}/customer`,
               {
-                email: uniqueEmail,
+                email: PAYSTACK_DUMMY_EMAIL, // Dummy email - Paystack won't send emails
                 first_name: `App`,
                 last_name: `Send`,
                 phone: "+2348000000000",
                 metadata: {
                   user_id: userId,
-                  wallet_address: walletAddress,
+                  user_email: email, // Real email in metadata
                   original_email: email,
                   reset_user: true,
                 },
@@ -153,22 +156,32 @@ export async function POST(request: NextRequest) {
           }
         } else {
           // Original logic for non-reset users
+          // Note: Since we use dummy email, we can't search by email
+          // We'll need to get customer_code from database or create new one
           if (customerError.response?.status === 400) {
-            console.log(`[Create Virtual Account] Customer might exist, fetching...`);
-            try {
-              const fetchResponse = await axios.get(
-                `${PAYSTACK_API_BASE}/customer/${email}`,
-                {
-                  headers: {
-                    Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
-                  },
-                }
-              );
-              customerCode = fetchResponse.data.data.customer_code;
-              console.log(`[Create Virtual Account] ✅ Fetched existing customer: ${customerCode}`);
-            } catch (fetchError) {
-              console.error("[Create Virtual Account] Failed to fetch customer:", fetchError);
-              throw customerError;
+            console.log(`[Create Virtual Account] Customer creation failed, checking if customer_code exists in database...`);
+            // Check if we have customer_code stored in users table
+            if (userData?.paystack_customer_code) {
+              customerCode = userData.paystack_customer_code;
+              console.log(`[Create Virtual Account] ✅ Using existing customer_code from database: ${customerCode}`);
+            } else {
+              // Try to fetch by dummy email (might return multiple, but we'll use first one)
+              try {
+                const fetchResponse = await axios.get(
+                  `${PAYSTACK_API_BASE}/customer/${PAYSTACK_DUMMY_EMAIL}`,
+                  {
+                    headers: {
+                      Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+                    },
+                  }
+                );
+                // If multiple customers with same email, we need to find by metadata
+                // For now, create new customer with unique identifier in metadata
+                throw customerError; // Will create new customer
+              } catch (fetchError) {
+                console.error("[Create Virtual Account] Failed to fetch customer:", fetchError);
+                throw customerError;
+              }
             }
           } else {
             throw customerError;
@@ -177,8 +190,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Step 2: Create dedicated virtual account
-    console.log(`[Create Virtual Account] Creating dedicated virtual account for customer ${customerCode}`);
+    // Step 3: Create dedicated virtual account (ONE per user/email)
+    console.log(`[Create Virtual Account] Creating dedicated virtual account for customer ${customerCode} (EMAIL-BASED)`);
     
     const virtualAccountResponse = await axios.post(
       `${PAYSTACK_API_BASE}/dedicated_account`,
@@ -197,62 +210,39 @@ export async function POST(request: NextRequest) {
     const dva = virtualAccountResponse.data.data;
     console.log(`[Create Virtual Account] ✅ Virtual account created: ${dva.account_number} (${dva.bank.name})`);
 
-    // Step 3: Update user_wallets table
-    const updateData = {
-      paystack_customer_code: customerCode,
-      paystack_dedicated_account_id: dva.id.toString(),
-      virtual_account_number: dva.account_number,
-      virtual_account_bank: dva.bank.slug,
-      virtual_account_bank_name: dva.bank.name,
-      virtual_account_assigned_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    };
-
-    if (existingWallet) {
-      // Update existing wallet
-      const { error: updateError } = await supabase
-        .from("user_wallets")
-        .update(updateData)
-        .eq("id", existingWallet.id);
-
-      if (updateError) {
-        console.error("[Create Virtual Account] Error updating user_wallets:", updateError);
-        return NextResponse.json(
-          { success: false, error: "Failed to save virtual account" },
-          { status: 500 }
-        );
-      }
-    } else {
-      // Create new wallet entry
-      const { error: insertError } = await supabase
-        .from("user_wallets")
-        .insert({
-          user_id: userId,
-          wallet_address: walletAddress.toLowerCase(),
-          ...updateData,
-        });
-
-      if (insertError) {
-        console.error("[Create Virtual Account] Error inserting user_wallets:", insertError);
-        return NextResponse.json(
-          { success: false, error: "Failed to save virtual account" },
-          { status: 500 }
-        );
-      }
-    }
-
-    // Step 4: Also update users table with default account
-    await supabase
+    // Step 4: Store virtual account in USERS table (EMAIL-BASED, not wallet-based)
+    const { error: updateUserError } = await supabase
       .from("users")
       .update({
+        paystack_customer_code: customerCode,
         default_virtual_account_number: dva.account_number,
         default_virtual_account_bank: dva.bank.name,
+        virtual_account_assigned_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq("id", userId);
 
+    if (updateUserError) {
+      console.error("[Create Virtual Account] Error updating users table:", updateUserError);
+      return NextResponse.json(
+        { success: false, error: "Failed to save virtual account" },
+        { status: 500 }
+      );
+    }
+
+    // Step 5: Link wallet to user (for tracking, but virtual account is in users table)
+    await supabase
+      .from("user_wallets")
+      .upsert({
+        user_id: userId,
+        wallet_address: walletAddress.toLowerCase(),
+        updated_at: new Date().toISOString(),
+      }, {
+        onConflict: "user_id,wallet_address"
+      });
+
     console.log(
-      `[Create Virtual Account] ✅ SUCCESS - Virtual account ${dva.account_number} assigned to user ${userId}`
+      `[Create Virtual Account] ✅ SUCCESS - Virtual account ${dva.account_number} assigned to user ${userId} (email: ${email}) - EMAIL-BASED`
     );
 
     return NextResponse.json({
