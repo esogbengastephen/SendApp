@@ -18,12 +18,12 @@ export const DEFAULT_EXCHANGE_RATE = parseFloat(
 
 // Deposit Account Information
 export const DEPOSIT_ACCOUNT = {
-  name: "FLASHPHOTOGRA/ SEND APP",
+  name: "FlipPay",
   accountNumber: "9327975691",
   bank: "Wema Bank",
 };
 
 // Paystack Dummy Email (prevents Paystack from sending emails to users)
 // Real user emails are stored in Paystack customer metadata
-export const PAYSTACK_DUMMY_EMAIL = "payments@sendafrica.com";
+export const PAYSTACK_DUMMY_EMAIL = "payments@flippay.app";
 

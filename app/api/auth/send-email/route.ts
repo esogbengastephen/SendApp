@@ -128,9 +128,9 @@ export async function POST(request: NextRequest) {
     // Send email via Gmail SMTP
     console.log(`[EMAIL] Sending email via Gmail SMTP...`);
     const mailOptions = {
-      from: `"SendAfrica" <${FROM_EMAIL}>`,
+      from: `"FlipPay" <${FROM_EMAIL}>`,
       to: email,
-      subject: "Your Confirmation Code - SendAfrica",
+      subject: "Your Confirmation Code - FlipPay",
       html: htmlEmail,
     };
 

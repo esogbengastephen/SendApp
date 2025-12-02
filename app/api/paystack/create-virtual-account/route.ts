@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
         data: {
           accountNumber: userData.default_virtual_account_number,
           bankName: userData.default_virtual_account_bank,
-          accountName: `Send Africa`,
+          accountName: `FlipPay`,
           customerCode: userData.paystack_customer_code,
           alreadyExists: true,
         },
@@ -102,8 +102,8 @@ export async function POST(request: NextRequest) {
           `${PAYSTACK_API_BASE}/customer`,
           {
             email: PAYSTACK_DUMMY_EMAIL, // Dummy email - Paystack won't send emails to users
-            first_name: `App`,
-            last_name: `Send`,
+            first_name: `Flip`,
+            last_name: `Pay`,
             phone: "+2348000000000",
             metadata: {
               user_id: userId,

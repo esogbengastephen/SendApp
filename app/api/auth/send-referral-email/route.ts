@@ -93,9 +93,9 @@ export async function POST(request: NextRequest) {
     });
 
     await transporter.sendMail({
-      from: `"SendAfrica" <${FROM_EMAIL}>`,
+      from: `"FlipPay" <${FROM_EMAIL}>`,
       to: email,
-      subject: "Your Referral Code - SendAfrica",
+      subject: "Your Referral Code - FlipPay",
       html: htmlEmail,
     });
     
