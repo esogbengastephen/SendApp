@@ -9,7 +9,7 @@ const PAYSTACK_API_BASE = "https://api.paystack.co";
 /**
  * Create dedicated virtual account during user signup
  * No wallet address required - just email
- * Account name will be "Send App" and bank will be Wema Bank
+ * Account name will be "FlipPay" and bank will be Wema Bank
  */
 export async function POST(request: NextRequest) {
   try {
@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Step 1: Create Paystack customer with "Send App" name
+    // Step 1: Create Paystack customer with "FlipPay" name
     console.log(`[Signup VA] Creating Paystack customer for ${email}${wasReset ? ' (reset user - will create new customer)' : ''}`);
     
     let customerCode = userData?.paystack_customer_code;
@@ -75,8 +75,8 @@ export async function POST(request: NextRequest) {
           `${PAYSTACK_API_BASE}/customer`,
           {
             email: PAYSTACK_DUMMY_EMAIL, // Dummy email - Paystack won't send emails to users
-            first_name: "App",
-            last_name: "Send",
+            first_name: "Flip",
+            last_name: "Pay",
             phone: "+2348000000000", // Default phone number for virtual accounts
             metadata: {
               user_id: userId,
@@ -197,7 +197,7 @@ export async function POST(request: NextRequest) {
       data: {
         accountNumber: dva.account_number,
         bankName: dva.bank.name,
-        accountName: dva.account_name, // Will be "Send App"
+        accountName: dva.account_name, // Will be "FlipPay"
         customerCode: customerCode,
       },
     });

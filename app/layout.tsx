@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Send Payment",
+  title: "FlipPay",
   description: "Deposit Naira and receive $SEND tokens on Base",
 };
 

@@ -246,7 +246,7 @@ export async function POST(request: NextRequest) {
           body: JSON.stringify({
             email: user.email,
             subject: "Your Account Has Been Reset - New Referral Code",
-            message: `Hello,\n\nYour account has been reset by an administrator. Your account data has been cleared, and you can now register again as a new user.\n\nYour new referral code is: ${deletedData.newReferralCode}\n\nYou can use this code to refer friends and earn rewards.\n\nIf you have any questions, please contact support.\n\nBest regards,\nSendAfrica Team`,
+            message: `Hello,\n\nYour account has been reset by an administrator. Your account data has been cleared, and you can now register again as a new user.\n\nYour new referral code is: ${deletedData.newReferralCode}\n\nYou can use this code to refer friends and earn rewards.\n\nIf you have any questions, please contact support.\n\nBest regards,\nFlipPay Team`,
             referralCode: deletedData.newReferralCode,
             referralCount: 0,
           }),

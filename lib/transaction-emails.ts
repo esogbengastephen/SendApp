@@ -89,9 +89,9 @@ export async function sendPaymentVerificationEmail(
     `;
 
     await transporter.sendMail({
-      from: `"SendAfrica" <${FROM_EMAIL}>`,
+      from: `"FlipPay" <${FROM_EMAIL}>`,
       to: email,
-      subject: "Payment Verified - SendAfrica",
+      subject: "Payment Verified - FlipPay",
       html: htmlEmail,
     });
 
@@ -180,9 +180,9 @@ export async function sendTokenDistributionEmail(
     `;
 
     await transporter.sendMail({
-      from: `"SendAfrica" <${FROM_EMAIL}>`,
+      from: `"FlipPay" <${FROM_EMAIL}>`,
       to: email,
-      subject: "Tokens Distributed - SendAfrica",
+      subject: "Tokens Distributed - FlipPay",
       html: htmlEmail,
     });
 

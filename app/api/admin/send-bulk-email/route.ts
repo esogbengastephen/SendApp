@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
                   <tr>
                     <td style="padding: 30px 40px; background-color: #f8fafc; border-radius: 0 0 12px 12px; text-align: center; border-top: 1px solid #e2e8f0;">
                       <p style="margin: 0; color: #94a3b8; font-size: 12px; line-height: 1.6;">
-                        This is an automated message from SendAfrica.
+                        This is an automated message from FlipPay.
                       </p>
                     </td>
                   </tr>
@@ -83,7 +83,7 @@ export async function POST(request: NextRequest) {
     });
 
     await transporter.sendMail({
-      from: `"SendAfrica" <${FROM_EMAIL}>`,
+      from: `"FlipPay" <${FROM_EMAIL}>`,
       to: email,
       subject: subject,
       html: htmlEmail,
