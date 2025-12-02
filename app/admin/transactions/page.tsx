@@ -326,7 +326,7 @@ export default function TransactionsPage() {
                           ? "text-green-600 dark:text-green-400" 
                           : "text-slate-500 dark:text-slate-400"
                       }`}>
-                        {getSendAmountForTransaction(tx)} SEND
+                        {getSendAmountForTransaction(tx)} $SEND
                         {tx.txHash && (
                           <span className="ml-1 text-green-600 dark:text-green-400" title="Tokens distributed">
                             ✓
