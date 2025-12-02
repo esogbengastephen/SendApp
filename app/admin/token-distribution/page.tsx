@@ -153,7 +153,7 @@ export default function TokenDistributionPage() {
           <div className="mt-4 p-4 bg-slate-100 dark:bg-slate-800 rounded-lg">
             <p className="text-sm text-slate-600 dark:text-slate-400">Balance</p>
             <p className="text-xl font-bold text-slate-900 dark:text-slate-100">
-              {loading ? "Loading..." : `${parseFloat(walletBalance).toLocaleString()} SEND`}
+              {loading ? "Loading..." : `${parseFloat(walletBalance).toLocaleString()} $SEND`}
             </p>
           </div>
         )}

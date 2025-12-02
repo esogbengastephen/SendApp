@@ -638,13 +638,13 @@ export default function SettingsPage() {
               className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              1 NGN = {exchangeRate || "0"} SEND
+              1 NGN = {exchangeRate || "0"} $SEND
             </p>
           </div>
           
           <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-              SEND to NGN Exchange Rate
+              $SEND to NGN Exchange Rate
             </label>
             <input
               type="number"
@@ -670,7 +670,7 @@ export default function SettingsPage() {
               className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              1 SEND = {sendToNgnRate || "0"} NGN
+              1 $SEND = {sendToNgnRate || "0"} NGN
             </p>
           </div>
         </div>

@@ -252,7 +252,7 @@ export default function TestTransferPage() {
 
           <div>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-              Amount (SEND)
+              Amount ($SEND)
             </label>
             <input
               type="number"

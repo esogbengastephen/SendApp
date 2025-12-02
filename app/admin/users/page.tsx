@@ -430,7 +430,7 @@ export default function UsersPage() {
                     </td>
                     <td className="px-4 py-4">
                       <div className="text-sm font-bold text-primary">
-                        {parseFloat(user.totalReceivedSEND).toLocaleString()} SEND
+                        {parseFloat(user.totalReceivedSEND).toLocaleString()} $SEND
                       </div>
                     </td>
                     <td className="px-4 py-4">
