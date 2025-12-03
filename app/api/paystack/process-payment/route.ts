@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
 
     if (!ngnAmount || !isValidAmount(ngnAmount.toString())) {
       return NextResponse.json(
-        { success: false, error: "Invalid NGN amount" },
+        { success: false, error: "Minimum purchase amount is ₦3,000" },
         { status: 400 }
       );
     }
@@ -142,10 +142,10 @@ export async function POST(request: NextRequest) {
     const normalizedWallet = walletAddress.trim().toLowerCase();
     const parsedAmount = parseFloat(ngnAmount);
     
-    // Validate parsed amount
-    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+    // Validate parsed amount (minimum 3000 NGN)
+    if (isNaN(parsedAmount) || parsedAmount < 3000) {
       return NextResponse.json(
-        { success: false, error: "Invalid NGN amount" },
+        { success: false, error: "Minimum purchase amount is ₦3,000" },
         { status: 400 }
       );
     }
@@ -572,6 +572,21 @@ export async function POST(request: NextRequest) {
       } catch (error) {
         console.error(`[Payment Processing] ⚠️ Exception updating Supabase wallet stats:`, error);
         // Continue anyway
+      }
+
+      // Update referral count if this is user's first completed transaction
+      // (Database trigger should handle this, but we call it explicitly as backup)
+      try {
+        const referralResult = await updateReferralCountOnTransaction(transaction.userId);
+        if (referralResult.success) {
+          console.log(`[Payment Processing] ✅ Referral count updated for user ${transaction.userId}`);
+        } else {
+          console.error(`[Payment Processing] ⚠️ Failed to update referral count:`, referralResult.error);
+          // Continue anyway - trigger should handle it
+        }
+      } catch (error) {
+        console.error(`[Payment Processing] ⚠️ Exception updating referral count:`, error);
+        // Continue anyway - trigger should handle it
       }
     } else {
       // No userId - fall back to in-memory user tracking

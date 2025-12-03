@@ -250,3 +250,76 @@ export async function createAdminSession(walletAddress: string, signature?: stri
   }
 }
 
+/**
+ * Update referral count when a user completes their first transaction
+ * This is called as a backup to the database trigger
+ * The trigger should handle it automatically, but this ensures it works
+ */
+export async function updateReferralCountOnTransaction(userId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    // Get the user's referred_by code
+    const { data: user, error: userError } = await supabaseAdmin
+      .from("users")
+      .select("referred_by")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (userError) {
+      console.error("[Referral] Error fetching user:", userError);
+      return { success: false, error: userError.message };
+    }
+
+    if (!user || !user.referred_by) {
+      // User wasn't referred, nothing to do
+      return { success: true };
+    }
+
+    // Check if this is the user's first completed transaction
+    // Count all completed transactions for this user
+    const { count: completedCount, error: txError } = await supabaseAdmin
+      .from("transactions")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("status", "completed");
+
+    if (txError) {
+      console.error("[Referral] Error checking previous transactions:", txError);
+      return { success: false, error: txError.message };
+    }
+
+    // If there's more than 1 completed transaction, this is not the first one
+    // (The current transaction is already marked as completed when this function is called)
+    if (completedCount && completedCount > 1) {
+      // Not the first transaction, referral already counted
+      return { success: true };
+    }
+
+    // If count is 0 or 1, this is the first completed transaction
+    // (0 shouldn't happen since transaction is already completed, but handle it)
+    if (completedCount === 0) {
+      console.warn("[Referral] No completed transactions found, but transaction should be completed");
+      return { success: true }; // Don't increment if no completed transactions found
+    }
+
+    // This is the first completed transaction - increment referrer's count
+    const { error: updateError } = await supabaseAdmin
+      .from("users")
+      .update({
+        referral_count: supabaseAdmin.raw("referral_count + 1"),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("referral_code", user.referred_by);
+
+    if (updateError) {
+      console.error("[Referral] Error updating referral count:", updateError);
+      return { success: false, error: updateError.message };
+    }
+
+    console.log(`[Referral] ✅ Incremented referral count for referrer code: ${user.referred_by}`);
+    return { success: true };
+  } catch (error: any) {
+    console.error("[Referral] Exception updating referral count:", error);
+    return { success: false, error: error.message };
+  }
+}
+
