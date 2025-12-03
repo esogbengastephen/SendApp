@@ -9,7 +9,7 @@ import {
 } from "@/lib/transactions";
 import { distributeTokens } from "@/lib/token-distribution";
 import { getExchangeRate } from "@/lib/settings";
-import { supabase } from "@/lib/supabase";
+import { supabase, updateReferralCountOnTransaction } from "@/lib/supabase";
 import { nanoid } from "nanoid";
 import { sendPaymentVerificationEmail, sendTokenDistributionEmail } from "@/lib/transaction-emails";
 
@@ -217,6 +217,21 @@ export async function POST(request: NextRequest) {
         } catch (emailError) {
           console.error(`[Webhook] Failed to send payment verification email:`, emailError);
           // Don't fail the transaction if email fails
+        }
+
+        // Update referral count if this is user's first completed transaction
+        // (Database trigger should handle this, but we call it explicitly as backup)
+        try {
+          const referralResult = await updateReferralCountOnTransaction(userId);
+          if (referralResult.success) {
+            console.log(`[Webhook] ✅ Referral count updated for user ${userId}`);
+          } else {
+            console.error(`[Webhook] ⚠️ Failed to update referral count:`, referralResult.error);
+            // Continue anyway - trigger should handle it
+          }
+        } catch (error) {
+          console.error(`[Webhook] ⚠️ Exception updating referral count:`, error);
+          // Continue anyway - trigger should handle it
         }
         
         // Distribute tokens immediately

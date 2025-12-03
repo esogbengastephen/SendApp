@@ -21,10 +21,10 @@ export function isValidWalletOrTag(input: string): boolean {
 }
 
 /**
- * Validates NGN amount
+ * Validates NGN amount (minimum 3000 NGN)
  */
 export function isValidAmount(amount: string): boolean {
   const num = parseFloat(amount);
-  return !isNaN(num) && num > 0;
+  return !isNaN(num) && num >= 3000;
 }
 

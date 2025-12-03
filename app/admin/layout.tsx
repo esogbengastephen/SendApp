@@ -72,15 +72,26 @@ function AdminLayoutContent({
           <div className="p-4 sm:p-6">
             {/* Header for Desktop */}
             <div className="hidden lg:flex items-center gap-3 mb-6 sm:mb-8">
-              <div className="bg-primary p-3 rounded-lg">
-                <span className="text-2xl font-bold text-slate-900">/s</span>
+              <div>
+                {/* White logo for light mode */}
+                <img 
+                  src="/whitelogo.png" 
+                  alt="FlipPay" 
+                  className="h-12 w-auto dark:hidden"
+                />
+                {/* Regular logo for dark mode */}
+                <img 
+                  src="/logo.png" 
+                  alt="FlipPay" 
+                  className="h-12 w-auto hidden dark:block"
+                />
               </div>
               <div>
                 <h1 className="text-lg font-bold text-slate-900 dark:text-slate-100">
                   Admin Panel
                 </h1>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Send Token Platform
+                  FlipPay Platform
                 </p>
               </div>
             </div>

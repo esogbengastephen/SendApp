@@ -40,80 +40,13 @@ export default function PaymentForm() {
     isVisible: boolean;
   }>({ message: "", type: "info", isVisible: false });
   const [virtualAccount, setVirtualAccount] = useState<VirtualAccount | null>(null);
-  const [isLoadingVirtualAccount, setIsLoadingVirtualAccount] = useState(true);
+  const [isLoadingVirtualAccount, setIsLoadingVirtualAccount] = useState(false);
   const [paymentGenerated, setPaymentGenerated] = useState(false);
   const [isPollingPayment, setIsPollingPayment] = useState(false);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Fetch or create virtual account (EMAIL-BASED - same account for all wallets)
-  // When wallet address is entered, we fetch the user's email-based virtual account
-  // The same account works for all wallet addresses the user uses
-  useEffect(() => {
-    const setupVirtualAccount = async () => {
-      const user = getUserFromStorage();
-      if (!user || !walletAddress) {
-        setIsLoadingVirtualAccount(false);
-        return;
-      }
-
-      try {
-        console.log("[Virtual Account] Fetching virtual account for user (EMAIL-BASED)...");
-        
-        // Get user's virtual account (EMAIL-BASED - works for all wallets)
-        // walletAddress is passed to link the wallet to the user
-        const getResponse = await fetch(
-          `/api/user/virtual-account?userId=${user.id}&walletAddress=${walletAddress}`
-        );
-        const getData = await getResponse.json();
-
-        if (getData.success && getData.data.hasVirtualAccount) {
-          console.log("[Virtual Account] ✅ Found existing virtual account (EMAIL-BASED)");
-          setVirtualAccount({
-            accountNumber: getData.data.accountNumber,
-            bankName: getData.data.bankName,
-            hasVirtualAccount: true,
-          });
-          setIsLoadingVirtualAccount(false);
-          return;
-        }
-
-        // No virtual account exists, create one (EMAIL-BASED)
-        console.log("[Virtual Account] Creating new virtual account (EMAIL-BASED)...");
-        const createResponse = await fetch("/api/paystack/create-virtual-account", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId: user.id,
-            email: user.email,
-            walletAddress: walletAddress, // Used to link wallet, but account is email-based
-          }),
-        });
-        const createData = await createResponse.json();
-
-        if (createData.success) {
-          console.log("[Virtual Account] ✅ Virtual account created successfully (EMAIL-BASED)");
-          setVirtualAccount({
-            accountNumber: createData.data.accountNumber,
-            bankName: createData.data.bankName,
-            hasVirtualAccount: true,
-          });
-        } else {
-          console.error("[Virtual Account] Failed to create:", createData.error);
-        }
-      } catch (error) {
-        console.error("[Virtual Account] Error:", error);
-      } finally {
-        setIsLoadingVirtualAccount(false);
-      }
-    };
-
-    // Only setup virtual account if we have a wallet address
-    if (walletAddress) {
-      setupVirtualAccount();
-    } else {
-      setIsLoadingVirtualAccount(false);
-    }
-  }, [walletAddress]); // Run when wallet address changes (to link wallet, but account is email-based)
+  // Note: Virtual account is now only fetched/created when "Generate Payment" is clicked
+  // This ensures account details are only shown after user initiates payment
 
   // Auto-claim pending transactions on mount
   useEffect(() => {
@@ -416,7 +349,7 @@ export default function PaymentForm() {
     const newErrors: typeof errors = {};
 
     if (!ngnAmount || !isValidAmount(ngnAmount)) {
-      newErrors.ngnAmount = "Please enter a valid amount greater than 0";
+      newErrors.ngnAmount = "Minimum purchase amount is ₦3,000";
     }
 
     if (!walletAddress || !isValidWalletOrTag(walletAddress.trim())) {
@@ -667,8 +600,19 @@ export default function PaymentForm() {
     <div className="w-full max-w-lg p-8">
       <div className="flex flex-col items-center">
         {/* Logo */}
-        <div className="bg-primary p-5 rounded-xl mb-8">
-          <span className="text-3xl font-bold text-slate-900">/s</span>
+        <div className="mb-8">
+          {/* White logo for light mode */}
+          <img 
+            src="/whitelogo.png" 
+            alt="FlipPay" 
+            className="h-16 w-auto dark:hidden"
+          />
+          {/* Regular logo for dark mode */}
+          <img 
+            src="/logo.png" 
+            alt="FlipPay" 
+            className="h-16 w-auto hidden dark:block"
+          />
         </div>
 
         {/* Form Card */}
@@ -691,9 +635,9 @@ export default function PaymentForm() {
                   } bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-primary focus:border-primary placeholder:text-slate-400 dark:placeholder:text-slate-500 px-3 py-2`}
                   id="ngn_amount"
                   name="ngn_amount"
-                  placeholder="e.g. 5000"
+                  placeholder="e.g. 3000"
                   type="number"
-                  min="0"
+                  min="3000"
                   step="0.01"
                   value={ngnAmount}
                   onChange={(e) => handleInputChange("ngnAmount", e.target.value)}
@@ -765,7 +709,8 @@ export default function PaymentForm() {
               </div>
             </div>
 
-            {/* Deposit Account Info */}
+            {/* Deposit Account Info - Only shown after "Generate Payment" is clicked */}
+            {paymentGenerated && (
             <div className="border-t border-slate-200 dark:border-slate-700 pt-6">
               {virtualAccount && virtualAccount.hasVirtualAccount ? (
                 /* Virtual Account - Personalized */
@@ -827,10 +772,11 @@ export default function PaymentForm() {
                 </div>
               ) : null}
             </div>
+            )}
 
             {/* Submit Button */}
             <div>
-              {!virtualAccount || !virtualAccount.hasVirtualAccount ? (
+              {!paymentGenerated || !virtualAccount || !virtualAccount.hasVirtualAccount ? (
                 /* Generate Payment Button - Shows first */
                 <button
                   type="button"
@@ -862,8 +808,8 @@ export default function PaymentForm() {
                     }
 
                     try {
-                      // Link wallet to user by creating transaction record
-                      console.log("[Generate Payment] Linking wallet to user...");
+                      // Step 1: Create transaction with status "pending"
+                      console.log("[Generate Payment] Creating pending transaction...");
                       const linkResponse = await fetch("/api/transactions/create-id", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },
@@ -872,16 +818,27 @@ export default function PaymentForm() {
                           walletAddress: walletAddress,
                           ngnAmount: parseFloat(ngnAmount),
                           sendAmount: parseFloat(sendAmount),
+                          userId: user?.id,
+                          userEmail: user?.email,
                         }),
                       });
                       
-                      if (!linkResponse.ok) {
-                        console.error("[Generate Payment] Failed to link wallet to user");
-                      } else {
-                        console.log("[Generate Payment] ✅ Wallet linked to user");
+                      const linkData = await linkResponse.json();
+                      if (!linkResponse.ok || !linkData.success) {
+                        console.error("[Generate Payment] Failed to create transaction:", linkData.error);
+                        setToast({
+                          message: linkData.error || "Failed to create transaction",
+                          type: "error",
+                          isVisible: true,
+                        });
+                        setIsLoadingVirtualAccount(false);
+                        return;
                       }
                       
-                      // Create virtual account
+                      console.log("[Generate Payment] ✅ Transaction created with status: pending");
+                      
+                      // Step 2: Create/fetch virtual account
+                      console.log("[Generate Payment] Creating/fetching virtual account...");
                       const createResponse = await fetch("/api/paystack/create-virtual-account", {
                         method: "POST",
                         headers: { "Content-Type": "application/json" },

@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { getTokenBalance } from "@/lib/blockchain";
 
 interface Distribution {
   transactionId: string;
@@ -21,27 +20,35 @@ export default function TokenDistributionPage() {
   const [loadingDistributions, setLoadingDistributions] = useState(true);
 
   useEffect(() => {
-    // Get liquidity pool address from env
-    const poolAddress = process.env.NEXT_PUBLIC_LIQUIDITY_POOL_ADDRESS || "";
-    if (poolAddress) {
-      fetchBalance(poolAddress);
-    } else {
-      setLoading(false);
-    }
+    // Fetch liquidity pool balance from API
+    fetchPoolBalance();
     
     // Fetch distribution history
     fetchDistributions();
   }, []);
 
-  const fetchBalance = async (address: string) => {
+  const fetchPoolBalance = async () => {
+    setLoading(true);
     try {
-      const response = await fetch(`/api/blockchain/balance?address=${address}`);
+      // Get admin wallet from localStorage (set during admin login)
+      const adminWallet = localStorage.getItem("admin_wallet");
+      if (!adminWallet) {
+        console.error("[Token Distribution] Admin wallet not found");
+        setLoading(false);
+        return;
+      }
+
+      const response = await fetch(`/api/admin/pool-balance?adminWallet=${adminWallet}`);
       const data = await response.json();
+      
       if (data.success) {
         setPoolBalance(data.balance);
+        console.log(`[Token Distribution] Pool balance: ${data.balance} SEND`);
+      } else {
+        console.error("[Token Distribution] Error fetching pool balance:", data.error);
       }
     } catch (error) {
-      console.error("Error fetching balance:", error);
+      console.error("[Token Distribution] Error fetching pool balance:", error);
     } finally {
       setLoading(false);
     }
@@ -122,7 +129,7 @@ export default function TokenDistributionPage() {
           <div>
             <p className="text-sm text-slate-600 dark:text-slate-400">Available Balance</p>
             <p className="text-3xl font-bold text-slate-900 dark:text-slate-100">
-              {loading ? "Loading..." : `${parseFloat(poolBalance).toLocaleString()} SEND`}
+              {loading ? "Loading..." : `${parseFloat(poolBalance).toLocaleString()} $SEND`}
             </p>
           </div>
         </div>
