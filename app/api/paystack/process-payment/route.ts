@@ -8,7 +8,7 @@ import { verifyPaymentForTransaction } from "@/lib/payment-verification";
 import { getExchangeRate } from "@/lib/settings";
 import { updateWalletStats } from "@/lib/supabase-users";
 import { sendPaymentVerificationEmail, sendTokenDistributionEmail } from "@/lib/transaction-emails";
-import { supabase } from "@/lib/supabase";
+import { supabase, updateReferralCountOnTransaction } from "@/lib/supabase";
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const PAYSTACK_API_BASE = "https://api.paystack.co";
