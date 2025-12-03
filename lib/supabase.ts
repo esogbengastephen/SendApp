@@ -302,10 +302,22 @@ export async function updateReferralCountOnTransaction(userId: string): Promise<
     }
 
     // This is the first completed transaction - increment referrer's count
+    // Fetch current count and increment it
+    const { data: referrerData, error: fetchError } = await supabaseAdmin
+      .from("users")
+      .select("referral_count")
+      .eq("referral_code", user.referred_by)
+      .maybeSingle();
+
+    if (fetchError || !referrerData) {
+      console.error("[Referral] Error fetching referrer data:", fetchError);
+      return { success: false, error: fetchError?.message || "Referrer not found" };
+    }
+
     const { error: updateError } = await supabaseAdmin
       .from("users")
       .update({
-        referral_count: supabaseAdmin.raw("referral_count + 1"),
+        referral_count: (referrerData.referral_count || 0) + 1,
         updated_at: new Date().toISOString(),
       })
       .eq("referral_code", user.referred_by);
