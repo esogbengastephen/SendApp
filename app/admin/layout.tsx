@@ -6,6 +6,7 @@ import { DEPOSIT_ACCOUNT } from "@/lib/constants";
 import AdminAuthGuard from "@/components/AdminAuthGuard";
 import WagmiProvider from "@/components/WagmiProvider";
 import PoweredBySEND from "@/components/PoweredBySEND";
+import ThemeToggle from "@/components/ThemeToggle";
 import { useAccount, useDisconnect } from "wagmi";
 
 function AdminLayoutContent({
@@ -194,6 +195,10 @@ function AdminLayoutContent({
                 <span className="material-icons-outlined text-lg sm:text-xl">settings</span>
                 <span>Settings</span>
               </Link>
+              {/* Theme Toggle */}
+              <div className="mt-2 sm:mt-4" onClick={() => setSidebarOpen(false)}>
+                <ThemeToggle />
+              </div>
               <Link
                 href="/"
                 onClick={() => setSidebarOpen(false)}
