@@ -60,6 +60,8 @@ export interface SupabaseTransaction {
   completed_at?: string;
   last_checked_at?: string;
   expires_at?: string; // Timestamp when pending transaction expires (1 hour after creation)
+  fee_ngn?: number; // Transaction fee in NGN
+  fee_in_send?: string; // Transaction fee in $SEND
 }
 
 /**
@@ -362,6 +364,8 @@ export async function createSupabaseTransaction(
     sendtag?: string;
     exchange_rate?: number;
     initialized_at?: string;
+    fee_ngn?: number;
+    fee_in_send?: string;
   }
 ): Promise<{ success: boolean; transaction?: SupabaseTransaction; error?: string }> {
   try {
@@ -392,6 +396,8 @@ export async function createSupabaseTransaction(
         initialized_at: transactionData.initialized_at || now.toISOString(),
         expires_at: expiresAtValue,
         verification_attempts: 0,
+        fee_ngn: transactionData.fee_ngn || null,
+        fee_in_send: transactionData.fee_in_send || null,
       })
       .select()
       .single();

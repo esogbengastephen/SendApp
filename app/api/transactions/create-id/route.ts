@@ -8,6 +8,7 @@ import {
   getSupabaseUserByEmail,
   updateWalletStats,
 } from "@/lib/supabase-users";
+import { calculateTransactionFee, calculateFinalTokens, calculateFeeInTokens } from "@/lib/fee-calculation";
 
 /**
  * Get user from session (localStorage data sent in request body)
@@ -57,16 +58,26 @@ export async function POST(request: NextRequest) {
         // Update existing transaction if we have new data
         if (ngnAmount && walletAddress) {
           const normalizedWallet = walletAddress.trim().toLowerCase();
-          const currentExchangeRate = exchangeRate ? parseFloat(exchangeRate) : existing.exchangeRate || 50;
-          const calculatedSendAmount = sendAmount || calculateSendAmount(parseFloat(ngnAmount), currentExchangeRate);
+          const currentExchangeRate = exchangeRate ? parseFloat(exchangeRate) : existing.exchangeRate || await getExchangeRate();
+          
+          // Calculate fees upfront
+          const feeNGN = await calculateTransactionFee(parseFloat(ngnAmount));
+          const feeInSEND = calculateFeeInTokens(feeNGN, currentExchangeRate);
+          const finalSendAmount = calculateFinalTokens(
+            parseFloat(ngnAmount),
+            feeNGN,
+            currentExchangeRate
+          );
           
           await updateTransaction(transactionId, {
             ngnAmount: parseFloat(ngnAmount),
-            sendAmount: calculatedSendAmount,
+            sendAmount: finalSendAmount, // Use final amount after fee
             walletAddress: normalizedWallet,
             sendtag: sendtag || undefined,
             exchangeRate: currentExchangeRate,
             userId: currentUser?.id,
+            fee_ngn: feeNGN,
+            fee_in_send: feeInSEND,
           });
           
           // If user is logged in, link wallet and update stats
@@ -79,7 +90,7 @@ export async function POST(request: NextRequest) {
               normalizedWallet,
               transactionId,
               parseFloat(ngnAmount),
-              calculatedSendAmount,
+              finalSendAmount, // Use final amount after fee
               sendtag || undefined
             );
           }
@@ -111,17 +122,29 @@ export async function POST(request: NextRequest) {
       const normalizedWallet = walletAddress.trim().toLowerCase();
       // Use admin-set exchange rate (not from frontend)
       const currentExchangeRate = await getExchangeRate();
-      const calculatedSendAmount = sendAmount || calculateSendAmount(parseFloat(ngnAmount), currentExchangeRate);
+      
+      // Calculate fees upfront so user sees correct final amount
+      const feeNGN = await calculateTransactionFee(parseFloat(ngnAmount));
+      const feeInSEND = calculateFeeInTokens(feeNGN, currentExchangeRate);
+      const finalSendAmount = calculateFinalTokens(
+        parseFloat(ngnAmount),
+        feeNGN,
+        currentExchangeRate
+      );
+      
+      console.log(`[Create ID] Fee calculation: ${feeNGN} NGN (${feeInSEND} $SEND), Final tokens: ${finalSendAmount} $SEND`);
       
       const transaction = await createTransaction({
         transactionId: newTransactionId,
         paystackReference: newTransactionId, // Will be updated when payment is found
         ngnAmount: parseFloat(ngnAmount),
-        sendAmount: calculatedSendAmount,
+        sendAmount: finalSendAmount, // Use final amount after fee deduction
         walletAddress: normalizedWallet,
         sendtag: sendtag || undefined,
         exchangeRate: currentExchangeRate,
         userId: currentUser?.id,
+        fee_ngn: feeNGN, // Store fee info upfront
+        fee_in_send: feeInSEND,
       });
       
       // If user is logged in, link wallet to user
@@ -134,7 +157,7 @@ export async function POST(request: NextRequest) {
           normalizedWallet,
           newTransactionId,
           parseFloat(ngnAmount),
-          calculatedSendAmount,
+          finalSendAmount, // Use final amount after fee
           sendtag || undefined
         );
         console.log(`[Create ID] ⚠️ No user logged in, using in-memory tracking for wallet ${normalizedWallet}`);
@@ -156,26 +179,12 @@ export async function POST(request: NextRequest) {
         alreadyProcessed: false,
       });
     } else {
-      // Create minimal transaction record (just ID, will be updated when user submits form)
-      const transaction = await createTransaction({
-        transactionId: newTransactionId,
-        paystackReference: newTransactionId,
-        ngnAmount: 0,
-        sendAmount: "0.00",
-        walletAddress: "",
-        userId: currentUser?.id,
-      });
-
+      // Don't create transaction without amount and wallet
+      // Transactions should only be created when user clicks "Generate Payment"
       return NextResponse.json({
-        success: true,
-        transactionId: transaction.transactionId,
-        exists: false,
-        transaction: {
-          transactionId: transaction.transactionId,
-          status: transaction.status,
-        },
-        alreadyProcessed: false,
-      });
+        success: false,
+        error: "Transaction requires both NGN amount and wallet address. Please click 'Generate Payment' after entering your details.",
+      }, { status: 400 });
     }
   } catch (error: any) {
     console.error("[Create ID] Transaction ID creation error:", error);

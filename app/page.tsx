@@ -12,22 +12,51 @@ export default function Home() {
   const [user, setUser] = useState(getUserFromStorage());
 
   useEffect(() => {
-    // Check if user is logged in
-    if (!isUserLoggedIn()) {
-      router.push("/auth");
-      return;
-    }
+    const verifyUser = async () => {
+      // Check if user is logged in
+      if (!isUserLoggedIn()) {
+        router.push("/auth");
+        return;
+      }
 
-    // Verify session is still valid
-    const currentUser = getUserFromStorage();
-    if (!currentUser) {
-      clearUserSession();
-      router.push("/auth");
-      return;
-    }
+      // Verify session is still valid
+      const currentUser = getUserFromStorage();
+      if (!currentUser) {
+        clearUserSession();
+        router.push("/auth");
+        return;
+      }
 
-    setUser(currentUser);
-    setIsChecking(false);
+      // CRITICAL: Verify user exists in database
+      try {
+        const response = await fetch("/api/auth/verify-user", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: currentUser.email }),
+        });
+
+        const data = await response.json();
+
+        if (!data.success || !data.exists) {
+          // User doesn't exist in database - log them out immediately
+          console.log(`[Auth] User ${currentUser.email} not found in database. Logging out...`);
+          clearUserSession();
+          router.push("/auth");
+          return;
+        }
+
+        // User exists in database - allow access
+        setUser(currentUser);
+        setIsChecking(false);
+      } catch (error) {
+        console.error("Error verifying user in database:", error);
+        // On error, log out for security
+        clearUserSession();
+        router.push("/auth");
+      }
+    };
+
+    verifyUser();
   }, [router]);
 
   const handleLogout = () => {

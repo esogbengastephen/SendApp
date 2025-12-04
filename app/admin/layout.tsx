@@ -5,6 +5,7 @@ import Link from "next/link";
 import { DEPOSIT_ACCOUNT } from "@/lib/constants";
 import AdminAuthGuard from "@/components/AdminAuthGuard";
 import WagmiProvider from "@/components/WagmiProvider";
+import PoweredBySEND from "@/components/PoweredBySEND";
 import { useAccount, useDisconnect } from "wagmi";
 
 function AdminLayoutContent({
@@ -46,15 +47,26 @@ function AdminLayoutContent({
         {/* Close Button for Mobile */}
         <div className="flex items-center justify-between p-4 sm:p-6 border-b border-slate-200 dark:border-slate-700 lg:hidden">
           <div className="flex items-center gap-3">
-            <div className="bg-primary p-2 sm:p-3 rounded-lg">
-              <span className="text-xl sm:text-2xl font-bold text-slate-900">/s</span>
+            <div>
+              {/* White logo for light mode */}
+              <img 
+                src="/whitelogo.png" 
+                alt="FlipPay" 
+                className="h-10 w-auto dark:hidden"
+              />
+              {/* Regular logo for dark mode */}
+              <img 
+                src="/logo.png" 
+                alt="FlipPay" 
+                className="h-10 w-auto hidden dark:block"
+              />
             </div>
             <div>
               <h1 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
                 Admin Panel
               </h1>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Send Token Platform
+                FlipPay Platform
               </p>
             </div>
           </div>
@@ -196,7 +208,7 @@ function AdminLayoutContent({
 
         {/* Account Info - Fixed at bottom */}
         <div className="flex-shrink-0 p-4 sm:p-6 border-t border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900">
-          <div className="bg-slate-100 dark:bg-slate-800 p-3 sm:p-4 rounded-lg">
+          <div className="bg-slate-100 dark:bg-slate-800 p-3 sm:p-4 rounded-lg mb-4">
             <p className="text-xs font-medium text-slate-500 dark:text-slate-400 mb-1 sm:mb-2">
               Deposit Account
             </p>
@@ -207,6 +219,7 @@ function AdminLayoutContent({
               {DEPOSIT_ACCOUNT.accountNumber} • {DEPOSIT_ACCOUNT.bank}
             </p>
           </div>
+          <PoweredBySEND />
         </div>
       </aside>
 

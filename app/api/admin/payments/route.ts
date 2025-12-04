@@ -7,6 +7,7 @@ const PAYSTACK_API_BASE = "https://api.paystack.co";
 
 /**
  * Fetch Paystack payments and merge with our transaction data from Supabase
+ * Only returns Paystack transactions that have matching database records
  */
 export async function GET(request: NextRequest) {
   try {
@@ -50,32 +51,40 @@ export async function GET(request: NextRequest) {
     }
 
     // Merge Paystack data with our transaction data
-    const payments = paystackPayments.map((paystackTx: any) => {
-      // Find matching transaction in our system
-      const matchingTx = transactionsWithPaystack.find(
-        (t) => t.paystack_reference === paystackTx.reference
-      );
+    // FILTER: Only include Paystack transactions that have matching database records
+    const payments = paystackPayments
+      .map((paystackTx: any) => {
+        // Find matching transaction in our system
+        const matchingTx = transactionsWithPaystack.find(
+          (t) => t.paystack_reference === paystackTx.reference
+        );
 
-      return {
-        reference: paystackTx.reference,
-        amount: paystackTx.amount / 100, // Convert from kobo to NGN
-        status: paystackTx.status,
-        customer: paystackTx.customer?.email || paystackTx.customer?.first_name || "N/A",
-        createdAt: paystackTx.created_at,
-        verified: matchingTx?.status === "completed" || false,
-        transactionId: matchingTx?.transaction_id || null,
-        walletAddress: matchingTx?.wallet_address || null,
-        sendAmount: matchingTx?.send_amount || null,
-        txHash: matchingTx?.tx_hash || null,
-      };
-    });
+        // Only include if there's a matching database record
+        if (!matchingTx) {
+          return null;
+        }
+
+        return {
+          reference: paystackTx.reference,
+          amount: paystackTx.amount / 100, // Convert from kobo to NGN
+          status: paystackTx.status,
+          customer: paystackTx.customer?.email || paystackTx.customer?.first_name || "N/A",
+          createdAt: paystackTx.created_at,
+          verified: matchingTx.status === "completed" || false,
+          transactionId: matchingTx.transaction_id || null,
+          walletAddress: matchingTx.wallet_address || null,
+          sendAmount: matchingTx.send_amount || null,
+          txHash: matchingTx.tx_hash || null,
+        };
+      })
+      .filter((payment) => payment !== null); // Remove null entries (unmatched transactions)
 
     // Sort by date (newest first)
     payments.sort((a, b) => 
       new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
     );
 
-    console.log(`[Payments API] Retrieved ${payments.length} payments from Paystack, ${transactionsWithPaystack.length} matched with Supabase`);
+    console.log(`[Payments API] Retrieved ${paystackPayments.length} payments from Paystack, ${transactionsWithPaystack.length} matched with Supabase, ${payments.length} displayed (filtered)`);
 
     return NextResponse.json({
       success: true,

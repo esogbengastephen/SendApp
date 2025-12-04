@@ -20,9 +20,18 @@ interface Stats {
   totalTransactions: number;
   totalRevenue: number;
   totalTokensDistributed: number;
+  totalRevenueInSEND?: number;
   pendingPayments: number;
   successfulPayments: number;
   failedPayments: number;
+  percentageChanges?: {
+    totalTransactions: string;
+    totalRevenue: string;
+    totalTokensDistributed: string;
+    pendingPayments: string;
+    successfulPayments: string;
+    failedPayments: string;
+  };
 }
 
 interface ChartData {
@@ -37,6 +46,7 @@ export default function AdminDashboard() {
     totalTransactions: 0,
     totalRevenue: 0,
     totalTokensDistributed: 0,
+    totalRevenueInSEND: 0,
     pendingPayments: 0,
     successfulPayments: 0,
     failedPayments: 0,
@@ -106,46 +116,57 @@ export default function AdminDashboard() {
       value: loading ? "..." : stats.totalTransactions.toLocaleString(),
       icon: "receipt_long",
       color: "bg-blue-500",
-      change: "+12.5%",
+      change: stats.percentageChanges?.totalTransactions || "0%",
     },
     {
       title: "Total Revenue (NGN)",
       value: loading ? "..." : `₦${stats.totalRevenue.toLocaleString()}`,
       icon: "payments",
       color: "bg-green-500",
-      change: "+8.2%",
+      change: stats.percentageChanges?.totalRevenue || "0%",
+    },
+    {
+      title: "Total Revenue ($SEND)",
+      value: loading 
+        ? "..." 
+        : stats.totalRevenueInSEND && stats.totalRevenueInSEND > 0 
+          ? `${stats.totalRevenueInSEND.toLocaleString()} $SEND`
+          : "0 $SEND",
+      icon: "account_balance",
+      color: "bg-purple-500",
+      change: "0%",
     },
     {
       title: "Tokens Distributed",
       value: loading 
         ? "..." 
         : stats.totalTokensDistributed > 0 
-          ? `${stats.totalTokensDistributed.toLocaleString()} SEND`
-          : "0 SEND",
+          ? `${stats.totalTokensDistributed.toLocaleString()} $SEND`
+          : "0 $SEND",
       icon: "account_balance_wallet",
       color: "bg-primary",
-      change: stats.totalTokensDistributed > 0 ? "+15.3%" : "0%",
+      change: stats.percentageChanges?.totalTokensDistributed || "0%",
     },
     {
       title: "Pending Payments",
       value: loading ? "..." : stats.pendingPayments.toString(),
       icon: "schedule",
       color: "bg-yellow-500",
-      change: "-3.1%",
+      change: stats.percentageChanges?.pendingPayments || "0%",
     },
     {
       title: "Successful",
       value: loading ? "..." : stats.successfulPayments.toString(),
       icon: "check_circle",
       color: "bg-green-500",
-      change: "+5.7%",
+      change: stats.percentageChanges?.successfulPayments || "0%",
     },
     {
       title: "Failed",
       value: loading ? "..." : stats.failedPayments.toString(),
       icon: "error",
       color: "bg-red-500",
-      change: "-2.4%",
+      change: stats.percentageChanges?.failedPayments || "0%",
     },
   ];
 

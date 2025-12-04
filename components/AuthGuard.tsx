@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { isUserLoggedIn } from "@/lib/session";
+import { isUserLoggedIn, getUserFromStorage, clearUserSession } from "@/lib/session";
 
 export default function AuthGuard({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -13,16 +13,49 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
     checkAuth();
   }, []);
 
-  const checkAuth = () => {
+  const checkAuth = async () => {
     const loggedIn = isUserLoggedIn();
     
     if (!loggedIn) {
       router.push("/auth");
       return;
     }
-    
-    setIsAuthenticated(true);
-    setIsChecking(false);
+
+    // Get user from storage
+    const currentUser = getUserFromStorage();
+    if (!currentUser) {
+      clearUserSession();
+      router.push("/auth");
+      return;
+    }
+
+    // CRITICAL: Verify user exists in database
+    try {
+      const response = await fetch("/api/auth/verify-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: currentUser.email }),
+      });
+
+      const data = await response.json();
+
+      if (!data.success || !data.exists) {
+        // User doesn't exist in database - log them out immediately
+        console.log(`[AuthGuard] User ${currentUser.email} not found in database. Logging out...`);
+        clearUserSession();
+        router.push("/auth");
+        return;
+      }
+
+      // User exists in database - allow access
+      setIsAuthenticated(true);
+      setIsChecking(false);
+    } catch (error) {
+      console.error("Error verifying user in database:", error);
+      // On error, log out for security
+      clearUserSession();
+      router.push("/auth");
+    }
   };
 
   if (isChecking) {
