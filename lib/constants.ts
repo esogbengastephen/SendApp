@@ -27,3 +27,13 @@ export const DEPOSIT_ACCOUNT = {
 // Real user emails are stored in Paystack customer metadata
 export const PAYSTACK_DUMMY_EMAIL = "payments@flippay.app";
 
+/**
+ * Generate unique Paystack email for a user
+ * Format: flippay.{userEmail}
+ * Example: user@example.com → flippay.user@example.com
+ * This ensures each user has a unique email in Paystack while still being a dummy email
+ */
+export function getPaystackEmailForUser(userEmail: string): string {
+  return `flippay.${userEmail}`;
+}
+

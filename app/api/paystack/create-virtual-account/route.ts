@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import axios from "axios";
 import { supabase } from "@/lib/supabase";
-import { PAYSTACK_DUMMY_EMAIL } from "@/lib/constants";
+import { getPaystackEmailForUser } from "@/lib/constants";
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const PAYSTACK_API_BASE = "https://api.paystack.co";
@@ -96,12 +96,14 @@ export async function POST(request: NextRequest) {
     
     if (!customerCode) {
       try {
-        // Create Paystack customer with DUMMY EMAIL (prevents Paystack from sending emails)
+        // Create Paystack customer with UNIQUE DUMMY EMAIL (prevents Paystack from sending emails)
+        // Format: flippay.{userEmail} - unique per user but still a dummy email
         // Real user email stored in metadata for our use
+        const paystackEmail = getPaystackEmailForUser(email);
         const customerResponse = await axios.post(
           `${PAYSTACK_API_BASE}/customer`,
           {
-            email: PAYSTACK_DUMMY_EMAIL, // Dummy email - Paystack won't send emails to users
+            email: paystackEmail, // Unique dummy email per user - Paystack won't send emails to users
             first_name: `Pay`,
             last_name: `Flip`,
             phone: "+2348000000000",
@@ -127,10 +129,11 @@ export async function POST(request: NextRequest) {
         if (wasReset) {
           console.log(`[Create Virtual Account] Reset user - forcing new customer creation`);
           try {
+            const paystackEmail = getPaystackEmailForUser(email);
             const retryResponse = await axios.post(
               `${PAYSTACK_API_BASE}/customer`,
               {
-                email: PAYSTACK_DUMMY_EMAIL, // Dummy email - Paystack won't send emails
+                email: paystackEmail, // Unique dummy email per user - Paystack won't send emails
                 first_name: `Pay`,
                 last_name: `Flip`,
                 phone: "+2348000000000",
@@ -156,30 +159,44 @@ export async function POST(request: NextRequest) {
           }
         } else {
           // Original logic for non-reset users
-          // Note: Since we use dummy email, we can't search by email
-          // We'll need to get customer_code from database or create new one
+          // Since we use unique dummy email per user, we can fetch directly by email
           if (customerError.response?.status === 400) {
-            console.log(`[Create Virtual Account] Customer creation failed, checking if customer_code exists in database...`);
-            // Check if we have customer_code stored in users table
+            console.log(`[Create Virtual Account] Customer creation failed (likely already exists), fetching existing customer...`);
+            // Check if we have customer_code stored in users table first
             if (userData?.paystack_customer_code) {
               customerCode = userData.paystack_customer_code;
               console.log(`[Create Virtual Account] ✅ Using existing customer_code from database: ${customerCode}`);
             } else {
-              // Try to fetch by dummy email (might return multiple, but we'll use first one)
+              // Fetch customer by unique email (each user has unique email now)
               try {
+                const paystackEmail = getPaystackEmailForUser(email);
                 const fetchResponse = await axios.get(
-                  `${PAYSTACK_API_BASE}/customer/${PAYSTACK_DUMMY_EMAIL}`,
+                  `${PAYSTACK_API_BASE}/customer/${paystackEmail}`,
                   {
                     headers: {
                       Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
                     },
                   }
                 );
-                // If multiple customers with same email, we need to find by metadata
-                // For now, create new customer with unique identifier in metadata
-                throw customerError; // Will create new customer
-              } catch (fetchError) {
-                console.error("[Create Virtual Account] Failed to fetch customer:", fetchError);
+                // Since email is unique, we should get exactly one customer
+                const customerData = fetchResponse.data.data;
+                if (Array.isArray(customerData)) {
+                  // If Paystack returns array, find customer with matching user_id in metadata
+                  const matchingCustomer = customerData.find(
+                    (c: any) => c.metadata?.user_id === userId
+                  );
+                  if (matchingCustomer) {
+                    customerCode = matchingCustomer.customer_code;
+                    console.log(`[Create Virtual Account] ✅ Found existing customer by email: ${customerCode}`);
+                  } else {
+                    throw new Error("Customer found but user_id doesn't match");
+                  }
+                } else {
+                  customerCode = customerData.customer_code;
+                  console.log(`[Create Virtual Account] ✅ Found existing customer by email: ${customerCode}`);
+                }
+              } catch (fetchError: any) {
+                console.error("[Create Virtual Account] Failed to fetch existing customer:", fetchError.response?.data || fetchError.message);
                 throw customerError;
               }
             }
