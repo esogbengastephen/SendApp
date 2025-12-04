@@ -5,7 +5,7 @@ import { createOrUpdateUser } from "@/lib/users";
 import { distributeTokens } from "@/lib/token-distribution";
 import { isValidWalletOrTag, isValidAmount } from "@/utils/validation";
 import { verifyPaymentForTransaction } from "@/lib/payment-verification";
-import { getExchangeRate } from "@/lib/settings";
+import { getExchangeRate, getTransactionsEnabled } from "@/lib/settings";
 import { updateWalletStats } from "@/lib/supabase-users";
 import { sendPaymentVerificationEmail, sendTokenDistributionEmail } from "@/lib/transaction-emails";
 import { supabase, updateReferralCountOnTransaction } from "@/lib/supabase";
@@ -109,6 +109,18 @@ async function findClaimablePendingTransaction(
  */
 export async function POST(request: NextRequest) {
   try {
+    // Check if transactions are enabled
+    const transactionsEnabled = await getTransactionsEnabled();
+    if (!transactionsEnabled) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Transactions are currently disabled. Please check back later.",
+        },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const { ngnAmount, sendAmount, walletAddress, transactionId } = body;
     // Note: exchangeRate is no longer accepted from frontend - we use admin-set rate

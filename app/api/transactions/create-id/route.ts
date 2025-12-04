@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { nanoid } from "nanoid";
 import { createTransaction, getTransaction, updateTransaction, calculateSendAmount } from "@/lib/transactions";
 import { createOrUpdateUser } from "@/lib/users";
-import { getExchangeRate } from "@/lib/settings";
+import { getExchangeRate, getTransactionsEnabled } from "@/lib/settings";
 import {
   linkWalletToUser,
   getSupabaseUserByEmail,
@@ -28,6 +28,18 @@ function getUserFromSession(body: any): { userId?: string; email?: string } {
  */
 export async function POST(request: NextRequest) {
   try {
+    // Check if transactions are enabled
+    const transactionsEnabled = await getTransactionsEnabled();
+    if (!transactionsEnabled) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Transactions are currently disabled. Please check back later.",
+        },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const { transactionId, ngnAmount, sendAmount, walletAddress, sendtag, exchangeRate, userId, userEmail } = body;
 

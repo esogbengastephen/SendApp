@@ -8,7 +8,7 @@ import {
   createTransaction,
 } from "@/lib/transactions";
 import { distributeTokens } from "@/lib/token-distribution";
-import { getExchangeRate } from "@/lib/settings";
+import { getExchangeRate, getTransactionsEnabled } from "@/lib/settings";
 import { supabase, updateReferralCountOnTransaction } from "@/lib/supabase";
 import { nanoid } from "nanoid";
 import { sendPaymentVerificationEmail, sendTokenDistributionEmail } from "@/lib/transaction-emails";
@@ -35,6 +35,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, error: "Invalid signature" },
         { status: 401 }
+      );
+    }
+
+    // Check if transactions are enabled
+    const transactionsEnabled = await getTransactionsEnabled();
+    if (!transactionsEnabled) {
+      console.log("[Webhook] Transactions are disabled, ignoring webhook");
+      return NextResponse.json(
+        { success: false, error: "Transactions are currently disabled" },
+        { status: 403 }
       );
     }
 

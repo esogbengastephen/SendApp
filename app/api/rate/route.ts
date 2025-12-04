@@ -29,6 +29,7 @@ export async function GET(request: NextRequest) {
       {
         success: true,
         rate,
+        transactionsEnabled: settings.transactionsEnabled !== false,
         currency: "NGN",
         token: "SEND",
         timestamp: new Date().toISOString(),
@@ -48,6 +49,7 @@ export async function GET(request: NextRequest) {
         {
           success: true,
           rate: settings.exchangeRate,
+          transactionsEnabled: settings.transactionsEnabled !== false,
           currency: "NGN",
           token: "SEND",
           timestamp: new Date().toISOString(),
