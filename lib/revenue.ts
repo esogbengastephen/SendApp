@@ -2,7 +2,7 @@
  * Revenue tracking utilities
  */
 
-import { supabase } from "./supabase";
+import { supabase, supabaseAdmin } from "./supabase";
 
 export interface RevenueRecord {
   id: string;
@@ -45,7 +45,8 @@ export async function recordRevenue(
  */
 export async function getTotalRevenueInSEND(): Promise<number> {
   try {
-    const { data, error } = await supabase
+    // Use admin client to bypass RLS for admin operations
+    const { data, error } = await supabaseAdmin
       .from("revenue")
       .select("fee_in_send");
 
@@ -54,10 +55,21 @@ export async function getTotalRevenueInSEND(): Promise<number> {
       return 0;
     }
 
-    const total = (data || []).reduce((sum, record) => {
-      return sum + parseFloat(record.fee_in_send || "0");
+    if (!data || data.length === 0) {
+      console.log("[Revenue] No revenue records found");
+      return 0;
+    }
+
+    const total = data.reduce((sum, record) => {
+      const feeValue = parseFloat(record.fee_in_send || "0");
+      if (isNaN(feeValue)) {
+        console.warn(`[Revenue] Invalid fee_in_send value: ${record.fee_in_send}`);
+        return sum;
+      }
+      return sum + feeValue;
     }, 0);
 
+    console.log(`[Revenue] Total revenue calculated: ${total.toFixed(4)} $SEND from ${data.length} records`);
     return total;
   } catch (error) {
     console.error("[Revenue] Exception fetching total revenue:", error);
