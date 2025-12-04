@@ -44,6 +44,7 @@ export default function PaymentForm() {
   const [isLoadingVirtualAccount, setIsLoadingVirtualAccount] = useState(false);
   const [paymentGenerated, setPaymentGenerated] = useState(false);
   const [isPollingPayment, setIsPollingPayment] = useState(false);
+  const [transactionsEnabled, setTransactionsEnabled] = useState(true);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Note: Virtual account is now only fetched/created when "Generate Payment" is clicked
@@ -173,6 +174,33 @@ export default function PaymentForm() {
     }
   };
 
+  // Fetch transaction status on mount
+  useEffect(() => {
+    const fetchTransactionStatus = async () => {
+      try {
+        const response = await fetch(`/api/rate?t=${Date.now()}`, {
+          cache: "no-store",
+          headers: {
+            "Cache-Control": "no-cache",
+          },
+        });
+        const data = await response.json();
+        if (data.success) {
+          setTransactionsEnabled(data.transactionsEnabled !== false);
+        }
+      } catch (error) {
+        console.error("Failed to fetch transaction status:", error);
+        // Default to enabled on error
+      }
+    };
+    
+    fetchTransactionStatus();
+    // Refresh every 30 seconds
+    const statusInterval = setInterval(fetchTransactionStatus, 30000);
+    
+    return () => clearInterval(statusInterval);
+  }, []);
+
   // Fetch exchange rate on mount and periodically to get admin updates
   useEffect(() => {
     const fetchExchangeRate = async () => {
@@ -190,6 +218,10 @@ export default function PaymentForm() {
           const newRate = parseFloat(data.rate);
           console.log(`[PaymentForm] Updating exchange rate to: ${newRate} (from admin settings)`);
           setExchangeRate(newRate);
+          // Also update transaction status if provided
+          if (data.transactionsEnabled !== undefined) {
+            setTransactionsEnabled(data.transactionsEnabled !== false);
+          }
         }
       } catch (error) {
         console.error("Failed to fetch exchange rate:", error);
@@ -782,20 +814,46 @@ export default function PaymentForm() {
             <div>
               {!paymentGenerated || !virtualAccount || !virtualAccount.hasVirtualAccount ? (
                 /* Generate Payment Button - Shows first */
-                <button
-                  type="button"
-                  onClick={async (e) => {
-                    e.preventDefault();
-                    
-                    // Validate form first
-                    if (!validateForm()) {
-                      setToast({
-                        message: "Please fill in all fields correctly",
-                        type: "error",
-                        isVisible: true,
-                      });
-                      return;
-                    }
+                <>
+                  {!transactionsEnabled && (
+                    <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border-2 border-red-200 dark:border-red-800 rounded-lg">
+                      <div className="flex items-start gap-3">
+                        <span className="text-2xl">⚠️</span>
+                        <div>
+                          <p className="text-sm font-semibold text-red-700 dark:text-red-300 mb-1">
+                            Transactions Currently Disabled
+                          </p>
+                          <p className="text-xs text-red-600 dark:text-red-400">
+                            Transactions are temporarily disabled. Please check back later or contact support if you have any questions.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    disabled={!transactionsEnabled || isLoadingVirtualAccount}
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      
+                      if (!transactionsEnabled) {
+                        setToast({
+                          message: "Transactions are currently disabled",
+                          type: "error",
+                          isVisible: true,
+                        });
+                        return;
+                      }
+                      
+                      // Validate form first
+                      if (!validateForm()) {
+                        setToast({
+                          message: "Please fill in all fields correctly",
+                          type: "error",
+                          isVisible: true,
+                        });
+                        return;
+                      }
                     
                     // Trigger virtual account creation
                     setIsLoadingVirtualAccount(true);
@@ -885,11 +943,12 @@ export default function PaymentForm() {
                       setIsLoadingVirtualAccount(false);
                     }
                   }}
-                  disabled={isLoadingVirtualAccount || !ngnAmount || !walletAddress}
+                  disabled={!transactionsEnabled || isLoadingVirtualAccount || !ngnAmount || !walletAddress}
                   className="w-full bg-primary text-slate-900 font-bold py-3 px-4 rounded-md hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-slate-900 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isLoadingVirtualAccount ? "Generating..." : "Generate Payment"}
+                  {isLoadingVirtualAccount ? "Generating..." : transactionsEnabled ? "Generate Payment" : "Transactions Disabled"}
                 </button>
+                </>
               ) : (
                 /* I Have Sent Button - Shows after virtual account is generated */
                 <button

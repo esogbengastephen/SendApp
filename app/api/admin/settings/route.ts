@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSettings, updateExchangeRate } from "@/lib/settings";
+import { getSettings, updateExchangeRate, updateTransactionsEnabled } from "@/lib/settings";
 import { isAdminWallet } from "@/lib/supabase";
 
 /**
@@ -33,6 +33,7 @@ export async function GET(request: NextRequest) {
       success: true,
       settings: {
         exchangeRate: settings.exchangeRate,
+        transactionsEnabled: settings.transactionsEnabled !== false,
         updatedAt: settings.updatedAt.toISOString(),
         updatedBy: settings.updatedBy,
       },
@@ -52,7 +53,7 @@ export async function GET(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { exchangeRate, walletAddress } = body;
+    const { exchangeRate, transactionsEnabled, walletAddress } = body;
 
     // Verify admin access
     if (!walletAddress) {
@@ -71,29 +72,44 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Validate exchange rate
-    if (!exchangeRate || isNaN(parseFloat(exchangeRate)) || parseFloat(exchangeRate) <= 0) {
-      return NextResponse.json(
-        { success: false, error: "Invalid exchange rate. Must be a positive number." },
-        { status: 400 }
+    // Update exchange rate if provided
+    if (exchangeRate !== undefined) {
+      // Validate exchange rate
+      if (isNaN(parseFloat(exchangeRate)) || parseFloat(exchangeRate) <= 0) {
+        return NextResponse.json(
+          { success: false, error: "Invalid exchange rate. Must be a positive number." },
+          { status: 400 }
+        );
+      }
+
+      const rateValue = parseFloat(exchangeRate);
+      console.log(`[Admin Settings] Updating exchange rate to: ${rateValue}`);
+      
+      await updateExchangeRate(
+        rateValue,
+        walletAddress.toLowerCase()
       );
     }
 
-    // Update exchange rate
-    const rateValue = parseFloat(exchangeRate);
-    console.log(`[Admin Settings] Updating exchange rate to: ${rateValue}`);
-    
-    const updatedSettings = await updateExchangeRate(
-      rateValue,
-      walletAddress.toLowerCase()
-    );
+    // Update transactions enabled status if provided
+    if (transactionsEnabled !== undefined) {
+      const enabled = transactionsEnabled === true || transactionsEnabled === "true";
+      console.log(`[Admin Settings] Updating transactions enabled to: ${enabled}`);
+      
+      await updateTransactionsEnabled(
+        enabled,
+        walletAddress.toLowerCase()
+      );
+    }
 
-    console.log(`[Admin Settings] Exchange rate updated successfully: ${updatedSettings.exchangeRate}`);
+    // Return updated settings
+    const updatedSettings = await getSettings();
 
     return NextResponse.json({
       success: true,
       settings: {
         exchangeRate: updatedSettings.exchangeRate,
+        transactionsEnabled: updatedSettings.transactionsEnabled !== false,
         updatedAt: updatedSettings.updatedAt.toISOString(),
         updatedBy: updatedSettings.updatedBy,
       },

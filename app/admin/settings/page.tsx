@@ -123,7 +123,9 @@ export default function SettingsPage() {
   const { address } = useAccount();
   const [exchangeRate, setExchangeRate] = useState("50"); // NGN to SEND (1 NGN = X SEND)
   const [sendToNgnRate, setSendToNgnRate] = useState("45"); // SEND to NGN (1 SEND = Y NGN)
+  const [transactionsEnabled, setTransactionsEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [savingTransactionsStatus, setSavingTransactionsStatus] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -504,6 +506,8 @@ export default function SettingsPage() {
         // Calculate SEND to NGN rate (inverse)
         const calculatedSendToNgn = ngnToSendRate > 0 ? (1 / ngnToSendRate).toFixed(2) : "0";
         setSendToNgnRate(calculatedSendToNgn);
+        // Set transactions enabled status
+        setTransactionsEnabled(data.settings.transactionsEnabled !== false);
       }
     } catch (err: any) {
       console.error("Failed to fetch settings:", err);
@@ -664,6 +668,91 @@ export default function SettingsPage() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Transaction Status Toggle */}
+      <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
+        <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 mb-3 sm:mb-4">
+          Transaction Status
+        </h2>
+        <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+          Enable or disable all user transactions. When disabled, users will not be able to generate payment or complete transactions.
+        </p>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              transactionsEnabled ? "bg-primary" : "bg-slate-300 dark:bg-slate-600"
+            }`}>
+              <input
+                type="checkbox"
+                checked={transactionsEnabled}
+                onChange={async (e) => {
+                  const newValue = e.target.checked;
+                  setTransactionsEnabled(newValue);
+                  setSavingTransactionsStatus(true);
+                  setError(null);
+                  
+                  try {
+                    const response = await fetch("/api/admin/settings", {
+                      method: "PUT",
+                      headers: {
+                        "Content-Type": "application/json",
+                      },
+                      body: JSON.stringify({
+                        transactionsEnabled: newValue,
+                        walletAddress: address,
+                      }),
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                      setSuccess(true);
+                      setTimeout(() => setSuccess(false), 3000);
+                    } else {
+                      setError(data.error || "Failed to update transaction status");
+                      setTransactionsEnabled(!newValue); // Revert on error
+                    }
+                  } catch (err: any) {
+                    console.error("Failed to update transaction status:", err);
+                    setError("Failed to update transaction status");
+                    setTransactionsEnabled(!newValue); // Revert on error
+                  } finally {
+                    setSavingTransactionsStatus(false);
+                  }
+                }}
+                disabled={savingTransactionsStatus || !address}
+                className="sr-only"
+              />
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  transactionsEnabled ? "translate-x-6" : "translate-x-1"
+                }`}
+              />
+            </div>
+            <div>
+              <span className={`text-sm font-medium ${
+                transactionsEnabled 
+                  ? "text-green-600 dark:text-green-400" 
+                  : "text-red-600 dark:text-red-400"
+              }`}>
+                {transactionsEnabled ? "Transactions Enabled" : "Transactions Disabled"}
+              </span>
+              {savingTransactionsStatus && (
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Saving...
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+        {!transactionsEnabled && (
+          <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+            <p className="text-sm text-red-700 dark:text-red-300">
+              ⚠️ Transactions are currently disabled. Users cannot generate payments or complete transactions.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Exchange Rate */}

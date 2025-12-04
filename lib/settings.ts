@@ -5,6 +5,7 @@ import { supabase } from "./supabase";
 
 interface PlatformSettings {
   exchangeRate: number;
+  transactionsEnabled: boolean;
   updatedAt: Date;
   updatedBy?: string;
 }
@@ -42,6 +43,7 @@ async function loadSettings(): Promise<PlatformSettings> {
       // If no settings found, create default in database
       const defaultSettings: PlatformSettings = {
         exchangeRate: defaultRate,
+        transactionsEnabled: true, // Default: transactions enabled
         updatedAt: new Date(),
         updatedBy: "system",
       };
@@ -83,6 +85,7 @@ async function loadSettings(): Promise<PlatformSettings> {
       const value = data.setting_value as any;
       const loadedSettings: PlatformSettings = {
         exchangeRate: value.exchangeRate,
+        transactionsEnabled: value.transactionsEnabled !== undefined ? value.transactionsEnabled : true,
         updatedAt: value.updatedAt ? new Date(value.updatedAt) : new Date(),
         updatedBy: value.updatedBy,
       };
@@ -100,6 +103,7 @@ async function loadSettings(): Promise<PlatformSettings> {
     console.warn(`[Settings] WARNING: Using fallback default rate (${defaultRate}) because Supabase is unavailable`);
     return {
       exchangeRate: defaultRate,
+      transactionsEnabled: true,
       updatedAt: new Date(),
     };
   }
@@ -116,6 +120,7 @@ async function saveSettings(settings: PlatformSettings): Promise<void> {
         setting_key: "exchange_rate",
         setting_value: {
           exchangeRate: settings.exchangeRate,
+          transactionsEnabled: settings.transactionsEnabled,
           updatedAt: settings.updatedAt.toISOString(),
           updatedBy: settings.updatedBy,
         },
@@ -250,4 +255,42 @@ export async function updateExchangeRate(
 export async function resetExchangeRate(): Promise<PlatformSettings> {
   const defaultRate = parseFloat(process.env.SEND_NGN_EXCHANGE_RATE || "50");
   return await updateExchangeRate(defaultRate);
+}
+
+/**
+ * Get transactions enabled status
+ */
+export async function getTransactionsEnabled(): Promise<boolean> {
+  const loadedSettings = await getSettings();
+  return loadedSettings.transactionsEnabled !== false; // Default to true if not set
+}
+
+/**
+ * Update transactions enabled status
+ */
+export async function updateTransactionsEnabled(
+  enabled: boolean,
+  updatedBy?: string
+): Promise<PlatformSettings> {
+  const currentSettings = await getSettings();
+  
+  // Create new settings object
+  const newSettings: PlatformSettings = {
+    ...currentSettings,
+    transactionsEnabled: enabled,
+    updatedAt: new Date(),
+    updatedBy,
+  };
+  
+  // Update both local and global reference
+  settings = newSettings;
+  global.__sendSettings = newSettings;
+  global.__sendSettingsCacheTime = Date.now();
+  
+  // Save to Supabase
+  await saveSettings(newSettings);
+
+  console.log(`[Settings] Transactions ${enabled ? 'enabled' : 'disabled'} by ${updatedBy || 'system'}`);
+  
+  return { ...newSettings };
 }
