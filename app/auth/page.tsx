@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import DarkModeToggle from "@/components/DarkModeToggle";
+import PoweredBySEND from "@/components/PoweredBySEND";
 
 type AuthMode = "login" | "signup" | "verify";
 
@@ -123,6 +124,21 @@ export default function AuthPage() {
         <div className="bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 p-6 sm:p-8">
           {/* Header */}
           <div className="text-center mb-8">
+            {/* Logo */}
+            <div className="mb-6 flex justify-center">
+              {/* White logo for light mode */}
+              <img 
+                src="/whitelogo.png" 
+                alt="FlipPay" 
+                className="h-16 w-auto dark:hidden"
+              />
+              {/* Regular logo for dark mode */}
+              <img 
+                src="/logo.png" 
+                alt="FlipPay" 
+                className="h-16 w-auto hidden dark:block"
+              />
+            </div>
             <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-slate-100 mb-2">
               {mode === "login" ? "Welcome Back" : "Create Account"}
             </h1>
@@ -257,6 +273,9 @@ export default function AuthPage() {
               </button>
             </p>
           </div>
+          
+          {/* Powered by SEND */}
+          <PoweredBySEND />
         </div>
       </div>
     </div>

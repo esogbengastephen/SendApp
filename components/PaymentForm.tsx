@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import { isValidWalletOrTag, isValidAmount } from "@/utils/validation";
 import Modal from "./Modal";
 import Toast from "./Toast";
+import PoweredBySEND from "./PoweredBySEND";
 import { calculateSendAmount } from "@/lib/transactions";
 import { getUserFromStorage } from "@/lib/session";
 
@@ -626,6 +627,9 @@ export default function PaymentForm() {
               >
                 Enter NGN amount
               </label>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-2">
+                Minimum purchase: ₦3,000
+              </p>
               <div className="mt-2 relative">
                 <input
                   className={`w-full rounded-md border ${
@@ -983,6 +987,9 @@ export default function PaymentForm() {
         isVisible={toast.isVisible}
         onClose={() => setToast({ ...toast, isVisible: false })}
       />
+      
+      {/* Powered by SEND */}
+      <PoweredBySEND />
     </div>
   );
 }

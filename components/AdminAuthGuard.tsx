@@ -89,8 +89,19 @@ export default function AdminAuthGuard({ children }: AdminAuthGuardProps) {
       <div className="flex items-center justify-center min-h-screen bg-background-light dark:bg-background-dark p-8">
         <div className="w-full max-w-md bg-white dark:bg-slate-900 p-8 rounded-xl shadow-lg">
           <div className="flex items-center gap-3 mb-6">
-            <div className="bg-primary p-3 rounded-lg">
-              <span className="text-2xl font-bold text-slate-900">/s</span>
+            <div>
+              {/* White logo for light mode */}
+              <img 
+                src="/whitelogo.png" 
+                alt="FlipPay" 
+                className="h-12 w-auto dark:hidden"
+              />
+              {/* Regular logo for dark mode */}
+              <img 
+                src="/logo.png" 
+                alt="FlipPay" 
+                className="h-12 w-auto hidden dark:block"
+              />
             </div>
             <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
               Admin Access Required

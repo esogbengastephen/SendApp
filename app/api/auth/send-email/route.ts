@@ -51,6 +51,7 @@ export async function POST(request: NextRequest) {
                   <!-- Header -->
                   <tr>
                     <td style="padding: 40px 40px 20px; text-align: center; background: linear-gradient(135deg, #34ff4d 0%, #28e645 100%); border-radius: 12px 12px 0 0;">
+                      <img src="https://flippay.app/whitelogo.png" alt="FlipPay" style="max-width: 120px; height: auto; margin-bottom: 20px; display: block; margin-left: auto; margin-right: auto;" />
                       <h1 style="margin: 0; color: #0f172a; font-size: 28px; font-weight: bold;">Your Confirmation Code</h1>
                     </td>
                   </tr>

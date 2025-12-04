@@ -41,6 +41,8 @@ export interface Transaction {
   sendtag?: string; // If user used SendTag instead of wallet address
   exchangeRate?: number; // Exchange rate at time of transaction
   expiresAt?: Date; // Timestamp when pending transaction expires (1 hour after creation)
+  fee_ngn?: number; // Transaction fee in NGN
+  fee_in_send?: string; // Transaction fee in $SEND
 }
 
 // In-memory storage (kept for backward compatibility during migration)
@@ -69,6 +71,8 @@ function convertSupabaseTransaction(supabaseTx: SupabaseTransaction): Transactio
     sendtag: supabaseTx.sendtag,
     exchangeRate: supabaseTx.exchange_rate ? parseFloat(supabaseTx.exchange_rate.toString()) : undefined,
     expiresAt: supabaseTx.expires_at ? new Date(supabaseTx.expires_at) : undefined,
+    fee_ngn: supabaseTx.fee_ngn ? parseFloat(supabaseTx.fee_ngn.toString()) : undefined,
+    fee_in_send: supabaseTx.fee_in_send,
   };
 }
 
@@ -106,6 +110,8 @@ export async function createTransaction(
       sendtag: data.sendtag,
       exchange_rate: data.exchangeRate,
       initialized_at: data.initializedAt?.toISOString(),
+      fee_ngn: data.fee_ngn,
+      fee_in_send: data.fee_in_send,
     });
 
     if (supabaseResult.success && supabaseResult.transaction) {
@@ -230,6 +236,8 @@ export async function updateTransaction(
     if (updates.txHash) supabaseUpdates.tx_hash = updates.txHash;
     if (updates.sendtag) supabaseUpdates.sendtag = updates.sendtag;
     if (updates.exchangeRate) supabaseUpdates.exchange_rate = updates.exchangeRate;
+    if (updates.fee_ngn !== undefined) supabaseUpdates.fee_ngn = updates.fee_ngn;
+    if (updates.fee_in_send) supabaseUpdates.fee_in_send = updates.fee_in_send;
     if (updates.errorMessage) supabaseUpdates.error_message = updates.errorMessage;
     if (updates.verificationAttempts !== undefined) supabaseUpdates.verification_attempts = updates.verificationAttempts;
     if (updates.completedAt) supabaseUpdates.completed_at = updates.completedAt.toISOString();

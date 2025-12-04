@@ -129,7 +129,7 @@ export default function PaymentsPage() {
                       </div>
                       {payment.sendAmount && (
                         <div className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                          {payment.sendAmount} SEND
+                          {payment.sendAmount} $SEND
                         </div>
                       )}
                     </td>

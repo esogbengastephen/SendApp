@@ -144,6 +144,15 @@ export default function SettingsPage() {
   const [newAdminNotes, setNewAdminNotes] = useState("");
   const [adminError, setAdminError] = useState<string | null>(null);
   const [adminSuccess, setAdminSuccess] = useState<string | null>(null);
+  
+  // Fee Tier Management State
+  const [feeTiers, setFeeTiers] = useState([
+    { tier_name: "tier_1", min_amount: 3000, max_amount: 10000, fee_ngn: 250 },
+    { tier_name: "tier_2", min_amount: 10001, max_amount: 50000, fee_ngn: 500 },
+    { tier_name: "tier_3", min_amount: 50001, max_amount: null, fee_ngn: 1000 },
+  ]);
+  const [savingFeeTiers, setSavingFeeTiers] = useState(false);
+  const [loadingFeeTiers, setLoadingFeeTiers] = useState(false);
 
   // Available permissions
   const availablePermissions = [
@@ -164,8 +173,61 @@ export default function SettingsPage() {
     checkSuperAdmin();
     if (address) {
       fetchAdmins();
+      fetchFeeTiers();
     }
   }, [address]);
+  
+  // Fetch fee tiers
+  const fetchFeeTiers = async () => {
+    if (!address) return;
+    setLoadingFeeTiers(true);
+    try {
+      const response = await fetch(`/api/admin/fee-tiers?adminWallet=${address}`);
+      const data = await response.json();
+      if (data.success && data.tiers) {
+        setFeeTiers(data.tiers.map((tier: any) => ({
+          tier_name: tier.tier_name,
+          min_amount: parseFloat(tier.min_amount.toString()),
+          max_amount: tier.max_amount ? parseFloat(tier.max_amount.toString()) : null,
+          fee_ngn: parseFloat(tier.fee_ngn.toString()),
+        })));
+      }
+    } catch (error) {
+      console.error("Error fetching fee tiers:", error);
+    } finally {
+      setLoadingFeeTiers(false);
+    }
+  };
+  
+  // Save fee tiers
+  const saveFeeTiers = async () => {
+    if (!address) return;
+    setSavingFeeTiers(true);
+    try {
+      const response = await fetch("/api/admin/fee-tiers", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          adminWallet: address,
+          tiers: feeTiers,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setSuccess(true);
+        setTimeout(() => setSuccess(false), 3000);
+      } else {
+        setError(data.error || "Failed to save fee tiers");
+        setTimeout(() => setError(null), 5000);
+      }
+    } catch (error: any) {
+      console.error("Error saving fee tiers:", error);
+      setError(error.message || "Failed to save fee tiers");
+      setTimeout(() => setError(null), 5000);
+    } finally {
+      setSavingFeeTiers(false);
+    }
+  };
 
   const checkSuperAdmin = async () => {
     if (!address) return;
@@ -674,6 +736,69 @@ export default function SettingsPage() {
             </p>
           </div>
         </div>
+      </div>
+
+      {/* Transaction Fee Tiers */}
+      <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
+        <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 mb-3 sm:mb-4">
+          Transaction Fee Tiers
+        </h2>
+        <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+          Configure transaction fees based on payment amount tiers
+        </p>
+        {loadingFeeTiers ? (
+          <div className="flex items-center justify-center py-8">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {feeTiers.map((tier, index) => (
+              <div key={tier.tier_name} className="border border-slate-200 dark:border-slate-700 p-4 rounded-lg">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <span className="font-semibold text-slate-900 dark:text-slate-100">
+                      Tier {index + 1}
+                    </span>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                      ₦{tier.min_amount.toLocaleString()}
+                      {tier.max_amount ? ` - ₦${tier.max_amount.toLocaleString()}` : "+"}
+                    </p>
+                  </div>
+                </div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Fee Amount (NGN)
+                </label>
+                <input
+                  type="number"
+                  value={tier.fee_ngn}
+                  onChange={(e) => {
+                    const newTiers = [...feeTiers];
+                    newTiers[index].fee_ngn = parseFloat(e.target.value) || 0;
+                    setFeeTiers(newTiers);
+                  }}
+                  className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 px-3 py-2 focus:ring-2 focus:ring-primary focus:border-primary"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                />
+              </div>
+            ))}
+            <button
+              onClick={saveFeeTiers}
+              disabled={savingFeeTiers}
+              className="w-full bg-primary text-slate-900 font-bold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+            >
+              {savingFeeTiers ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-slate-900"></div>
+                  Saving...
+                </>
+              ) : (
+                "Save Fee Tiers"
+              )}
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Deposit Account */}

@@ -9,6 +9,8 @@ import { getExchangeRate } from "@/lib/settings";
 import { updateWalletStats } from "@/lib/supabase-users";
 import { sendPaymentVerificationEmail, sendTokenDistributionEmail } from "@/lib/transaction-emails";
 import { supabase, updateReferralCountOnTransaction } from "@/lib/supabase";
+import { calculateTransactionFee, calculateFinalTokens, calculateFeeInTokens } from "@/lib/fee-calculation";
+import { recordRevenue } from "@/lib/revenue";
 
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY;
 const PAYSTACK_API_BASE = "https://api.paystack.co";
@@ -327,17 +329,23 @@ export async function POST(request: NextRequest) {
           console.log(`Creating new transaction: ${transactionId} for wallet ${normalizedWallet}, amount ${parsedAmount} NGN`);
           
           // Calculate sendAmount with current exchangeRate
-          const currentExchangeRate = parsedExchangeRate || 50;
-          const calculatedSendAmount = calculateSendAmount(parsedAmount, currentExchangeRate);
+          const currentExchangeRate = parsedExchangeRate || await getExchangeRate();
+          
+          // Calculate fees upfront
+          const feeNGN = await calculateTransactionFee(parsedAmount);
+          const feeInSEND = calculateFeeInTokens(feeNGN, currentExchangeRate);
+          const finalSendAmount = calculateFinalTokens(parsedAmount, feeNGN, currentExchangeRate);
           
           transaction = await createTransaction({
             transactionId,
             paystackReference: transactionId,
             ngnAmount: parsedAmount,
-            sendAmount: calculatedSendAmount,
+            sendAmount: finalSendAmount, // Use final amount after fee
             walletAddress: normalizedWallet,
             sendtag: body.sendtag,
             exchangeRate: currentExchangeRate,
+            fee_ngn: feeNGN,
+            fee_in_send: feeInSEND,
           });
           console.log(`New transaction created: ${transactionId}`);
           
@@ -346,7 +354,7 @@ export async function POST(request: NextRequest) {
             normalizedWallet,
             transactionId,
             parsedAmount,
-            calculatedSendAmount,
+            finalSendAmount, // Use final amount after fee
             body.sendtag
           );
           
@@ -522,13 +530,37 @@ export async function POST(request: NextRequest) {
       );
     }
     
+    // Calculate transaction fee (only if not already calculated)
+    let feeNGN = transaction.fee_ngn;
+    let feeInSEND = transaction.fee_in_send;
+    const currentExchangeRate = transaction.exchangeRate || await getExchangeRate();
+    
+    // If fees not already calculated (for backward compatibility with old transactions)
+    if (!feeNGN || !feeInSEND) {
+      feeNGN = await calculateTransactionFee(transaction.ngnAmount);
+      feeInSEND = calculateFeeInTokens(feeNGN, currentExchangeRate);
+      // Recalculate final amount if fees weren't applied upfront
+      finalSendAmount = calculateFinalTokens(transaction.ngnAmount, feeNGN, currentExchangeRate);
+      console.log(`[Payment Processing] Fee calculated: ${feeNGN} NGN (${feeInSEND} $SEND), Final tokens: ${finalSendAmount} $SEND`);
+    } else {
+      // Fees already calculated upfront - use existing sendAmount (already has fees deducted)
+      console.log(`[Payment Processing] Using existing fee: ${feeNGN} NGN (${feeInSEND} $SEND), Final tokens: ${finalSendAmount} $SEND`);
+    }
+    
     await updateTransaction(transaction.transactionId, {
       status: "completed",
       paystackReference: verifiedTx.reference,
-      sendAmount: finalSendAmount, // Update with recalculated amount
+      sendAmount: finalSendAmount, // Final amount after fee deduction
       walletAddress: transaction.walletAddress, // Ensure wallet address is preserved
       completedAt: new Date(),
+      fee_ngn: feeNGN,
+      fee_in_send: feeInSEND,
     });
+    
+    // Record revenue
+    if (feeNGN > 0) {
+      await recordRevenue(transaction.transactionId, feeNGN, feeInSEND);
+    }
 
     // Get user email for sending notification
     let userEmail: string | null = null;

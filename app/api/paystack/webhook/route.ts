@@ -12,6 +12,8 @@ import { getExchangeRate } from "@/lib/settings";
 import { supabase, updateReferralCountOnTransaction } from "@/lib/supabase";
 import { nanoid } from "nanoid";
 import { sendPaymentVerificationEmail, sendTokenDistributionEmail } from "@/lib/transaction-emails";
+import { calculateTransactionFee, calculateFinalTokens, calculateFeeInTokens } from "@/lib/fee-calculation";
+import { recordRevenue } from "@/lib/revenue";
 
 export async function POST(request: NextRequest) {
   try {
@@ -152,9 +154,6 @@ export async function POST(request: NextRequest) {
         
         // Get exchange rate
         const exchangeRate = await getExchangeRate();
-        const sendAmount = calculateSendAmount(paystackAmount, exchangeRate);
-        
-        console.log(`💰 [Webhook] Converting ${paystackAmount} NGN → ${sendAmount} SEND (rate: ${exchangeRate})`);
         
         // Try to find existing pending transaction for this user and wallet
         const { data: existingTransactions } = await supabase
@@ -168,40 +167,73 @@ export async function POST(request: NextRequest) {
           .limit(1);
 
         let transactionId: string;
+        let feeNGN: number;
+        let feeInSEND: string;
+        let finalSendAmount: string;
 
         if (existingTransactions && existingTransactions.length > 0) {
-          // Found existing pending transaction - update it
+          // Found existing pending transaction - use existing fees if already calculated
           const existingTx = existingTransactions[0];
           transactionId = existingTx.transaction_id;
           
           console.log(`📝 [Webhook] Found existing pending transaction: ${transactionId}`);
+          
+          // Use existing fees if already calculated, otherwise calculate new
+          if (existingTx.fee_ngn && existingTx.fee_in_send) {
+            feeNGN = parseFloat(existingTx.fee_ngn.toString());
+            feeInSEND = existingTx.fee_in_send;
+            finalSendAmount = existingTx.send_amount; // Already has fees deducted
+            console.log(`💰 [Webhook] Using existing fees: ${feeNGN} NGN (${feeInSEND} $SEND), Final tokens: ${finalSendAmount} $SEND`);
+          } else {
+            // Calculate fees (for backward compatibility with old transactions)
+            feeNGN = await calculateTransactionFee(paystackAmount);
+            feeInSEND = calculateFeeInTokens(feeNGN, exchangeRate);
+            finalSendAmount = calculateFinalTokens(paystackAmount, feeNGN, exchangeRate);
+            console.log(`💰 [Webhook] Calculated fees: ${feeNGN} NGN (${feeInSEND} $SEND), Final tokens: ${finalSendAmount} $SEND`);
+          }
           
           // Update the existing transaction
           await updateTransaction(transactionId, {
             status: "completed",
             paystackReference: reference,
             ngnAmount: paystackAmount,
-            sendAmount,
+            sendAmount: finalSendAmount, // Use final amount after fee
             exchangeRate,
             completedAt: new Date(),
+            fee_ngn: feeNGN,
+            fee_in_send: feeInSEND,
           });
+          
+          // Record revenue
+          if (feeNGN > 0) {
+            await recordRevenue(transactionId, feeNGN, feeInSEND);
+          }
           
           console.log(`✅ [Webhook] Updated existing transaction to completed`);
         } else {
-          // No pending transaction found - create new one
+          // No pending transaction found - create new one with fees
           transactionId = nanoid();
           
           console.log(`📝 [Webhook] No pending transaction found, creating new: ${transactionId}`);
+          
+          // Calculate fees for new transaction
+          feeNGN = await calculateTransactionFee(paystackAmount);
+          feeInSEND = calculateFeeInTokens(feeNGN, exchangeRate);
+          finalSendAmount = calculateFinalTokens(paystackAmount, feeNGN, exchangeRate);
+          
+          console.log(`💰 [Webhook] Converting ${paystackAmount} NGN → ${finalSendAmount} SEND (rate: ${exchangeRate}, fee: ${feeNGN} NGN / ${feeInSEND} $SEND)`);
           
           await createTransaction({
             transactionId,
             userId,
             walletAddress,
             ngnAmount: paystackAmount,
-            sendAmount,
+            sendAmount: finalSendAmount, // Use final amount after fee
             paystackReference: reference,
             exchangeRate,
             completedAt: new Date(),
+            fee_ngn: feeNGN,
+            fee_in_send: feeInSEND,
           });
 
           // Update to completed status immediately
@@ -209,6 +241,11 @@ export async function POST(request: NextRequest) {
             status: "completed",
             completedAt: new Date(),
           });
+          
+          // Record revenue
+          if (feeNGN > 0) {
+            await recordRevenue(transactionId, feeNGN, feeInSEND);
+          }
         }
 
         // Send payment verification email
@@ -234,12 +271,12 @@ export async function POST(request: NextRequest) {
           // Continue anyway - trigger should handle it
         }
         
-        // Distribute tokens immediately
+        // Distribute tokens immediately (using final amount after fee)
         try {
           const distributionResult = await distributeTokens(
             transactionId,
             walletAddress,
-            sendAmount
+            finalSendAmount // Use final amount after fee deduction
           );
           
           if (distributionResult.success) {
@@ -250,7 +287,7 @@ export async function POST(request: NextRequest) {
               await sendTokenDistributionEmail(
                 userEmail,
                 paystackAmount,
-                sendAmount,
+                finalSendAmount, // Use final amount after fee
                 walletAddress,
                 distributionResult.txHash
               );
@@ -319,22 +356,41 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // Recalculate sendAmount if exchangeRate is stored (in case rate changed)
-      let finalSendAmount = transaction.sendAmount;
-      if (transaction.exchangeRate) {
-        const recalculated = calculateSendAmount(transaction.ngnAmount, transaction.exchangeRate);
-        finalSendAmount = recalculated;
-        console.log(`Recalculated sendAmount: ${finalSendAmount} SEND (from rate ${transaction.exchangeRate})`);
+      // Use existing fees if already calculated, otherwise calculate new
+      const exchangeRate = transaction.exchangeRate || await getExchangeRate();
+      let feeNGN: number;
+      let feeInSEND: string;
+      let finalSendAmount: string;
+      
+      if (transaction.fee_ngn && transaction.fee_in_send) {
+        // Fees already calculated upfront - use existing values
+        feeNGN = transaction.fee_ngn;
+        feeInSEND = transaction.fee_in_send;
+        finalSendAmount = transaction.sendAmount; // Already has fees deducted
+        console.log(`💰 [Webhook Fallback] Using existing fees: ${feeNGN} NGN (${feeInSEND} $SEND), Final tokens: ${finalSendAmount} $SEND`);
+      } else {
+        // Calculate fees (for backward compatibility with old transactions)
+        feeNGN = await calculateTransactionFee(paystackAmount);
+        feeInSEND = calculateFeeInTokens(feeNGN, exchangeRate);
+        finalSendAmount = calculateFinalTokens(paystackAmount, feeNGN, exchangeRate);
+        console.log(`💰 [Webhook Fallback] Calculated fees: ${feeNGN} NGN (${feeInSEND} $SEND), Final tokens: ${finalSendAmount} $SEND`);
       }
 
       // Update transaction with both amounts and status
       await updateTransaction(transaction.transactionId, {
         status: "completed",
         ngnAmount: paystackAmount, // Use Paystack amount as source of truth
-        sendAmount: finalSendAmount, // Use recalculated amount
+        sendAmount: finalSendAmount, // Use final amount after fee deduction
         paystackReference: reference,
         completedAt: new Date(),
+        fee_ngn: feeNGN,
+        fee_in_send: feeInSEND,
       });
+      
+      // Record revenue
+      if (feeNGN > 0) {
+        await recordRevenue(transaction.transactionId, feeNGN, feeInSEND);
+      }
 
       // Get user email for sending notification
       let userEmail: string | null = null;
