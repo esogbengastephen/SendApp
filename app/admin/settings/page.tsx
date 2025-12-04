@@ -680,56 +680,58 @@ export default function SettingsPage() {
         </p>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-              transactionsEnabled ? "bg-primary" : "bg-slate-300 dark:bg-slate-600"
-            }`}>
-              <input
-                type="checkbox"
-                checked={transactionsEnabled}
-                onChange={async (e) => {
-                  const newValue = e.target.checked;
-                  setTransactionsEnabled(newValue);
-                  setSavingTransactionsStatus(true);
-                  setError(null);
-                  
-                  try {
-                    const response = await fetch("/api/admin/settings", {
-                      method: "PUT",
-                      headers: {
-                        "Content-Type": "application/json",
-                      },
-                      body: JSON.stringify({
-                        transactionsEnabled: newValue,
-                        walletAddress: address,
-                      }),
-                    });
+            <label className="cursor-pointer">
+              <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                transactionsEnabled ? "bg-primary" : "bg-slate-300 dark:bg-slate-600"
+              }`}>
+                <input
+                  type="checkbox"
+                  checked={transactionsEnabled}
+                  onChange={async (e) => {
+                    const newValue = e.target.checked;
+                    setTransactionsEnabled(newValue);
+                    setSavingTransactionsStatus(true);
+                    setError(null);
+                    
+                    try {
+                      const response = await fetch("/api/admin/settings", {
+                        method: "PUT",
+                        headers: {
+                          "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({
+                          transactionsEnabled: newValue,
+                          walletAddress: address,
+                        }),
+                      });
 
-                    const data = await response.json();
+                      const data = await response.json();
 
-                    if (data.success) {
-                      setSuccess(true);
-                      setTimeout(() => setSuccess(false), 3000);
-                    } else {
-                      setError(data.error || "Failed to update transaction status");
+                      if (data.success) {
+                        setSuccess(true);
+                        setTimeout(() => setSuccess(false), 3000);
+                      } else {
+                        setError(data.error || "Failed to update transaction status");
+                        setTransactionsEnabled(!newValue); // Revert on error
+                      }
+                    } catch (err: any) {
+                      console.error("Failed to update transaction status:", err);
+                      setError("Failed to update transaction status");
                       setTransactionsEnabled(!newValue); // Revert on error
+                    } finally {
+                      setSavingTransactionsStatus(false);
                     }
-                  } catch (err: any) {
-                    console.error("Failed to update transaction status:", err);
-                    setError("Failed to update transaction status");
-                    setTransactionsEnabled(!newValue); // Revert on error
-                  } finally {
-                    setSavingTransactionsStatus(false);
-                  }
-                }}
-                disabled={savingTransactionsStatus || !address}
-                className="sr-only"
-              />
-              <span
-                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                  transactionsEnabled ? "translate-x-6" : "translate-x-1"
-                }`}
-              />
-            </div>
+                  }}
+                  disabled={savingTransactionsStatus || !address}
+                  className="sr-only"
+                />
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    transactionsEnabled ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </div>
+            </label>
             <div>
               <span className={`text-sm font-medium ${
                 transactionsEnabled 
