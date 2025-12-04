@@ -75,8 +75,8 @@ export async function POST(request: NextRequest) {
           `${PAYSTACK_API_BASE}/customer`,
           {
             email: PAYSTACK_DUMMY_EMAIL, // Dummy email - Paystack won't send emails to users
-            first_name: "Flip",
-            last_name: "Pay",
+            first_name: "Pay",
+            last_name: "Flip",
             phone: "+2348000000000", // Default phone number for virtual accounts
             metadata: {
               user_id: userId,
@@ -105,8 +105,8 @@ export async function POST(request: NextRequest) {
               `${PAYSTACK_API_BASE}/customer`,
               {
                 email: PAYSTACK_DUMMY_EMAIL, // Dummy email - Paystack won't send emails
-                first_name: "Flip",
-                last_name: "Pay",
+                first_name: "Pay",
+                last_name: "Flip",
                 phone: "+2348000000000",
                 metadata: {
                   user_id: userId,
