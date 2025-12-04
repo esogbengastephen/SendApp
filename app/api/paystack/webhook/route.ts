@@ -216,7 +216,10 @@ export async function POST(request: NextRequest) {
           
           // Record revenue
           if (feeNGN > 0) {
-            await recordRevenue(transactionId, feeNGN, feeInSEND);
+            const revenueResult = await recordRevenue(transactionId, feeNGN, feeInSEND);
+            if (!revenueResult.success) {
+              console.error(`[Webhook] ⚠️ Failed to record revenue: ${revenueResult.error}`);
+            }
           }
           
           console.log(`✅ [Webhook] Updated existing transaction to completed`);
@@ -254,7 +257,10 @@ export async function POST(request: NextRequest) {
           
           // Record revenue
           if (feeNGN > 0) {
-            await recordRevenue(transactionId, feeNGN, feeInSEND);
+            const revenueResult = await recordRevenue(transactionId, feeNGN, feeInSEND);
+            if (!revenueResult.success) {
+              console.error(`[Webhook] ⚠️ Failed to record revenue: ${revenueResult.error}`);
+            }
           }
         }
 
@@ -399,7 +405,10 @@ export async function POST(request: NextRequest) {
       
       // Record revenue
       if (feeNGN > 0) {
-        await recordRevenue(transaction.transactionId, feeNGN, feeInSEND);
+        const revenueResult = await recordRevenue(transaction.transactionId, feeNGN, feeInSEND);
+        if (!revenueResult.success) {
+          console.error(`[Webhook] ⚠️ Failed to record revenue: ${revenueResult.error}`);
+        }
       }
 
       // Get user email for sending notification

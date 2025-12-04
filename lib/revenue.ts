@@ -21,21 +21,24 @@ export async function recordRevenue(
   feeInSEND: string
 ): Promise<{ success: boolean; error?: string }> {
   try {
-    const { error } = await supabase.from("revenue").insert({
+    // Use admin client to bypass RLS
+    const { error } = await supabaseAdmin.from("revenue").insert({
       transaction_id: transactionId,
       fee_ngn: feeNGN,
       fee_in_send: feeInSEND,
     });
 
     if (error) {
-      console.error("[Revenue] Error recording revenue:", error);
+      console.error("[Revenue] ❌ Error recording revenue:", error);
+      console.error("[Revenue] Transaction ID:", transactionId, "Fee NGN:", feeNGN, "Fee $SEND:", feeInSEND);
       return { success: false, error: error.message };
     }
 
     console.log(`[Revenue] ✅ Recorded revenue: ${feeNGN} NGN (${feeInSEND} $SEND) for transaction ${transactionId}`);
     return { success: true };
   } catch (error: any) {
-    console.error("[Revenue] Exception recording revenue:", error);
+    console.error("[Revenue] ❌ Exception recording revenue:", error);
+    console.error("[Revenue] Transaction ID:", transactionId, "Fee NGN:", feeNGN, "Fee $SEND:", feeInSEND);
     return { success: false, error: error.message || "Failed to record revenue" };
   }
 }

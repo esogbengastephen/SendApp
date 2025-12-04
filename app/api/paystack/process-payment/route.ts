@@ -571,7 +571,10 @@ export async function POST(request: NextRequest) {
     
     // Record revenue
     if (feeNGN > 0) {
-      await recordRevenue(transaction.transactionId, feeNGN, feeInSEND);
+      const revenueResult = await recordRevenue(transaction.transactionId, feeNGN, feeInSEND);
+      if (!revenueResult.success) {
+        console.error(`[Payment Processing] ⚠️ Failed to record revenue: ${revenueResult.error}`);
+      }
     }
 
     // Get user email for sending notification
