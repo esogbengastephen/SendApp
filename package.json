@@ -30,7 +30,7 @@
     "date-fns": "^4.1.0",
     "ethers": "^6.15.0",
     "nanoid": "^5.1.6",
-    "next": "^16.0.3",
+    "next": "^16.0.7",
     "nodemailer": "^7.0.10",
     "paystack-sdk": "^3.4.1",
     "react": "^19.2.0",

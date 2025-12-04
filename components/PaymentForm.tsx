@@ -832,7 +832,6 @@ export default function PaymentForm() {
                   )}
                   <button
                     type="button"
-                    disabled={!transactionsEnabled || isLoadingVirtualAccount}
                     onClick={async (e) => {
                       e.preventDefault();
                       

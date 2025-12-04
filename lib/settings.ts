@@ -228,9 +228,10 @@ export async function updateExchangeRate(
   const currentSettings = settings || await getSettings();
   const oldRate = currentSettings.exchangeRate;
   
-  // Create new settings object
+  // Create new settings object (preserve transactionsEnabled)
   const newSettings: PlatformSettings = {
     exchangeRate: rate,
+    transactionsEnabled: currentSettings.transactionsEnabled !== false,
     updatedAt: new Date(),
     updatedBy,
   };
