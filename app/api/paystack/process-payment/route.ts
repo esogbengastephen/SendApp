@@ -5,7 +5,7 @@ import { createOrUpdateUser } from "@/lib/users";
 import { distributeTokens } from "@/lib/token-distribution";
 import { isValidWalletOrTag, isValidAmount } from "@/utils/validation";
 import { verifyPaymentForTransaction } from "@/lib/payment-verification";
-import { getExchangeRate, getTransactionsEnabled } from "@/lib/settings";
+import { getExchangeRate, getTransactionsEnabled, getMinimumPurchase } from "@/lib/settings";
 import { updateWalletStats } from "@/lib/supabase-users";
 import { sendPaymentVerificationEmail, sendTokenDistributionEmail } from "@/lib/transaction-emails";
 import { supabase, updateReferralCountOnTransaction } from "@/lib/supabase";
@@ -139,9 +139,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!ngnAmount || !isValidAmount(ngnAmount.toString())) {
+    // Get minimum purchase from settings
+    const minPurchase = await getMinimumPurchase();
+
+    if (!ngnAmount || !isValidAmount(ngnAmount.toString(), minPurchase)) {
       return NextResponse.json(
-        { success: false, error: "Minimum purchase amount is ₦3,000" },
+        { success: false, error: `Minimum purchase amount is ₦${minPurchase.toLocaleString()}` },
         { status: 400 }
       );
     }
@@ -156,10 +159,10 @@ export async function POST(request: NextRequest) {
     const normalizedWallet = walletAddress.trim().toLowerCase();
     const parsedAmount = parseFloat(ngnAmount);
     
-    // Validate parsed amount (minimum 3000 NGN)
-    if (isNaN(parsedAmount) || parsedAmount < 3000) {
+    // Validate parsed amount against minimum purchase
+    if (isNaN(parsedAmount) || parsedAmount < minPurchase) {
       return NextResponse.json(
-        { success: false, error: "Minimum purchase amount is ₦3,000" },
+        { success: false, error: `Minimum purchase amount is ₦${minPurchase.toLocaleString()}` },
         { status: 400 }
       );
     }

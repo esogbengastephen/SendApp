@@ -2,13 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { nanoid } from "nanoid";
 import { createTransaction, getTransaction, updateTransaction, calculateSendAmount } from "@/lib/transactions";
 import { createOrUpdateUser } from "@/lib/users";
-import { getExchangeRate, getTransactionsEnabled } from "@/lib/settings";
+import { getExchangeRate, getTransactionsEnabled, getMinimumPurchase } from "@/lib/settings";
 import {
   linkWalletToUser,
   getSupabaseUserByEmail,
   updateWalletStats,
 } from "@/lib/supabase-users";
 import { calculateTransactionFee, calculateFinalTokens, calculateFeeInTokens } from "@/lib/fee-calculation";
+import { isValidAmount } from "@/utils/validation";
 
 /**
  * Get user from session (localStorage data sent in request body)
@@ -131,6 +132,15 @@ export async function POST(request: NextRequest) {
     
     // If we have amount and wallet, create full transaction
     if (ngnAmount && walletAddress) {
+      // Validate minimum purchase
+      const minPurchase = await getMinimumPurchase();
+      if (!isValidAmount(ngnAmount.toString(), minPurchase)) {
+        return NextResponse.json(
+          { success: false, error: `Minimum purchase amount is ₦${minPurchase.toLocaleString()}` },
+          { status: 400 }
+        );
+      }
+      
       const normalizedWallet = walletAddress.trim().toLowerCase();
       // Use admin-set exchange rate (not from frontend)
       const currentExchangeRate = await getExchangeRate();

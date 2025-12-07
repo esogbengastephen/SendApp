@@ -124,8 +124,10 @@ export default function SettingsPage() {
   const [exchangeRate, setExchangeRate] = useState("50"); // NGN to SEND (1 NGN = X SEND)
   const [sendToNgnRate, setSendToNgnRate] = useState("45"); // SEND to NGN (1 SEND = Y NGN)
   const [transactionsEnabled, setTransactionsEnabled] = useState(true);
+  const [minimumPurchase, setMinimumPurchase] = useState<number>(3000);
   const [saving, setSaving] = useState(false);
   const [savingTransactionsStatus, setSavingTransactionsStatus] = useState(false);
+  const [savingMinimumPurchase, setSavingMinimumPurchase] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -228,6 +230,36 @@ export default function SettingsPage() {
       setTimeout(() => setError(null), 5000);
     } finally {
       setSavingFeeTiers(false);
+    }
+  };
+
+  // Save minimum purchase
+  const saveMinimumPurchase = async () => {
+    if (!address) return;
+    setSavingMinimumPurchase(true);
+    try {
+      const response = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          minimumPurchase: parseFloat(minimumPurchase.toString()),
+          walletAddress: address,
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setAdminSuccess("Minimum purchase amount updated successfully!");
+        setTimeout(() => setAdminSuccess(null), 3000);
+      } else {
+        setAdminError(data.error || "Failed to update minimum purchase");
+        setTimeout(() => setAdminError(null), 3000);
+      }
+    } catch (error) {
+      setAdminError("Failed to update minimum purchase");
+      setTimeout(() => setAdminError(null), 3000);
+    } finally {
+      setSavingMinimumPurchase(false);
     }
   };
 
@@ -508,6 +540,8 @@ export default function SettingsPage() {
         setSendToNgnRate(calculatedSendToNgn);
         // Set transactions enabled status
         setTransactionsEnabled(data.settings.transactionsEnabled !== false);
+        // Set minimum purchase
+        setMinimumPurchase(data.settings.minimumPurchase || 3000);
       }
     } catch (err: any) {
       console.error("Failed to fetch settings:", err);
@@ -755,6 +789,49 @@ export default function SettingsPage() {
             </p>
           </div>
         )}
+      </div>
+
+      {/* Minimum Purchase Amount */}
+      <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
+        <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 mb-3 sm:mb-4">
+          Minimum Purchase Amount
+        </h2>
+        <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+          Set the minimum amount users must purchase in NGN to proceed with a transaction.
+        </p>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+              Minimum Purchase (NGN)
+            </label>
+            <input
+              type="number"
+              value={minimumPurchase}
+              onChange={(e) => setMinimumPurchase(parseFloat(e.target.value) || 3000)}
+              min="1"
+              step="1"
+              className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary"
+              placeholder="3000"
+            />
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+              Users must purchase at least ₦{minimumPurchase.toLocaleString()} to proceed with a transaction.
+            </p>
+          </div>
+          <button
+            onClick={saveMinimumPurchase}
+            disabled={savingMinimumPurchase || !address || minimumPurchase <= 0}
+            className="bg-primary text-slate-900 font-bold px-6 py-3 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {savingMinimumPurchase ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-slate-900"></div>
+                Saving...
+              </>
+            ) : (
+              "Save Minimum Purchase"
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Exchange Rate */}
