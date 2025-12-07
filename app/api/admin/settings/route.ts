@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSettings, updateExchangeRate, updateTransactionsEnabled } from "@/lib/settings";
+import { getSettings, updateExchangeRate, updateTransactionsEnabled, updateMinimumPurchase } from "@/lib/settings";
 import { isAdminWallet } from "@/lib/supabase";
 
 /**
@@ -34,6 +34,7 @@ export async function GET(request: NextRequest) {
       settings: {
         exchangeRate: settings.exchangeRate,
         transactionsEnabled: settings.transactionsEnabled !== false,
+        minimumPurchase: settings.minimumPurchase || 3000,
         updatedAt: settings.updatedAt.toISOString(),
         updatedBy: settings.updatedBy,
       },
@@ -53,7 +54,7 @@ export async function GET(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { exchangeRate, transactionsEnabled, walletAddress } = body;
+    const { exchangeRate, transactionsEnabled, minimumPurchase, walletAddress } = body;
 
     // Verify admin access
     if (!walletAddress) {
@@ -102,6 +103,25 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    // Update minimum purchase if provided
+    if (minimumPurchase !== undefined) {
+      // Validate minimum purchase
+      const minPurchaseValue = parseFloat(minimumPurchase);
+      if (isNaN(minPurchaseValue) || minPurchaseValue <= 0) {
+        return NextResponse.json(
+          { success: false, error: "Invalid minimum purchase. Must be a positive number." },
+          { status: 400 }
+        );
+      }
+
+      console.log(`[Admin Settings] Updating minimum purchase to: ${minPurchaseValue}`);
+      
+      await updateMinimumPurchase(
+        minPurchaseValue,
+        walletAddress.toLowerCase()
+      );
+    }
+
     // Return updated settings
     const updatedSettings = await getSettings();
 
@@ -110,6 +130,7 @@ export async function PUT(request: NextRequest) {
       settings: {
         exchangeRate: updatedSettings.exchangeRate,
         transactionsEnabled: updatedSettings.transactionsEnabled !== false,
+        minimumPurchase: updatedSettings.minimumPurchase || 3000,
         updatedAt: updatedSettings.updatedAt.toISOString(),
         updatedBy: updatedSettings.updatedBy,
       },

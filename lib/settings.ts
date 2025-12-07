@@ -6,6 +6,7 @@ import { supabase } from "./supabase";
 interface PlatformSettings {
   exchangeRate: number;
   transactionsEnabled: boolean;
+  minimumPurchase: number;
   updatedAt: Date;
   updatedBy?: string;
 }
@@ -44,6 +45,7 @@ async function loadSettings(): Promise<PlatformSettings> {
       const defaultSettings: PlatformSettings = {
         exchangeRate: defaultRate,
         transactionsEnabled: true, // Default: transactions enabled
+        minimumPurchase: 3000, // Default minimum purchase
         updatedAt: new Date(),
         updatedBy: "system",
       };
@@ -55,6 +57,8 @@ async function loadSettings(): Promise<PlatformSettings> {
           setting_key: "exchange_rate",
           setting_value: {
             exchangeRate: defaultSettings.exchangeRate,
+            transactionsEnabled: defaultSettings.transactionsEnabled,
+            minimumPurchase: defaultSettings.minimumPurchase,
             updatedAt: defaultSettings.updatedAt.toISOString(),
             updatedBy: defaultSettings.updatedBy,
           },
@@ -86,6 +90,7 @@ async function loadSettings(): Promise<PlatformSettings> {
       const loadedSettings: PlatformSettings = {
         exchangeRate: value.exchangeRate,
         transactionsEnabled: value.transactionsEnabled !== undefined ? value.transactionsEnabled : true,
+        minimumPurchase: value.minimumPurchase !== undefined ? value.minimumPurchase : 3000,
         updatedAt: value.updatedAt ? new Date(value.updatedAt) : new Date(),
         updatedBy: value.updatedBy,
       };
@@ -104,6 +109,7 @@ async function loadSettings(): Promise<PlatformSettings> {
     return {
       exchangeRate: defaultRate,
       transactionsEnabled: true,
+      minimumPurchase: 3000,
       updatedAt: new Date(),
     };
   }
@@ -121,6 +127,7 @@ async function saveSettings(settings: PlatformSettings): Promise<void> {
         setting_value: {
           exchangeRate: settings.exchangeRate,
           transactionsEnabled: settings.transactionsEnabled,
+          minimumPurchase: settings.minimumPurchase,
           updatedAt: settings.updatedAt.toISOString(),
           updatedBy: settings.updatedBy,
         },
@@ -228,10 +235,11 @@ export async function updateExchangeRate(
   const currentSettings = settings || await getSettings();
   const oldRate = currentSettings.exchangeRate;
   
-  // Create new settings object (preserve transactionsEnabled)
+  // Create new settings object (preserve transactionsEnabled and minimumPurchase)
   const newSettings: PlatformSettings = {
     exchangeRate: rate,
     transactionsEnabled: currentSettings.transactionsEnabled !== false,
+    minimumPurchase: currentSettings.minimumPurchase || 3000,
     updatedAt: new Date(),
     updatedBy,
   };
@@ -275,10 +283,11 @@ export async function updateTransactionsEnabled(
 ): Promise<PlatformSettings> {
   const currentSettings = await getSettings();
   
-  // Create new settings object
+  // Create new settings object (preserve minimumPurchase)
   const newSettings: PlatformSettings = {
     ...currentSettings,
     transactionsEnabled: enabled,
+    minimumPurchase: currentSettings.minimumPurchase || 3000,
     updatedAt: new Date(),
     updatedBy,
   };
@@ -292,6 +301,45 @@ export async function updateTransactionsEnabled(
   await saveSettings(newSettings);
 
   console.log(`[Settings] Transactions ${enabled ? 'enabled' : 'disabled'} by ${updatedBy || 'system'}`);
+  
+  return { ...newSettings };
+}
+
+/**
+ * Get minimum purchase amount
+ */
+export async function getMinimumPurchase(): Promise<number> {
+  const loadedSettings = await getSettings();
+  return loadedSettings.minimumPurchase || 3000;
+}
+
+/**
+ * Update minimum purchase amount
+ */
+export async function updateMinimumPurchase(
+  amount: number,
+  updatedBy?: string
+): Promise<PlatformSettings> {
+  if (amount <= 0) {
+    throw new Error("Minimum purchase amount must be greater than 0");
+  }
+
+  const currentSettings = await getSettings();
+  
+  const newSettings: PlatformSettings = {
+    ...currentSettings,
+    minimumPurchase: amount,
+    updatedAt: new Date(),
+    updatedBy,
+  };
+  
+  settings = newSettings;
+  global.__sendSettings = newSettings;
+  global.__sendSettingsCacheTime = Date.now();
+  
+  await saveSettings(newSettings);
+
+  console.log(`[Settings] Minimum purchase updated: ${currentSettings.minimumPurchase || 3000} -> ${amount} by ${updatedBy || 'system'}`);
   
   return { ...newSettings };
 }

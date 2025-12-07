@@ -23,6 +23,7 @@ export default function PaymentForm() {
   const [isLoading, setIsLoading] = useState(false);
   const [isTransactionCompleted, setIsTransactionCompleted] = useState(false);
   const [exchangeRate, setExchangeRate] = useState<number>(50);
+  const [minimumPurchase, setMinimumPurchase] = useState<number>(3000);
   const [errors, setErrors] = useState<{
     ngnAmount?: string;
     walletAddress?: string;
@@ -222,6 +223,10 @@ export default function PaymentForm() {
           if (data.transactionsEnabled !== undefined) {
             setTransactionsEnabled(data.transactionsEnabled !== false);
           }
+          // Update minimum purchase if provided
+          if (data.minimumPurchase !== undefined) {
+            setMinimumPurchase(data.minimumPurchase || 3000);
+          }
         }
       } catch (error) {
         console.error("Failed to fetch exchange rate:", error);
@@ -381,8 +386,8 @@ export default function PaymentForm() {
   const validateForm = (): boolean => {
     const newErrors: typeof errors = {};
 
-    if (!ngnAmount || !isValidAmount(ngnAmount)) {
-      newErrors.ngnAmount = "Minimum purchase amount is ₦3,000";
+    if (!ngnAmount || !isValidAmount(ngnAmount, minimumPurchase)) {
+      newErrors.ngnAmount = `Minimum purchase amount is ₦${minimumPurchase.toLocaleString()}`;
     }
 
     if (!walletAddress || !isValidWalletOrTag(walletAddress.trim())) {
@@ -660,7 +665,7 @@ export default function PaymentForm() {
                 Enter NGN amount
               </label>
               <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 mb-2">
-                Minimum purchase: ₦3,000
+                Minimum purchase: ₦{minimumPurchase.toLocaleString()}
               </p>
               <div className="mt-2 relative">
                 <input
@@ -671,9 +676,9 @@ export default function PaymentForm() {
                   } bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-primary focus:border-primary placeholder:text-slate-400 dark:placeholder:text-slate-500 px-3 py-2`}
                   id="ngn_amount"
                   name="ngn_amount"
-                  placeholder="e.g. 3000"
+                  placeholder={`e.g. ${minimumPurchase.toLocaleString()}`}
                   type="number"
-                  min="3000"
+                  min={minimumPurchase.toString()}
                   step="0.01"
                   value={ngnAmount}
                   onChange={(e) => handleInputChange("ngnAmount", e.target.value)}

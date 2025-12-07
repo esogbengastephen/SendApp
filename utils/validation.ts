@@ -21,10 +21,12 @@ export function isValidWalletOrTag(input: string): boolean {
 }
 
 /**
- * Validates NGN amount (minimum 3000 NGN)
+ * Validates NGN amount (minimum from settings)
+ * @param amount - The amount string to validate
+ * @param minimum - The minimum purchase amount (defaults to 3000)
  */
-export function isValidAmount(amount: string): boolean {
+export function isValidAmount(amount: string, minimum: number = 3000): boolean {
   const num = parseFloat(amount);
-  return !isNaN(num) && num >= 3000;
+  return !isNaN(num) && num >= minimum;
 }
 
