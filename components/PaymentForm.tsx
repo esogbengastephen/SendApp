@@ -1053,6 +1053,18 @@ export default function PaymentForm() {
       
       {/* Powered by SEND */}
       <PoweredBySEND />
+      
+      {/* Create Send App Account Link */}
+      <div className="mt-3 text-center">
+        <a
+          href="https://send.app/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs text-slate-500 dark:text-slate-400 hover:text-primary transition-colors underline"
+        >
+          Click to Create a Send App account
+        </a>
+      </div>
     </div>
   );
 }
