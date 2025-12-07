@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import DarkModeToggle from "@/components/DarkModeToggle";
 import PoweredBySEND from "@/components/PoweredBySEND";
@@ -17,6 +17,8 @@ export default function AuthPage() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [codeSent, setCodeSent] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
 
   const handleSendCode = async () => {
     setError("");
@@ -71,6 +73,8 @@ export default function AuthPage() {
 
         setMessage(data.message || "Confirmation code sent to your email");
         setCodeSent(true);
+        // Set initial cooldown when code is first sent
+        setResendCooldown(60);
       }
     } catch (err: any) {
       setError("Failed to process request. Please try again.");
@@ -78,6 +82,54 @@ export default function AuthPage() {
       setLoading(false);
     }
   };
+
+  const handleResendCode = async () => {
+    if (resendCooldown > 0) return; // Prevent spam during cooldown
+    
+    setError("");
+    setMessage("");
+    setResending(true);
+
+    try {
+      const response = await fetch("/api/auth/send-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        setError(data.error || "Failed to resend code");
+        return;
+      }
+
+      setMessage("Confirmation code resent to your email");
+      
+      // Set 60 second cooldown
+      setResendCooldown(60);
+    } catch (err: any) {
+      setError("Failed to resend code. Please try again.");
+    } finally {
+      setResending(false);
+    }
+  };
+
+  // Cooldown timer effect
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setInterval(() => {
+        setResendCooldown((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      return () => clearInterval(timer);
+    }
+  }, [resendCooldown]);
 
   const handleVerifyCode = async () => {
     setError("");
@@ -229,6 +281,20 @@ export default function AuthPage() {
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 text-center">
                   Enter the 6-digit code sent to {email}
                 </p>
+                <div className="mt-3 text-center">
+                  <button
+                    type="button"
+                    onClick={handleResendCode}
+                    disabled={resending || resendCooldown > 0 || loading}
+                    className="text-sm text-primary hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity underline"
+                  >
+                    {resending 
+                      ? "Resending..." 
+                      : resendCooldown > 0 
+                        ? `Resend code in ${resendCooldown}s` 
+                        : "Resend Code"}
+                  </button>
+                </div>
               </div>
 
               <button
@@ -245,6 +311,7 @@ export default function AuthPage() {
                   setCode("");
                   setError("");
                   setMessage("");
+                  setResendCooldown(0); // Reset cooldown when changing email
                 }}
                 className="w-full text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
               >
