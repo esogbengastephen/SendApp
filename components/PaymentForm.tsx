@@ -724,7 +724,7 @@ export default function PaymentForm() {
                 className="block text-sm font-medium text-slate-700 dark:text-slate-300"
                 htmlFor="wallet_address"
               >
-                Enter base wallet address
+                Enter Send App or Base Wallet Address
               </label>
               <div className="mt-2">
                 <input
