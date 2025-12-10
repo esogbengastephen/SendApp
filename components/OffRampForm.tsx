@@ -72,7 +72,7 @@ export default function OffRampForm() {
     };
   }, []);
 
-  const validateAccountNumber = (account: string): boolean {
+  const validateAccountNumber = (account: string): boolean => {
     // Nigerian account numbers are typically 10 digits
     const accountRegex = /^\d{10}$/;
     return accountRegex.test(account);
