@@ -556,3 +556,711 @@ All Points Verified?
 4. **Finally Phase 4**: Update admin dashboard
 
 **Ready to proceed with implementation?** Switch to Executor mode to begin Phase 1.
+
+---
+
+## 🚀 OFF-RAMP IMPLEMENTATION PLAN
+
+### Background and Motivation
+
+The off-ramp solution allows users to convert Base tokens (any token on Base ecosystem) back to Nigerian Naira (NGN). This is the reverse flow of the on-ramp:
+
+**On-Ramp Flow:** NGN → $SEND Tokens
+**Off-Ramp Flow:** Base Tokens → USDC → NGN
+
+**Key Requirements:**
+- Users enter account number where they want to receive Naira
+- System generates unique wallet address for each transaction (HD Wallet derivation)
+- User sends any Base token to that unique address
+- System automatically swaps token to USDC (using 1inch DEX aggregator)
+- System verifies admin wallet received USDC
+- Only then: Paystack sends Naira to user's account number
+- Same tiered fee system as on-ramp (configurable in admin)
+- Admin-configurable min/max amounts
+- Retry mechanism: retry → retry → manual review with refund option
+- Continuous wallet monitoring until payment received
+
+---
+
+## Phase 1: Database Schema & Migration
+
+### 1.1 Create Off-Ramp Transactions Table
+
+**File:** `supabase/migrations/018_create_offramp_tables.sql`
+
+**Implementation Steps:**
+- [ ] Create migration file `018_create_offramp_tables.sql`
+- [ ] Run migration in Supabase
+- [ ] Verify tables created correctly
+- [ ] Set up RLS policies (if needed)
+
+**Schema:**
+```sql
+-- Off-ramp transactions table
+CREATE TABLE IF NOT EXISTS offramp_transactions (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  transaction_id VARCHAR(255) UNIQUE NOT NULL,
+  user_id UUID REFERENCES users(id), -- Link to existing users table
+  user_email TEXT NOT NULL, -- User's email (for quick lookup)
+  user_account_number VARCHAR(50) NOT NULL, -- Where to send Naira
+  user_account_name TEXT, -- Optional: account name
+  user_bank_code VARCHAR(10), -- Optional: bank code
+  unique_wallet_address VARCHAR(255) UNIQUE NOT NULL, -- Generated HD wallet address
+  token_address VARCHAR(255), -- Which token user sent (detected)
+  token_symbol VARCHAR(50), -- Token symbol (ETH, USDC, etc.)
+  token_amount VARCHAR(50), -- Amount sent (detected)
+  token_amount_raw VARCHAR(50), -- Raw amount (wei format)
+  usdc_amount VARCHAR(50), -- After swap to USDC
+  usdc_amount_raw VARCHAR(50), -- Raw USDC amount
+  ngn_amount DECIMAL(18, 2), -- Final NGN to pay user (after fees)
+  exchange_rate DECIMAL(18, 8), -- USDC to NGN rate
+  fee_ngn DECIMAL(18, 2), -- Fee in NGN
+  fee_in_send TEXT, -- Fee in $SEND (for revenue tracking)
+  status VARCHAR(20) NOT NULL CHECK (status IN (
+    'pending',           -- Waiting for user to send tokens
+    'token_received',     -- Token detected, waiting for swap
+    'swapping',          -- Swap in progress
+    'usdc_received',     -- USDC received in admin wallet
+    'paying',            -- Paystack payment in progress
+    'completed',         -- User received Naira
+    'failed',            -- Transaction failed
+    'refunded'           -- Refunded to user
+  )),
+  swap_tx_hash VARCHAR(255), -- 1inch swap transaction hash
+  swap_attempts INTEGER DEFAULT 0, -- Number of swap attempts
+  paystack_reference VARCHAR(255), -- Paystack payment reference
+  paystack_recipient_code VARCHAR(255), -- Paystack recipient code
+  error_message TEXT, -- Error details if failed
+  refund_tx_hash VARCHAR(255), -- If refunded, blockchain tx hash
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  token_received_at TIMESTAMP WITH TIME ZONE,
+  usdc_received_at TIMESTAMP WITH TIME ZONE,
+  paid_at TIMESTAMP WITH TIME ZONE,
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_offramp_transactions_transaction_id ON offramp_transactions(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_offramp_transactions_user_id ON offramp_transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_offramp_transactions_user_email ON offramp_transactions(user_email);
+CREATE INDEX IF NOT EXISTS idx_offramp_transactions_wallet_address ON offramp_transactions(unique_wallet_address);
+CREATE INDEX IF NOT EXISTS idx_offramp_transactions_status ON offramp_transactions(status);
+CREATE INDEX IF NOT EXISTS idx_offramp_transactions_created_at ON offramp_transactions(created_at);
+
+-- Off-ramp revenue tracking (similar to on-ramp)
+CREATE TABLE IF NOT EXISTS offramp_revenue (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  transaction_id TEXT NOT NULL,
+  fee_ngn DECIMAL(18, 2) NOT NULL,
+  fee_in_send TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  CONSTRAINT fk_offramp_revenue_transaction FOREIGN KEY (transaction_id)
+    REFERENCES offramp_transactions(transaction_id) ON DELETE CASCADE
+);
+
+-- Off-ramp swap attempts log (for retry tracking)
+CREATE TABLE IF NOT EXISTS offramp_swap_attempts (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  transaction_id TEXT NOT NULL REFERENCES offramp_transactions(transaction_id),
+  attempt_number INTEGER NOT NULL,
+  swap_tx_hash VARCHAR(255),
+  status VARCHAR(20), -- pending, success, failed
+  error_message TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_offramp_swap_attempts_transaction_id ON offramp_swap_attempts(transaction_id);
+```
+
+---
+
+## Phase 2: HD Wallet Setup & Configuration
+
+### 2.1 Environment Variables
+
+**File:** `.env.local` (add these)
+
+```bash
+# HD Wallet for Off-Ramp
+OFFRAMP_MASTER_MNEMONIC="your 12-word mnemonic phrase here"
+OFFRAMP_ADMIN_WALLET_ADDRESS="0x..." # Admin wallet to receive USDC
+OFFRAMP_ADMIN_PRIVATE_KEY="0x..." # Private key for signing swaps (optional, use with caution)
+```
+
+### 2.2 HD Wallet Utility Library
+
+**File:** `lib/offramp-wallet.ts` (NEW)
+
+**Implementation Steps:**
+- [ ] Install/verify `ethers` package (should already be installed)
+- [ ] Create `lib/offramp-wallet.ts`
+- [ ] Generate master mnemonic (use secure method)
+- [ ] Store mnemonic in environment variables
+- [ ] Test wallet generation
+- [ ] Verify addresses are unique for different transaction IDs
+
+**Key Functions:**
+- `generateOfframpWallet(transactionId)` - Generate unique wallet address
+- `getAdminWalletAddress()` - Get admin wallet address
+- `verifyWalletDerivation(address, transactionId)` - Verify address derivation
+
+---
+
+## Phase 3: Frontend Off-Ramp Component
+
+### 3.1 Create Off-Ramp Form Component
+
+**File:** `components/OffRampForm.tsx` (NEW)
+
+**Features:**
+- Input field for account number (where user wants to receive Naira)
+- Optional: Account name and bank selection
+- "Generate Payment" button
+- Display unique wallet address after generation
+- Show transaction status
+- Similar UI/UX to existing PaymentForm
+
+**Key States:**
+- `accountNumber` - User's bank account number
+- `accountName` - Optional account name
+- `bankCode` - Optional bank code
+- `transactionId` - Generated transaction ID
+- `uniqueWalletAddress` - Generated wallet address
+- `status` - Transaction status
+- `isLoading` - Loading states
+
+**Implementation Steps:**
+- [ ] Create `components/OffRampForm.tsx`
+- [ ] Add form validation (account number format)
+- [ ] Integrate with `/api/offramp/generate-address` endpoint
+- [ ] Display unique wallet address prominently
+- [ ] Add copy-to-clipboard functionality
+- [ ] Show transaction status updates
+- [ ] Add QR code for wallet address (optional)
+- [ ] Style to match existing PaymentForm
+
+### 3.2 Add Off-Ramp Route to Main App
+
+**File:** `app/offramp/page.tsx` (NEW)
+
+**Implementation Steps:**
+- [ ] Create `app/offramp/page.tsx`
+- [ ] Add authentication check
+- [ ] Add navigation link in main layout
+- [ ] Test routing
+
+---
+
+## Phase 4: Backend API Endpoints
+
+### 4.1 Generate Unique Wallet Address
+
+**File:** `app/api/offramp/generate-address/route.ts` (NEW)
+
+**Endpoint:** `POST /api/offramp/generate-address`
+
+**Request Body:**
+```typescript
+{
+  accountNumber: string;
+  accountName?: string;
+  bankCode?: string;
+}
+```
+
+**Response:**
+```typescript
+{
+  success: boolean;
+  transactionId: string;
+  uniqueWalletAddress: string;
+  message?: string;
+}
+```
+
+**Logic:**
+1. Verify user is logged in (get from session)
+2. Generate unique transaction ID (nanoid)
+3. Generate unique wallet address using HD wallet
+4. Create offramp_transaction record in database
+5. Return transaction ID and wallet address
+
+**Implementation Steps:**
+- [ ] Create API route
+- [ ] Add authentication check
+- [ ] Generate transaction ID
+- [ ] Generate wallet address using HD wallet utility
+- [ ] Store in database
+- [ ] Return response
+- [ ] Add error handling
+
+### 4.2 Monitor Wallet for Tokens
+
+**File:** `app/api/offramp/check-token/route.ts` (NEW)
+
+**Endpoint:** `POST /api/offramp/check-token`
+
+**Request Body:**
+```typescript
+{
+  transactionId: string;
+}
+```
+
+**Response:**
+```typescript
+{
+  success: boolean;
+  tokenDetected: boolean;
+  tokenAddress?: string;
+  tokenSymbol?: string;
+  tokenAmount?: string;
+  message?: string;
+}
+```
+
+**Logic:**
+1. Get transaction from database
+2. Check unique wallet address balance on Base network
+3. If tokens detected, identify which token
+4. Update transaction status to "token_received"
+5. Trigger swap process (or return token info)
+
+**Implementation Steps:**
+- [ ] Create API route
+- [ ] Connect to Base RPC (Alchemy/Infura)
+- [ ] Check wallet balance
+- [ ] Detect token type (ERC20 or native ETH)
+- [ ] Get token metadata (symbol, decimals)
+- [ ] Update database
+- [ ] Return token information
+
+### 4.3 Swap Token to USDC
+
+**File:** `app/api/offramp/swap-token/route.ts` (NEW)
+
+**Endpoint:** `POST /api/offramp/swap-token`
+
+**Request Body:**
+```typescript
+{
+  transactionId: string;
+}
+```
+
+**Response:**
+```typescript
+{
+  success: boolean;
+  swapTxHash?: string;
+  usdcAmount?: string;
+  message?: string;
+}
+```
+
+**Logic:**
+1. Get transaction from database
+2. Verify token is received
+3. Call 1inch API to get swap quote
+4. Execute swap (token → USDC)
+5. Send USDC to admin wallet (not user wallet)
+6. Wait for USDC confirmation
+7. Update transaction status
+
+**1inch Integration:**
+- Use 1inch Fusion API or Aggregation API
+- Support any Base token → USDC
+- Handle slippage
+- Retry on failure (up to 2 retries)
+
+**Implementation Steps:**
+- [ ] Install 1inch SDK or use REST API
+- [ ] Create swap utility function
+- [ ] Get swap quote from 1inch
+- [ ] Execute swap transaction
+- [ ] Monitor swap status
+- [ ] Verify USDC received in admin wallet
+- [ ] Update database
+- [ ] Implement retry logic
+
+### 4.4 Process Paystack Payment
+
+**File:** `app/api/offramp/process-payment/route.ts` (NEW)
+
+**Endpoint:** `POST /api/offramp/process-payment`
+
+**Request Body:**
+```typescript
+{
+  transactionId: string;
+}
+```
+
+**Response:**
+```typescript
+{
+  success: boolean;
+  paystackReference?: string;
+  ngnAmount?: number;
+  message?: string;
+}
+```
+
+**Logic:**
+1. Get transaction from database
+2. Verify USDC received in admin wallet
+3. Calculate NGN amount (USDC × exchange rate - fees)
+4. Create Paystack transfer recipient
+5. Initiate Paystack transfer to user's account
+6. Update transaction status
+7. Record revenue (fees)
+
+**Implementation Steps:**
+- [ ] Create API route
+- [ ] Verify USDC received (check admin wallet)
+- [ ] Get exchange rate from settings
+- [ ] Calculate fees (use tiered fee system)
+- [ ] Calculate final NGN amount
+- [ ] Create Paystack recipient
+- [ ] Initiate Paystack transfer
+- [ ] Update transaction status
+- [ ] Record revenue
+
+### 4.5 Background Job: Wallet Monitoring
+
+**File:** `app/api/offramp/monitor-wallets/route.ts` (NEW)
+
+**Endpoint:** `GET /api/offramp/monitor-wallets` (can be called by cron job)
+
+**Logic:**
+1. Get all pending off-ramp transactions
+2. For each transaction, check wallet balance
+3. If token detected, update status and trigger swap
+4. If swap completed, check USDC and trigger payment
+5. Handle retries for failed swaps
+
+**Implementation Steps:**
+- [ ] Create API route (or use Next.js API route as cron)
+- [ ] Query pending transactions
+- [ ] Check each wallet address
+- [ ] Update statuses
+- [ ] Trigger next steps automatically
+- [ ] Add logging
+
+**Alternative:** Use Vercel Cron Jobs or external cron service
+
+---
+
+## Phase 5: 1inch DEX Integration
+
+### 5.1 1inch API Setup
+
+**File:** `lib/1inch-swap.ts` (NEW)
+
+**Key Functions:**
+- `getSwapQuote()` - Get quote for token swap
+- `executeSwap()` - Execute the swap
+- `checkSwapStatus()` - Monitor swap status
+
+**1inch API Endpoints:**
+- Quote: `https://api.1inch.dev/swap/v6.0/8453/quote` (Base chain ID: 8453)
+- Swap: `https://api.1inch.dev/swap/v6.0/8453/swap`
+
+**Implementation Steps:**
+- [ ] Get 1inch API key (register at 1inch.dev)
+- [ ] Create swap utility library
+- [ ] Implement quote function
+- [ ] Implement swap execution
+- [ ] Add error handling
+- [ ] Test with testnet first
+
+### 5.2 Token Support
+
+**Supported Tokens:**
+- Any ERC20 token on Base
+- Native ETH
+- USDC (Base)
+- DAI, WETH, etc.
+
+**Token Detection:**
+- Check if native ETH (balance > 0, no token contract)
+- Check ERC20 tokens (query contract balance)
+- Get token metadata (symbol, decimals)
+
+---
+
+## Phase 6: Fee Calculation & Revenue Tracking
+
+### 6.1 Off-Ramp Fee Calculation
+
+**File:** `lib/offramp-fees.ts` (NEW)
+
+- Reuse existing tiered fee system from on-ramp
+- Calculate fees based on NGN amount (after USDC conversion)
+- Same fee tiers as on-ramp (configurable in admin)
+
+**Implementation Steps:**
+- [ ] Create fee calculation utility
+- [ ] Reuse `getFeeTiers()` from `lib/fee-calculation.ts`
+- [ ] Calculate fees based on final NGN amount
+- [ ] Record revenue in `offramp_revenue` table
+
+### 6.2 Exchange Rate Calculation
+
+- Use admin-configurable USDC to NGN rate
+- Calculate: `ngnAmount = (usdcAmount × usdcToNgnRate) - fees`
+- Store exchange rate in transaction record
+
+---
+
+## Phase 7: Admin Dashboard - Off-Ramp Tab
+
+### 7.1 Create Off-Ramp Admin Page
+
+**File:** `app/admin/offramp/page.tsx` (NEW)
+
+**Features:**
+- List all off-ramp transactions
+- Filter by status, date, user
+- View transaction details
+- Manual actions: retry swap, refund, mark as paid
+- Statistics: total volume, pending transactions, etc.
+
+**Implementation Steps:**
+- [ ] Create admin off-ramp page
+- [ ] Add navigation link in admin sidebar
+- [ ] Fetch transactions from API
+- [ ] Display transaction list
+- [ ] Add filters and search
+- [ ] Add action buttons (retry, refund)
+- [ ] Add statistics cards
+
+### 7.2 Admin API Endpoints
+
+**File:** `app/api/admin/offramp/route.ts` (NEW)
+
+**Endpoints:**
+- `GET /api/admin/offramp` - List all transactions
+- `GET /api/admin/offramp/[id]` - Get transaction details
+- `POST /api/admin/offramp/[id]/retry` - Retry swap
+- `POST /api/admin/offramp/[id]/refund` - Refund to user
+- `POST /api/admin/offramp/[id]/manual-pay` - Manually mark as paid
+
+**Implementation Steps:**
+- [ ] Create admin API routes
+- [ ] Add admin authentication check
+- [ ] Implement CRUD operations
+- [ ] Add manual action endpoints
+
+### 7.3 Admin Settings for Off-Ramp
+
+**File:** `app/admin/settings/page.tsx` (UPDATE)
+
+**Add Settings:**
+- Off-ramp minimum amount (NGN)
+- Off-ramp maximum amount (NGN)
+- USDC to NGN exchange rate
+- Off-ramp enabled/disabled toggle
+
+**Implementation Steps:**
+- [ ] Add off-ramp settings to settings page
+- [ ] Update `lib/settings.ts` to include off-ramp settings
+- [ ] Add API endpoints to update settings
+- [ ] Add validation
+
+---
+
+## Phase 8: Error Handling & Retry Logic
+
+### 8.1 Retry Mechanism
+
+**Swap Retry Logic:**
+1. First swap attempt fails → Retry once
+2. Second swap attempt fails → Retry once more
+3. Third swap attempt fails → Mark for manual review
+4. Admin can retry or refund from dashboard
+
+**Implementation:**
+- Track swap attempts in `offramp_swap_attempts` table
+- Update `swap_attempts` counter in transaction
+- Auto-retry on failure (up to 2 retries)
+- Notify admin after 3 failures
+
+### 8.2 Refund Mechanism
+
+**When to Refund:**
+- Swap fails after all retries
+- User requests refund
+- Admin decides to refund
+
+**How to Refund:**
+- Send tokens back to user's original wallet (if known)
+- Or send to user's email-linked wallet
+- Record refund transaction hash
+
+**Implementation Steps:**
+- [ ] Create refund API endpoint
+- [ ] Get user's wallet address (from user_wallets table)
+- [ ] Send tokens back
+- [ ] Update transaction status to "refunded"
+- [ ] Record refund tx hash
+
+---
+
+## Phase 9: Testing & Validation
+
+### 9.1 Test Scenarios
+
+**Test Case 1: Successful Off-Ramp**
+1. User generates payment → gets unique wallet
+2. User sends ETH to wallet
+3. System detects ETH → swaps to USDC
+4. USDC received in admin wallet
+5. Paystack sends Naira to user
+6. Transaction marked as completed
+
+**Test Case 2: Swap Retry**
+1. First swap fails
+2. System retries automatically
+3. Second swap succeeds
+4. Continue with payment
+
+**Test Case 3: Manual Review**
+1. All swap attempts fail
+2. Transaction marked for manual review
+3. Admin reviews in dashboard
+4. Admin retries or refunds
+
+**Test Case 4: Different Tokens**
+- Test with ETH
+- Test with USDC
+- Test with DAI
+- Test with other ERC20 tokens
+
+### 9.2 Security Testing
+
+- Verify HD wallet addresses are unique
+- Verify admin wallet receives USDC before payment
+- Verify fees are calculated correctly
+- Verify user can't manipulate amounts
+- Test with invalid account numbers
+
+---
+
+## Implementation Priority & Timeline
+
+### 🔴 CRITICAL (Week 1)
+1. **Database Schema** (Phase 1)
+   - Create offramp_transactions table
+   - Create revenue and swap attempts tables
+
+2. **HD Wallet Setup** (Phase 2)
+   - Generate master mnemonic
+   - Create wallet utility library
+   - Test address generation
+
+### 🟡 HIGH PRIORITY (Week 2)
+3. **Frontend Component** (Phase 3)
+   - Create OffRampForm component
+   - Add off-ramp page route
+   - Integrate with backend
+
+4. **Backend API - Basic** (Phase 4.1, 4.2)
+   - Generate wallet address endpoint
+   - Check token endpoint
+   - Basic wallet monitoring
+
+### 🟢 MEDIUM PRIORITY (Week 3)
+5. **1inch Integration** (Phase 5)
+   - Set up 1inch API
+   - Implement swap functionality
+   - Test with various tokens
+
+6. **Payment Processing** (Phase 4.3, 4.4)
+   - Swap to USDC endpoint
+   - Paystack payment endpoint
+   - Verify USDC before payment
+
+### 🔵 LOWER PRIORITY (Week 4)
+7. **Admin Dashboard** (Phase 7)
+   - Off-ramp transactions page
+   - Manual actions
+   - Statistics
+
+8. **Error Handling** (Phase 8)
+   - Retry logic
+   - Refund mechanism
+   - Manual review workflow
+
+---
+
+## Files to Create/Modify
+
+### New Files
+1. `supabase/migrations/018_create_offramp_tables.sql` - Database schema
+2. `lib/offramp-wallet.ts` - HD wallet utility
+3. `lib/1inch-swap.ts` - 1inch DEX integration
+4. `lib/offramp-fees.ts` - Fee calculation
+5. `components/OffRampForm.tsx` - Frontend form component
+6. `app/offramp/page.tsx` - Off-ramp page route
+7. `app/api/offramp/generate-address/route.ts` - Generate wallet endpoint
+8. `app/api/offramp/check-token/route.ts` - Check token endpoint
+9. `app/api/offramp/swap-token/route.ts` - Swap token endpoint
+10. `app/api/offramp/process-payment/route.ts` - Paystack payment endpoint
+11. `app/api/offramp/monitor-wallets/route.ts` - Background monitoring
+12. `app/api/admin/offramp/route.ts` - Admin API endpoints
+13. `app/admin/offramp/page.tsx` - Admin dashboard page
+
+### Modified Files
+1. `lib/settings.ts` - Add off-ramp settings
+2. `app/admin/settings/page.tsx` - Add off-ramp settings UI
+3. `app/admin/layout.tsx` - Add off-ramp navigation link
+4. `app/layout.tsx` or navigation component - Add off-ramp link for users
+5. `.env.local` - Add HD wallet mnemonic and admin wallet
+
+---
+
+## Success Criteria
+
+✅ **HD Wallet System**
+- Unique wallet addresses generated for each transaction
+- Addresses are cryptographically secure
+- Can monitor all addresses from master seed
+
+✅ **Token Detection**
+- System detects any Base token sent to unique address
+- Correctly identifies token type and amount
+- Updates transaction status automatically
+
+✅ **Swap Functionality**
+- Successfully swaps any Base token to USDC
+- USDC sent to admin wallet (not user wallet)
+- Handles swap failures with retries
+
+✅ **Payment Processing**
+- Only pays user after USDC confirmed in admin wallet
+- Calculates fees correctly
+- Sends Naira to user's account via Paystack
+
+✅ **Admin Dashboard**
+- All off-ramp transactions visible
+- Can manually retry, refund, or mark as paid
+- Statistics and filtering work correctly
+
+✅ **Error Handling**
+- Retry mechanism works (2 auto-retries)
+- Manual review available after failures
+- Refund mechanism functional
+
+---
+
+## Next Steps - Off-Ramp Implementation
+
+1. **Start with Phase 1**: Create database schema
+2. **Then Phase 2**: Set up HD wallet system
+3. **Then Phase 3**: Build frontend component
+4. **Then Phase 4**: Implement backend APIs
+5. **Then Phase 5**: Integrate 1inch DEX
+6. **Finally**: Admin dashboard and error handling
+
+**Ready to proceed with off-ramp implementation?** Switch to Executor mode to begin Phase 1.
