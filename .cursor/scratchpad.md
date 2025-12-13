@@ -1264,3 +1264,131 @@ OFFRAMP_ADMIN_PRIVATE_KEY="0x..." # Private key for signing swaps (optional, use
 6. **Finally**: Admin dashboard and error handling
 
 **Ready to proceed with off-ramp implementation?** Switch to Executor mode to begin Phase 1.
+
+---
+
+## 🔄 WALLET EMPTYING SYSTEM - NEW REQUIREMENT
+
+### Background and Motivation
+
+**Current Issue:**
+- Swapping via 0x API sometimes fails silently or doesn't complete
+- System only swaps the first detected token, not all tokens in the wallet
+- User wallets may retain tokens after processing, causing confusion
+
+**New Requirement:**
+- **Every user wallet address MUST be empty after off-ramp processing**
+- System must detect and swap ALL tokens (not just one)
+- If user doesn't have enough gas, fund the wallet first
+- Swap all tokens to USDT/USDC
+- Send all USDT/USDC to master wallet (receiver wallet)
+- Recover ALL ETH gas fees back to master wallet
+- Calculate equivalent amount in Naira (sum of all swapped tokens)
+- Pay the end user that total amount
+
+### Key Challenges and Analysis
+
+1. **Token Detection**: Need to scan for ALL ERC20 tokens, not just common ones
+2. **Gas Management**: Fund wallet if needed, then recover all ETH after swaps
+3. **Multiple Swaps**: Handle multiple different tokens in one wallet
+4. **Amount Calculation**: Sum all swapped tokens, convert to NGN
+5. **Atomicity**: Ensure wallet is completely emptied or transaction fails
+
+### High-level Task Breakdown
+
+**Phase 1: Enhanced Token Detection**
+- [ ] Scan wallet for ALL ERC20 tokens (not just common ones)
+- [ ] Detect native ETH balance
+- [ ] Return list of all tokens with balances > 0
+- [ ] Update `check-token` endpoint to return all tokens
+
+**Phase 2: Gas Funding & Recovery**
+- [ ] Check if wallet has enough ETH for gas
+- [ ] If not, fund from master wallet
+- [ ] After all swaps, recover ALL remaining ETH to master wallet
+- [ ] Verify wallet is completely empty
+
+**Phase 3: Multi-Token Swap System**
+- [ ] Create endpoint to swap all tokens sequentially
+- [ ] Swap each detected token to USDC/USDT
+- [ ] Handle multiple swaps in one transaction flow
+- [ ] Track all swap transactions
+
+**Phase 4: Complete Wallet Emptying**
+- [ ] Transfer all USDC/USDT to master wallet (receiver wallet)
+- [ ] Recover all ETH to master wallet
+- [ ] Verify wallet is completely empty (ETH = 0, all tokens = 0)
+- [ ] Update transaction status
+
+**Phase 5: Amount Calculation & Payment**
+- [ ] Sum all swapped amounts (in USDC equivalent)
+- [ ] Calculate total NGN amount using exchange rate
+- [ ] Deduct fees
+- [ ] Pay user via Paystack
+
+### Implementation Details
+
+**New/Modified Endpoints:**
+
+1. **`/api/offramp/check-token` (MODIFY)**
+   - Scan for ALL tokens (not just first one)
+   - Return array of all tokens found with balances
+   - Support both single token (backward compatible) and multi-token detection
+
+2. **`/api/offramp/empty-wallet` (NEW)**
+   - Main endpoint for complete wallet emptying
+   - Detects all tokens
+   - Funds gas if needed
+   - Swaps all tokens to USDC
+   - Transfers USDC to master wallet
+   - Recovers ETH to master wallet
+   - Calculates and records total amount
+   - Returns summary of all actions
+
+3. **`/api/offramp/swap-token` (MODIFY)**
+   - Keep existing functionality for single token swaps
+   - Add support for batch swapping (optional)
+
+**Database Changes:**
+- Add field to track all tokens found: `all_tokens_detected JSONB`
+- Add field for total USDC amount: `total_usdc_amount`
+- Add field for wallet emptied status: `wallet_emptied BOOLEAN`
+
+### Files to Create/Modify
+
+**New Files:**
+1. `lib/wallet-scanner.ts` - Utility to scan wallet for all ERC20 tokens
+2. `lib/wallet-emptier.ts` - Core logic for emptying wallets
+
+**Modified Files:**
+1. `app/api/offramp/check-token/route.ts` - Return all tokens
+2. `app/api/offramp/swap-token/route.ts` - Enhance to handle multiple tokens
+3. `app/api/offramp/monitor-wallets/route.ts` - Use new empty-wallet endpoint
+4. `lib/offramp-wallet.ts` - Add gas funding/recovery utilities
+
+### Success Criteria
+
+✅ **Complete Wallet Emptying**
+- All tokens detected and swapped
+- All USDC transferred to master wallet
+- All ETH recovered to master wallet
+- Wallet balance verified as zero
+
+✅ **Gas Management**
+- Wallet funded if insufficient gas
+- All gas recovered after swaps
+- No ETH left in user wallet
+
+✅ **Amount Calculation**
+- Total amount calculated correctly
+- All tokens converted to USDC equivalent
+- NGN amount calculated with fees deducted
+
+✅ **Payment Processing**
+- User paid correct total amount
+- Transaction marked as completed
+- Wallet verified as empty
+
+---
+
+**Status**: 🟡 IN PROGRESS - Executor implementing wallet emptying system

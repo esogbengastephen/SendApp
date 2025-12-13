@@ -1,46 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createPublicClient, http, formatUnits } from "viem";
-import { base } from "viem/chains";
 import { supabaseAdmin } from "@/lib/supabase";
-import { BASE_RPC_URL } from "@/lib/constants";
-
-// ERC20 Token ABI (minimal - just what we need)
-const ERC20_ABI = [
-  {
-    constant: true,
-    inputs: [{ name: "_owner", type: "address" }],
-    name: "balanceOf",
-    outputs: [{ name: "balance", type: "uint256" }],
-    type: "function",
-  },
-  {
-    constant: true,
-    inputs: [],
-    name: "decimals",
-    outputs: [{ name: "", type: "uint8" }],
-    type: "function",
-  },
-  {
-    constant: true,
-    inputs: [],
-    name: "symbol",
-    outputs: [{ name: "", type: "string" }],
-    type: "function",
-  },
-] as const;
-
-/**
- * Get public client for Base network
- */
-function getPublicClient() {
-  return createPublicClient({
-    chain: base,
-    transport: http(BASE_RPC_URL, {
-      retryCount: 3,
-      retryDelay: 1000,
-    }),
-  });
-}
+import { scanWalletForAllTokens } from "@/lib/wallet-scanner";
 
 /**
  * Check wallet for incoming tokens
@@ -91,99 +51,41 @@ export async function POST(request: NextRequest) {
     }
 
     const walletAddress = transaction.unique_wallet_address;
-    const publicClient = getPublicClient();
 
-    // Check native ETH balance first
-    const ethBalance = await publicClient.getBalance({
-      address: walletAddress as `0x${string}`,
-    });
+    // Use wallet scanner to find ALL tokens
+    console.log(`[Check Token] Scanning wallet ${walletAddress} for all tokens...`);
+    const allTokens = await scanWalletForAllTokens(walletAddress);
 
-    let detectedToken: {
-      address: string | null;
-      symbol: string;
-      amount: string;
-      amountRaw: string;
-    } | null = null;
-
-    // If ETH balance > 0, user sent ETH
-    if (ethBalance > 0n) {
-      const ethAmount = formatUnits(ethBalance, 18);
-      detectedToken = {
-        address: null, // Native ETH has no contract address
-        symbol: "ETH",
-        amount: ethAmount,
-        amountRaw: ethBalance.toString(),
-      };
-    } else {
-      // Check for common ERC20 tokens on Base
-      // We'll check a list of common tokens, or we can scan recent transactions
-      // For now, let's check USDC, DAI, WETH as common tokens
-      const commonTokens = [
-        "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913", // USDC on Base
-        "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb", // DAI on Base
-        "0x4200000000000000000000000000000000000006", // WETH on Base
-      ];
-
-      for (const tokenAddress of commonTokens) {
-        try {
-          const balance = (await publicClient.readContract({
-            address: tokenAddress as `0x${string}`,
-            abi: ERC20_ABI,
-            functionName: "balanceOf",
-            args: [walletAddress as `0x${string}`],
-          })) as bigint;
-
-          if (balance > 0n) {
-            // Get token metadata
-            const decimals = (await publicClient.readContract({
-              address: tokenAddress as `0x${string}`,
-              abi: ERC20_ABI,
-              functionName: "decimals",
-            })) as number;
-
-            const symbol = (await publicClient.readContract({
-              address: tokenAddress as `0x${string}`,
-              abi: ERC20_ABI,
-              functionName: "symbol",
-            })) as string;
-
-            const amount = formatUnits(balance, decimals);
-
-            detectedToken = {
-              address: tokenAddress,
-              symbol,
-              amount,
-              amountRaw: balance.toString(),
-            };
-            break; // Found a token, stop checking
-          }
-        } catch (error) {
-          // Token might not exist or contract call failed, continue to next
-          console.log(`[Check Token] Could not check token ${tokenAddress}:`, error);
-        }
-      }
-    }
-
-    // If no token detected, return
-    if (!detectedToken) {
+    // If no tokens detected, return
+    if (allTokens.length === 0) {
       return NextResponse.json({
         success: true,
         tokenDetected: false,
+        tokens: [],
         message: "No tokens detected in wallet",
       });
     }
 
-    // Update transaction with detected token info
+    console.log(`[Check Token] Found ${allTokens.length} token(s):`, allTokens.map(t => `${t.symbol} (${t.amount})`));
+
+    // For backward compatibility, use the first token as the primary token
+    // But also store all tokens in the response
+    const primaryToken = allTokens[0];
+
+    // Update transaction with primary token info (for backward compatibility)
+    // Also store all tokens as JSON
     const { error: updateError } = await supabaseAdmin
       .from("offramp_transactions")
       .update({
-        token_address: detectedToken.address,
-        token_symbol: detectedToken.symbol,
-        token_amount: detectedToken.amount,
-        token_amount_raw: detectedToken.amountRaw,
+        token_address: primaryToken.address,
+        token_symbol: primaryToken.symbol,
+        token_amount: primaryToken.amount,
+        token_amount_raw: primaryToken.amountRaw,
         status: "token_received",
         token_received_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        // Store all tokens as JSON for complete wallet emptying
+        all_tokens_detected: JSON.stringify(allTokens),
       })
       .eq("transaction_id", transactionId);
 
@@ -198,14 +100,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`[Check Token] ✅ Token detected: ${detectedToken.symbol} - ${detectedToken.amount}`);
+    console.log(`[Check Token] ✅ ${allTokens.length} token(s) detected. Primary: ${primaryToken.symbol} - ${primaryToken.amount}`);
 
     return NextResponse.json({
       success: true,
       tokenDetected: true,
-      tokenAddress: detectedToken.address,
-      tokenSymbol: detectedToken.symbol,
-      tokenAmount: detectedToken.amount,
+      // Backward compatibility fields
+      tokenAddress: primaryToken.address,
+      tokenSymbol: primaryToken.symbol,
+      tokenAmount: primaryToken.amount,
+      // New fields for all tokens
+      tokens: allTokens.map(t => ({
+        address: t.address,
+        symbol: t.symbol,
+        amount: t.amount,
+        amountRaw: t.amountRaw,
+        decimals: t.decimals,
+      })),
+      tokenCount: allTokens.length,
       status: "token_received",
     });
   } catch (error) {

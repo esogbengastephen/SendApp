@@ -3,8 +3,8 @@ import axios from "axios";
 import { createPublicClient, http, formatUnits } from "viem";
 import { base } from "viem/chains";
 import { supabaseAdmin } from "@/lib/supabase";
-import { getAdminWalletAddress } from "@/lib/offramp-wallet";
-import { USDC_BASE_ADDRESS } from "@/lib/1inch-swap";
+import { getReceiverWalletAddress } from "@/lib/offramp-wallet";
+import { USDC_BASE_ADDRESS } from "@/lib/0x-swap";
 import { getExchangeRate } from "@/lib/settings";
 import { calculateTransactionFee, calculateFeeInTokens } from "@/lib/fee-calculation";
 // Off-ramp revenue will be recorded separately
@@ -42,9 +42,9 @@ function getPublicClient() {
 }
 
 /**
- * Verify USDC received in admin wallet
+ * Verify USDC received in a wallet address
  */
-async function verifyUSDCReceived(adminWallet: string, expectedAmount: string): Promise<boolean> {
+async function verifyUSDCReceived(walletAddress: string, expectedAmount: string): Promise<boolean> {
   try {
     const publicClient = getPublicClient();
     
@@ -52,7 +52,7 @@ async function verifyUSDCReceived(adminWallet: string, expectedAmount: string): 
       address: USDC_BASE_ADDRESS as `0x${string}`,
       abi: ERC20_ABI,
       functionName: "balanceOf",
-      args: [adminWallet as `0x${string}`],
+      args: [walletAddress as `0x${string}`],
     })) as bigint;
 
     const decimals = (await publicClient.readContract({
@@ -223,9 +223,9 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Verify USDC received in admin wallet
-    const adminWallet = getAdminWalletAddress();
-    const usdcReceived = await verifyUSDCReceived(adminWallet, transaction.usdc_amount_raw);
+    // Verify USDC received in receiver wallet (where USDC is sent after swap)
+    const receiverWallet = getReceiverWalletAddress();
+    const usdcReceived = await verifyUSDCReceived(receiverWallet, transaction.usdc_amount_raw);
 
     if (!usdcReceived) {
       // Update status to usdc_received but don't proceed with payment yet
@@ -234,7 +234,7 @@ export async function POST(request: NextRequest) {
         .from("offramp_transactions")
         .update({
           status: "swapping", // Keep as swapping until USDC confirmed
-          error_message: "USDC not yet confirmed in admin wallet",
+          error_message: "USDC not yet confirmed in receiver wallet",
           updated_at: new Date().toISOString(),
         })
         .eq("transaction_id", transactionId);
@@ -242,7 +242,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          message: "USDC not yet confirmed in admin wallet. Please try again in a few moments.",
+          message: "USDC not yet confirmed in receiver wallet. Please try again in a few moments.",
         },
         { status: 400 }
       );

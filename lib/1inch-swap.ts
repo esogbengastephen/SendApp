@@ -59,9 +59,30 @@ export async function getSwapQuote(
     };
   } catch (error: any) {
     console.error("[1inch] Error getting swap quote:", error);
+    
+    // Log full error details for debugging
+    if (error.response) {
+      console.error("[1inch] Response status:", error.response.status);
+      console.error("[1inch] Response data:", JSON.stringify(error.response.data, null, 2));
+    }
+    
+    // Extract error message from various possible formats
+    let errorMessage = "Failed to get swap quote";
+    
+    if (error.response?.data) {
+      errorMessage = 
+        error.response.data.description || 
+        error.response.data.message || 
+        error.response.data.error || 
+        error.response.data.reason ||
+        JSON.stringify(error.response.data);
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
     return {
       success: false,
-      error: error.response?.data?.description || error.message || "Failed to get swap quote",
+      error: errorMessage,
     };
   }
 }
@@ -102,12 +123,24 @@ export async function getSwapTransaction(
       slippage: slippage,
     };
 
+    console.log(`[1inch] Calling swap API with params:`, {
+      url,
+      src: params.src,
+      dst: params.dst,
+      amount: params.amount,
+      from: params.from,
+      slippage: params.slippage,
+      chainId: BASE_CHAIN_ID,
+    });
+
     const response = await axios.get(url, {
       params,
       headers: {
         Authorization: `Bearer ${ONEINCH_API_KEY}`,
       },
     });
+    
+    console.log(`[1inch] ✅ Swap transaction received successfully`);
 
     return {
       success: true,
@@ -115,9 +148,31 @@ export async function getSwapTransaction(
     };
   } catch (error: any) {
     console.error("[1inch] Error getting swap transaction:", error);
+    
+    // Log full error details for debugging
+    if (error.response) {
+      console.error("[1inch] Response status:", error.response.status);
+      console.error("[1inch] Response data:", JSON.stringify(error.response.data, null, 2));
+    }
+    
+    // Extract error message from various possible formats
+    let errorMessage = "Failed to get swap transaction";
+    
+    if (error.response?.data) {
+      // Try different possible error message fields
+      errorMessage = 
+        error.response.data.description || 
+        error.response.data.message || 
+        error.response.data.error || 
+        error.response.data.reason ||
+        JSON.stringify(error.response.data);
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
     return {
       success: false,
-      error: error.response?.data?.description || error.message || "Failed to get swap transaction",
+      error: errorMessage,
     };
   }
 }
