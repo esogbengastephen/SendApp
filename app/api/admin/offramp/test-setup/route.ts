@@ -82,14 +82,15 @@ export async function GET(request: NextRequest) {
       });
 
       const balanceETH = formatEther(masterBalance);
-      const balanceUSD = parseFloat(balanceETH) * 3200; // Approximate ETH price
+      const balanceETHNum = parseFloat(balanceETH);
+      const balanceUSD = balanceETHNum * 3200; // Approximate ETH price
 
       results.checks.masterWallet = {
-        status: balanceETH >= "0.001" ? "✅ Sufficient" : balanceETH >= "0.0005" ? "⚠️ Low" : "❌ Insufficient",
+        status: balanceETHNum >= 0.001 ? "✅ Sufficient" : balanceETHNum >= 0.0005 ? "⚠️ Low" : "❌ Insufficient",
         address: masterWallet.address,
         balance: balanceETH,
         balanceUSD: `$${balanceUSD.toFixed(2)}`,
-        recommendation: balanceETH < "0.001" ? "Fund with at least 0.001 ETH (~$3.20)" : "OK",
+        recommendation: balanceETHNum < 0.001 ? "Fund with at least 0.001 ETH (~$3.20)" : "OK",
       };
     } catch (error: any) {
       results.checks.masterWallet = {

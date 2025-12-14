@@ -58,6 +58,13 @@ export default function OffRampForm() {
   const [isCheckingToken, setIsCheckingToken] = useState(false);
   const [transactionStatus, setTransactionStatus] = useState<string>("");
   const checkingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [timestamps, setTimestamps] = useState<{
+    createdAt?: string;
+    tokenReceivedAt?: string;
+    usdcReceivedAt?: string;
+    paidAt?: string;
+    updatedAt?: string;
+  }>({});
 
   // Fetch banks from Paystack on mount
   useEffect(() => {
@@ -90,25 +97,49 @@ export default function OffRampForm() {
     fetchBanks();
   }, []);
 
-  // Check for existing off-ramp transaction in localStorage on mount
+  // Check for existing off-ramp transaction in Supabase on mount
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const storedTx = localStorage.getItem("offrampTransaction");
-      if (storedTx) {
-        try {
-          const tx: OffRampTransaction = JSON.parse(storedTx);
-          setTransactionId(tx.transactionId);
-          setUniqueWalletAddress(tx.uniqueWalletAddress);
-          setAccountNumber(tx.accountNumber);
+    const loadTransactionFromSupabase = async () => {
+      try {
+        const user = getUserFromStorage();
+        const userEmail = user?.email || null;
+
+        if (!userEmail) {
+          // No user email, can't load transaction
+          return;
+        }
+
+        // Fetch most recent pending/active transaction for this user
+        const response = await fetch(`/api/offramp/get-user-transaction?userEmail=${encodeURIComponent(userEmail)}`);
+        const data = await response.json();
+
+        if (data.success && data.transaction) {
+          const tx = data.transaction;
+          setTransactionId(tx.transaction_id);
+          setUniqueWalletAddress(tx.unique_wallet_address);
+          setAccountNumber(tx.user_account_number);
+          setAccountName(tx.user_account_name || "");
           setPaymentGenerated(true);
           setTransactionStatus(tx.status || "pending");
+          
+          // Set timestamps
+          setTimestamps({
+            createdAt: tx.created_at,
+            tokenReceivedAt: tx.token_received_at,
+            usdcReceivedAt: tx.usdc_received_at,
+            paidAt: tx.paid_at,
+            updatedAt: tx.updated_at,
+          });
+          
           // Start checking status
-          startStatusCheck(tx.transactionId);
-        } catch (error) {
-          console.error("Error parsing stored transaction:", error);
+          startStatusCheck(tx.transaction_id);
         }
+      } catch (error) {
+        console.error("Error loading transaction from Supabase:", error);
       }
-    }
+    };
+
+    loadTransactionFromSupabase();
   }, []);
 
   // Cleanup interval on unmount
@@ -278,14 +309,8 @@ export default function OffRampForm() {
         setPaymentGenerated(true);
         setTransactionStatus("pending");
 
-        // Store in localStorage
-        const tx: OffRampTransaction = {
-          transactionId: data.transactionId,
-          uniqueWalletAddress: data.uniqueWalletAddress,
-          accountNumber: accountNumber.trim(),
-          status: "pending",
-        };
-        localStorage.setItem("offrampTransaction", JSON.stringify(tx));
+        // Transaction is now stored in Supabase via generate-address endpoint
+        // No need to store in localStorage
 
         // Start checking transaction status
         startStatusCheck(data.transactionId);
@@ -332,13 +357,19 @@ export default function OffRampForm() {
         if (data.success && data.status) {
           setTransactionStatus(data.status);
 
-          // Update localStorage
-          const storedTx = localStorage.getItem("offrampTransaction");
-          if (storedTx) {
-            const tx: OffRampTransaction = JSON.parse(storedTx);
-            tx.status = data.status;
-            localStorage.setItem("offrampTransaction", JSON.stringify(tx));
+          // Update timestamps if provided
+          if (data.createdAt || data.tokenReceivedAt || data.usdcReceivedAt || data.paidAt || data.updatedAt) {
+            setTimestamps(prev => ({
+              ...prev,
+              ...(data.createdAt && { createdAt: data.createdAt }),
+              ...(data.tokenReceivedAt && { tokenReceivedAt: data.tokenReceivedAt }),
+              ...(data.usdcReceivedAt && { usdcReceivedAt: data.usdcReceivedAt }),
+              ...(data.paidAt && { paidAt: data.paidAt }),
+              ...(data.updatedAt && { updatedAt: data.updatedAt }),
+            }));
           }
+
+          // Status is stored in Supabase, no need to update localStorage
 
           // If completed or failed, stop checking
           if (data.status === "completed" || data.status === "failed" || data.status === "refunded") {
@@ -408,48 +439,22 @@ export default function OffRampForm() {
         if (data.tokenDetected) {
           setTransactionStatus(data.status || "token_received");
           
-          // Update localStorage
-          const storedTx = localStorage.getItem("offrampTransaction");
-          if (storedTx) {
-            const tx: OffRampTransaction = JSON.parse(storedTx);
-            tx.status = data.status || "token_received";
-            localStorage.setItem("offrampTransaction", JSON.stringify(tx));
-          }
+          // Status is now stored in Supabase (updated by check-token endpoint)
+          // No need to update localStorage
 
-          setToast({
-            message: `✅ ${data.tokenSymbol || "Token"} detected! Amount: ${data.tokenAmount || "N/A"}. Starting swap...`,
-            type: "success",
-            isVisible: true,
-          });
-
-          // Immediately trigger swap after token detection
-          try {
-            const swapResponse = await fetch("/api/offramp/swap-token", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                transactionId,
-              }),
+          if (data.swapTriggered) {
+            setToast({
+              message: `✅ ${data.tokenSymbol || "Token"} detected! Swap initiated automatically. TX: ${data.swapTxHash?.slice(0, 10)}...`,
+              type: "success",
+              isVisible: true,
             });
-
-            const swapData = await swapResponse.json();
-            
-            if (swapData.success) {
-              setToast({
-                message: `🔄 Swap initiated! Transaction hash: ${swapData.swapTxHash?.slice(0, 10)}...`,
-                type: "success",
-                isVisible: true,
-              });
-              setTransactionStatus("swapping");
-            } else {
-              console.error("Swap initiation failed:", swapData);
-              // Don't show error to user, swap will be retried automatically
-            }
-          } catch (swapError) {
-            console.error("Error triggering swap:", swapError);
-            // Don't show error to user, swap will be retried automatically
+            setTransactionStatus("swapping");
+          } else {
+            setToast({
+              message: `✅ ${data.tokenSymbol || "Token"} detected! ${data.swapError || "Swap failed. Please try again."}`,
+              type: data.swapTriggered ? "success" : "error",
+              isVisible: true,
+            });
           }
 
           // Restart status checking to monitor swap progress
@@ -499,7 +504,7 @@ export default function OffRampForm() {
       clearInterval(checkingIntervalRef.current);
     }
     
-    localStorage.removeItem("offrampTransaction");
+    // Transaction data is stored in Supabase, no need to remove from localStorage
   };
 
   const getStatusMessage = (status: string): string => {
@@ -685,9 +690,29 @@ export default function OffRampForm() {
             {transactionStatus && (
               <div className="bg-slate-100 dark:bg-slate-700 rounded-lg p-4">
                 <p className="text-sm text-slate-600 dark:text-slate-400 mb-1">Status</p>
-                <p className={`font-semibold ${getStatusColor(transactionStatus)}`}>
+                <p className={`font-semibold ${getStatusColor(transactionStatus)} mb-2`}>
                   {getStatusMessage(transactionStatus)}
                 </p>
+                {/* Timestamps */}
+                <div className="text-xs text-slate-500 dark:text-slate-400 space-y-1 mt-3 pt-3 border-t border-slate-300 dark:border-slate-600">
+                  {timestamps.createdAt && (
+                    <p>Created: {new Date(timestamps.createdAt).toLocaleString()}</p>
+                  )}
+                  {timestamps.tokenReceivedAt && (
+                    <p>Token Received: {new Date(timestamps.tokenReceivedAt).toLocaleString()}</p>
+                  )}
+                  {timestamps.usdcReceivedAt && (
+                    <p>USDC Received: {new Date(timestamps.usdcReceivedAt).toLocaleString()}</p>
+                  )}
+                  {timestamps.paidAt && (
+                    <p>Paid: {new Date(timestamps.paidAt).toLocaleString()}</p>
+                  )}
+                  {timestamps.updatedAt && (
+                    <p className="text-slate-400 dark:text-slate-500">
+                      Last Updated: {new Date(timestamps.updatedAt).toLocaleString()}
+                    </p>
+                  )}
+                </div>
               </div>
             )}
 

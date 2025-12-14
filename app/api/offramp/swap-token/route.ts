@@ -44,14 +44,59 @@ export async function POST(request: NextRequest) {
     }
 
     // Verify token is received
-    if (!transaction.token_address || !transaction.token_amount_raw) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Token not received yet or already processed",
-        },
-        { status: 400 }
-      );
+    // If token_address is null (ETH was detected first), check all_tokens_detected for ERC20 tokens
+    let tokenAddress = transaction.token_address;
+    let tokenAmountRaw = transaction.token_amount_raw;
+    let tokenSymbol = transaction.token_symbol;
+    let tokenAmount = transaction.token_amount;
+
+    if (!tokenAddress || !tokenAmountRaw) {
+      // Check all_tokens_detected for ERC20 tokens (prefer non-ETH tokens)
+      if (transaction.all_tokens_detected) {
+        try {
+          const allTokens = typeof transaction.all_tokens_detected === 'string' 
+            ? JSON.parse(transaction.all_tokens_detected) 
+            : transaction.all_tokens_detected;
+          
+          // Find first ERC20 token (non-ETH, non-null address)
+          const erc20Token = Array.isArray(allTokens) 
+            ? allTokens.find((t: any) => t.address && t.address !== null && t.symbol !== 'ETH')
+            : null;
+          
+          if (erc20Token) {
+            console.log(`[Swap Token] Using ERC20 token from all_tokens_detected: ${erc20Token.symbol}`);
+            tokenAddress = erc20Token.address;
+            tokenAmountRaw = erc20Token.amountRaw;
+            tokenSymbol = erc20Token.symbol;
+            tokenAmount = erc20Token.amount;
+            
+            // Update transaction to use this token as primary
+            await supabaseAdmin
+              .from("offramp_transactions")
+              .update({
+                token_address: tokenAddress,
+                token_symbol: tokenSymbol,
+                token_amount: tokenAmount,
+                token_amount_raw: tokenAmountRaw,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("transaction_id", transactionId);
+          }
+        } catch (error) {
+          console.error("[Swap Token] Error parsing all_tokens_detected:", error);
+        }
+      }
+      
+      // If still no token address, return error
+      if (!tokenAddress || !tokenAmountRaw) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Token not received yet or already processed",
+          },
+          { status: 400 }
+        );
+      }
     }
 
     // Check if already swapping or swapped (but allow retry if stuck in swapping without tx hash)
@@ -64,13 +109,63 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // If status is usdc_received or completed, verify the transaction actually exists on-chain
     if (transaction.status === "usdc_received" || transaction.status === "completed") {
-      return NextResponse.json({
-        success: true,
-        message: "Swap already completed",
-        status: transaction.status,
-        swapTxHash: transaction.swap_tx_hash,
-      });
+      // Verify the swap transaction actually exists on-chain
+      if (transaction.swap_tx_hash) {
+        try {
+          const receipt = await publicClient.getTransactionReceipt({
+            hash: transaction.swap_tx_hash as `0x${string}`,
+          });
+          
+          if (receipt && receipt.status === "success") {
+            // Transaction exists and succeeded, return early
+            return NextResponse.json({
+              success: true,
+              message: "Swap already completed",
+              status: transaction.status,
+              swapTxHash: transaction.swap_tx_hash,
+            });
+          } else if (receipt && receipt.status === "reverted") {
+            // Transaction reverted, allow retry
+            console.log(`[Swap Token] Previous swap transaction reverted, allowing retry`);
+            await supabaseAdmin
+              .from("offramp_transactions")
+              .update({
+                status: "token_received",
+                error_message: "Previous swap transaction reverted",
+                swap_tx_hash: null,
+                updated_at: new Date().toISOString(),
+              })
+              .eq("transaction_id", transactionId);
+          }
+        } catch (error: any) {
+          // Transaction doesn't exist on-chain, allow retry
+          console.log(`[Swap Token] Previous swap transaction not found on-chain, allowing retry: ${error.message}`);
+          await supabaseAdmin
+            .from("offramp_transactions")
+            .update({
+              status: "token_received",
+              error_message: "Previous swap transaction not found on-chain",
+              swap_tx_hash: null,
+              usdc_amount: null,
+              usdc_amount_raw: null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("transaction_id", transactionId);
+        }
+      } else {
+        // No swap_tx_hash but status is usdc_received - this is invalid, reset
+        console.log(`[Swap Token] Status is usdc_received but no swap_tx_hash, resetting`);
+        await supabaseAdmin
+          .from("offramp_transactions")
+          .update({
+            status: "token_received",
+            error_message: "Invalid state: usdc_received without swap_tx_hash",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("transaction_id", transactionId);
+      }
     }
 
     // If stuck in "swapping" status without a tx hash, reset to token_received for retry
@@ -121,11 +216,11 @@ export async function POST(request: NextRequest) {
       .eq("transaction_id", transactionId);
 
     // Get swap transaction data from 0x
-    const fromTokenAddress = transaction.token_address; // null for ETH
-    const amount = transaction.token_amount_raw;
+    const fromTokenAddress = tokenAddress; // Use the resolved token address
+    const amount = tokenAmountRaw;
     const amountBigInt = BigInt(amount);
 
-    console.log(`[Swap Token] Getting swap transaction for ${transaction.token_symbol} → USDC`);
+    console.log(`[Swap Token] Getting swap transaction for ${tokenSymbol} → USDC`);
     console.log(`[Swap Token] Amount: ${amount}, From: ${wallet.address}`);
 
     // For ERC20 tokens (not ETH), check if unique wallet has ETH for gas
@@ -373,10 +468,37 @@ export async function POST(request: NextRequest) {
 
       console.log(`[Swap Token] ✅ Swap transaction sent: ${txHash}`);
 
-      // Wait for transaction confirmation
-      const receipt = await publicClient.waitForTransactionReceipt({
-        hash: txHash,
-      });
+      // Wait for transaction confirmation with timeout
+      let receipt;
+      try {
+        receipt = await publicClient.waitForTransactionReceipt({
+          hash: txHash,
+          timeout: 120_000, // 2 minute timeout
+        });
+      } catch (error: any) {
+        console.error(`[Swap Token] ❌ Transaction receipt not found or timeout: ${error.message}`);
+        console.error(`[Swap Token] Transaction hash: ${txHash}`);
+        
+        // Update status back to token_received since swap didn't confirm
+        await supabaseAdmin
+          .from("offramp_transactions")
+          .update({
+            status: "token_received",
+            error_message: `Swap transaction sent but not confirmed: ${txHash}. Error: ${error.message}`,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("transaction_id", transactionId);
+
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Swap transaction sent but not confirmed on-chain",
+            txHash: txHash,
+            error: error.message,
+          },
+          { status: 500 }
+        );
+      }
 
       if (receipt.status === "success") {
         // Get USDC amount from the swap result

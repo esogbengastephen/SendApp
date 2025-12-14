@@ -1,22 +1,29 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase";
 import { getTotalRevenueInSEND } from "@/lib/revenue";
 
 export async function GET() {
   try {
+    console.log("[Stats API] Starting stats fetch...");
     const now = new Date();
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
 
     // Query all transactions from Supabase
-    const { data: allTransactions, error } = await supabase
+    console.log("[Stats API] Querying transactions...");
+    const { data: allTransactions, error } = await supabaseAdmin
       .from("transactions")
       .select("*");
 
     if (error) {
-      console.error("Supabase error:", error);
-      throw error;
+      console.error("[Stats API] Supabase error:", error);
+      return NextResponse.json(
+        { success: false, error: "Database error", details: error.message },
+        { status: 500 }
+      );
     }
+
+    console.log(`[Stats API] Fetched ${allTransactions?.length || 0} transactions`);
 
     const transactions = allTransactions || [];
 
@@ -54,7 +61,7 @@ export async function GET() {
       (tx) => tx.status === "completed"
     );
     const currentTotalRevenue = currentCompletedTransactions.reduce((sum, tx) => {
-      return sum + parseFloat(tx.ngn_amount);
+      return sum + parseFloat(tx.ngn_amount || "0");
     }, 0);
 
     // Calculate previous period stats
@@ -70,7 +77,7 @@ export async function GET() {
       (tx) => tx.status === "completed"
     );
     const previousTotalRevenue = previousCompletedTransactions.reduce((sum, tx) => {
-      return sum + parseFloat(tx.ngn_amount);
+      return sum + parseFloat(tx.ngn_amount || "0");
     }, 0);
 
     // Calculate all-time totals
@@ -86,7 +93,7 @@ export async function GET() {
       (tx) => tx.status === "completed"
     );
     const allTimeTotalRevenue = allTimeCompletedTransactions.reduce((sum, tx) => {
-      return sum + parseFloat(tx.ngn_amount);
+      return sum + parseFloat(tx.ngn_amount || "0");
     }, 0);
 
     // Calculate percentage changes (last 7 days vs previous 7 days)
@@ -118,7 +125,13 @@ export async function GET() {
     };
 
     // Calculate total revenue in $SEND from revenue table
-    const totalRevenueInSEND = await getTotalRevenueInSEND();
+    let totalRevenueInSEND = 0;
+    try {
+      totalRevenueInSEND = await getTotalRevenueInSEND();
+    } catch (revenueError) {
+      console.error("Error fetching total revenue in SEND:", revenueError);
+      // Continue with 0 if revenue fetch fails
+    }
 
     // Calculate stats (all-time totals)
     const stats = {

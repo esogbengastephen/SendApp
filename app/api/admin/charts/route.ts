@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase";
 import { format, subDays } from "date-fns";
 
 interface ChartData {
@@ -14,7 +14,7 @@ export async function GET() {
     const days = 30;
     
     // Query transactions from Supabase
-    const { data: allTransactions, error } = await supabase
+    const { data: allTransactions, error } = await supabaseAdmin
       .from("transactions")
       .select("*")
       .gte("created_at", subDays(new Date(), days).toISOString());

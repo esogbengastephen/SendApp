@@ -262,15 +262,19 @@ export async function POST(request: NextRequest) {
     const exchangeRate = await getExchangeRate();
 
     // Calculate NGN amount from USDC
+    // Use proper decimal handling to avoid precision loss
+    // USDC has 6 decimals, so we multiply by 1e6, then divide by 1e6 after calculation
     const usdcAmount = parseFloat(transaction.usdc_amount || "0");
-    const ngnAmountBeforeFees = usdcAmount * exchangeRate;
+    // Round to 2 decimal places for NGN (standard currency precision)
+    const ngnAmountBeforeFees = Math.round((usdcAmount * exchangeRate) * 100) / 100;
 
     // Calculate fees (same tiered system as on-ramp)
     const feeNGN = await calculateTransactionFee(ngnAmountBeforeFees);
     const feeInSEND = calculateFeeInTokens(feeNGN, exchangeRate);
 
     // Final NGN amount to pay user (after fees)
-    const finalNGNAmount = ngnAmountBeforeFees - feeNGN;
+    // Round to 2 decimal places for NGN (standard currency precision)
+    const finalNGNAmount = Math.round((ngnAmountBeforeFees - feeNGN) * 100) / 100;
 
     if (finalNGNAmount <= 0) {
       return NextResponse.json(

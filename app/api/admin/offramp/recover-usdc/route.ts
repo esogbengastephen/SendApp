@@ -176,7 +176,7 @@ export async function POST(request: NextRequest) {
           usdc_amount_raw: usdcBalance.toString(),
           updated_at: new Date().toISOString(),
         })
-        .eq("transaction_id", targetTransactionId);
+        .eq("transaction_id", transaction.transaction_id);
     }
 
     return NextResponse.json({

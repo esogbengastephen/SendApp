@@ -7,7 +7,7 @@
 import axios from "axios";
 
 const BASE_CHAIN_ID = 8453; // Base mainnet
-const ZEROX_API_URL = "https://api.0x.org/swap/v1";
+const ZEROX_API_URL = "https://api.0x.org/swap/permit2"; // Using v2 Permit2 endpoints
 const ZEROX_API_KEY = process.env.ZEROX_API_KEY; // Optional but recommended for higher rate limits
 
 if (!ZEROX_API_KEY) {
@@ -42,22 +42,25 @@ export async function getSwapQuote(
       sellToken: sellToken,
       buyToken: buyTokenAddress,
       sellAmount: sellAmount,
-      takerAddress: takerAddress,
+      taker: takerAddress, // v2 uses 'taker' instead of 'takerAddress'
       slippagePercentage: slippagePercentage / 100, // Convert percentage to decimal (1% = 0.01)
       chainId: BASE_CHAIN_ID, // Base chain ID
     };
 
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = {
+      "0x-version": "v2", // Required for v2 API
+    };
     if (ZEROX_API_KEY) {
       headers["0x-api-key"] = ZEROX_API_KEY;
     }
 
-    console.log(`[0x] Getting swap quote:`, {
+    console.log(`[0x] Getting swap quote (v2 Permit2):`, {
       sellToken: params.sellToken,
       buyToken: params.buyToken,
       sellAmount: params.sellAmount,
-      takerAddress: params.takerAddress,
+      taker: params.taker,
       slippagePercentage: params.slippagePercentage,
+      chainId: params.chainId,
     });
 
     const response = await axios.get(url, {
@@ -123,34 +126,54 @@ export async function getSwapTransaction(
       sellToken: sellToken,
       buyToken: buyTokenAddress,
       sellAmount: sellAmount,
-      takerAddress: takerAddress,
+      taker: takerAddress, // v2 uses 'taker' instead of 'takerAddress'
       slippagePercentage: slippagePercentage / 100, // Convert percentage to decimal
       chainId: BASE_CHAIN_ID, // Base chain ID
     };
 
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = {
+      "0x-version": "v2", // Required for v2 API
+    };
     if (ZEROX_API_KEY) {
       headers["0x-api-key"] = ZEROX_API_KEY;
     }
 
-    console.log(`[0x] Getting swap transaction:`, {
+    console.log(`[0x] Getting swap transaction (v2 Permit2):`, {
       sellToken: params.sellToken,
       buyToken: params.buyToken,
       sellAmount: params.sellAmount,
-      takerAddress: params.takerAddress,
+      taker: params.taker,
       slippagePercentage: params.slippagePercentage,
       chainId: BASE_CHAIN_ID,
     });
 
-    const response = await axios.get(url, {
-      params,
-      headers,
-    });
+    // Try GET first (standard), if it fails with METHOD_NOT_ALLOWED, use quote response
+    let response;
+    try {
+      response = await axios.get(url, {
+        params,
+        headers,
+      });
+    } catch (error: any) {
+      // If GET fails with METHOD_NOT_ALLOWED, try getting quote first and use its data
+      if (error.response?.data?.name === "METHOD_NOT_ALLOWED" || error.response?.status === 405) {
+        console.log(`[0x] GET swap failed, trying quote endpoint instead...`);
+        const quoteResponse = await axios.get(`${ZEROX_API_URL}/quote`, {
+          params,
+          headers,
+        });
+        // Use quote response as swap response (quote contains swap data in v2)
+        response = quoteResponse;
+      } else {
+        throw error;
+      }
+    }
     
-    console.log(`[0x] ✅ Swap transaction received successfully`);
+    console.log(`[0x] ✅ Swap transaction received successfully (v2 Permit2)`);
 
-    // 0x returns transaction data in a specific format
+    // 0x v2 returns transaction data in a specific format
     // The response includes: to, data, value, gas, gasPrice, buyAmount, etc.
+    // v2 also includes permit2 data if needed
     return {
       success: true,
       tx: {
@@ -163,6 +186,8 @@ export async function getSwapTransaction(
         dstAmount: response.data.buyAmount,
         buyAmount: response.data.buyAmount,
         sellAmount: response.data.sellAmount,
+        // v2 may include permit2 data
+        permit2: response.data.permit2,
         ...response.data,
       },
     };

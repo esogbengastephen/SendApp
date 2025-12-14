@@ -43,6 +43,12 @@ export async function GET(request: NextRequest) {
       ngnAmount: transaction.ngn_amount,
       errorMessage: transaction.error_message,
       paystackReference: transaction.paystack_reference,
+      // Add timestamps
+      createdAt: transaction.created_at,
+      tokenReceivedAt: transaction.token_received_at,
+      usdcReceivedAt: transaction.usdc_received_at,
+      paidAt: transaction.paid_at,
+      updatedAt: transaction.updated_at,
     });
   } catch (error) {
     console.error("[OffRamp] Error checking status:", error);

@@ -95,9 +95,11 @@ export async function POST(
     } catch (error: any) {
       console.error("[Admin OffRamp Retry] Error triggering swap:", error);
       return NextResponse.json({
-        success: true,
-        message: "Transaction reset for retry. Please trigger swap manually.",
-      });
+        success: false,
+        error: "Failed to trigger swap",
+        message: "Transaction status was reset, but swap trigger failed. Please trigger swap manually.",
+        details: error.message,
+      }, { status: 500 });
     }
   } catch (error: any) {
     console.error("[Admin OffRamp Retry] Error:", error);

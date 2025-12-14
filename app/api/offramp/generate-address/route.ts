@@ -35,41 +35,63 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get user from email (if provided)
+    // Get user from email (if provided) or create identifier
     let userId: string | null = null;
     let userIdentifier: string | null = null;
+    const normalizedEmail = userEmail ? userEmail.toLowerCase().trim() : null;
     
-    if (userEmail) {
-      const userResult = await getSupabaseUserByEmail(userEmail);
+    if (normalizedEmail) {
+      const userResult = await getSupabaseUserByEmail(normalizedEmail);
       if (userResult.success && userResult.user) {
         userId = userResult.user.id;
         userIdentifier = userId; // Use user ID as identifier (most stable)
         console.log(`[OffRamp] Found user: ${userResult.user.email} (ID: ${userId})`);
       } else {
         // If user doesn't exist yet, use email as identifier
-        userIdentifier = userEmail.toLowerCase();
-        console.log(`[OffRamp] User not found, using email as identifier: ${userEmail}`);
+        // This will be a guest user (user_id = NULL)
+        userIdentifier = normalizedEmail;
+        console.log(`[OffRamp] User not found in database, using email as identifier: ${normalizedEmail}`);
       }
     } else {
-      // For guest users, use account number as identifier
+      // For guest users without email, use account number as identifier
       userIdentifier = `guest_${accountNumber.trim()}`;
-      console.log(`[OffRamp] Guest user, using account number as identifier`);
+      console.log(`[OffRamp] Guest user (no email), using account number as identifier`);
     }
 
     // Check if user already has a wallet address in a previous transaction
+    // This ensures we reuse the same wallet for the same user
     let walletAddress: string | null = null;
-    if (userIdentifier && userEmail) {
-      const { data: existingTx } = await supabaseAdmin
-        .from("offramp_transactions")
-        .select("unique_wallet_address")
-        .eq("user_email", userEmail.toLowerCase())
-        .not("unique_wallet_address", "is", null)
-        .limit(1)
-        .single();
+    if (userIdentifier) {
+      // For registered users (user_id exists), check by user_id
+      if (userId) {
+        const { data: existingTx } = await supabaseAdmin
+          .from("offramp_transactions")
+          .select("unique_wallet_address")
+          .eq("user_id", userId)
+          .not("unique_wallet_address", "is", null)
+          .limit(1)
+          .maybeSingle();
 
-      if (existingTx?.unique_wallet_address) {
-        walletAddress = existingTx.unique_wallet_address;
-        console.log(`[OffRamp] Found existing wallet for user: ${walletAddress}`);
+        if (existingTx?.unique_wallet_address) {
+          walletAddress = existingTx.unique_wallet_address;
+          console.log(`[OffRamp] Found existing wallet for registered user (ID: ${userId}): ${walletAddress}`);
+        }
+      } 
+      // For guest users (user_id is NULL), check by user_email
+      else if (normalizedEmail) {
+        const { data: existingTx } = await supabaseAdmin
+          .from("offramp_transactions")
+          .select("unique_wallet_address")
+          .eq("user_email", normalizedEmail)
+          .is("user_id", null) // Only check guest users
+          .not("unique_wallet_address", "is", null)
+          .limit(1)
+          .maybeSingle();
+
+        if (existingTx?.unique_wallet_address) {
+          walletAddress = existingTx.unique_wallet_address;
+          console.log(`[OffRamp] Found existing wallet for guest user (email: ${normalizedEmail}): ${walletAddress}`);
+        }
       }
     }
 
@@ -110,13 +132,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Create off-ramp transaction record in database
-    // Note: Multiple transactions can now share the same wallet address
+    // Note: Multiple transactions can share the same wallet address (same user, different account numbers)
+    // But the unique constraint ensures: 1 user = 1 wallet (enforced by migration 022)
     const { data: transaction, error } = await supabaseAdmin
       .from("offramp_transactions")
       .insert({
         transaction_id: transactionId,
-        user_id: userId,
-        user_email: userEmail || "guest",
+        user_id: userId, // NULL for guest users, UUID for registered users
+        user_email: normalizedEmail || "guest",
         user_account_number: accountNumber.trim(),
         user_account_name: accountName?.trim() || null,
         user_bank_code: bankCode?.trim() || null,
@@ -130,26 +153,66 @@ export async function POST(request: NextRequest) {
       console.error("[OffRamp] Error creating transaction:", error);
       console.error("[OffRamp] Error details:", JSON.stringify(error, null, 2));
       
-      // Check if it's a duplicate key error (shouldn't happen after migration, but handle gracefully)
+      // Check if it's a unique constraint violation (user already has a wallet)
       if (error.message?.includes("unique constraint") || error.message?.includes("duplicate key")) {
-        // If wallet address already exists, try to find existing pending transaction
-        const { data: existingTx } = await supabaseAdmin
+        // This means the user already has a wallet address assigned
+        // Find the existing transaction with this wallet
+        let existingTxQuery = supabaseAdmin
           .from("offramp_transactions")
           .select("*")
-          .eq("unique_wallet_address", walletAddress)
-          .eq("user_email", userEmail || "guest")
-          .eq("status", "pending")
+          .eq("unique_wallet_address", walletAddress);
+        
+        if (userId) {
+          existingTxQuery = existingTxQuery.eq("user_id", userId);
+        } else if (normalizedEmail) {
+          existingTxQuery = existingTxQuery
+            .eq("user_email", normalizedEmail)
+            .is("user_id", null);
+        }
+        
+        const { data: existingTx } = await existingTxQuery
           .order("created_at", { ascending: false })
           .limit(1)
           .single();
         
         if (existingTx) {
-          console.log(`[OffRamp] Found existing pending transaction, returning it`);
+          console.log(`[OffRamp] User already has wallet ${walletAddress}. Creating new transaction with same wallet.`);
+          
+          // Try to insert again, but this time we know the wallet exists
+          // The constraint should allow multiple transactions with same wallet (different account numbers)
+          // But if it fails, return the existing transaction
+          const { data: retryTx, error: retryError } = await supabaseAdmin
+            .from("offramp_transactions")
+            .insert({
+              transaction_id: transactionId,
+              user_id: userId,
+              user_email: normalizedEmail || "guest",
+              user_account_number: accountNumber.trim(),
+              user_account_name: accountName?.trim() || null,
+              user_bank_code: bankCode?.trim() || null,
+              unique_wallet_address: walletAddress,
+              status: "pending",
+            })
+            .select()
+            .single();
+          
+          if (retryError) {
+            // If still failing, return existing transaction
+            console.log(`[OffRamp] Still failing, returning existing transaction`);
+            return NextResponse.json({
+              success: true,
+              transactionId: existingTx.transaction_id,
+              uniqueWalletAddress: existingTx.unique_wallet_address,
+              message: "Using existing wallet address for this user",
+            });
+          }
+          
+          // Success on retry
           return NextResponse.json({
             success: true,
-            transactionId: existingTx.transaction_id,
-            uniqueWalletAddress: existingTx.unique_wallet_address,
-            message: "Using existing pending transaction for this wallet",
+            transactionId: retryTx.transaction_id,
+            uniqueWalletAddress: retryTx.unique_wallet_address,
+            message: "Transaction created with existing wallet address",
           });
         }
       }

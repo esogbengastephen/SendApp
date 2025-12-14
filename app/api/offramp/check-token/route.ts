@@ -47,6 +47,7 @@ export async function POST(request: NextRequest) {
         tokenSymbol: transaction.token_symbol,
         tokenAmount: transaction.token_amount,
         status: transaction.status,
+        swapTriggered: transaction.status === "swapping" || transaction.status === "usdc_received",
       });
     }
 
@@ -102,24 +103,75 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Check Token] ✅ ${allTokens.length} token(s) detected. Primary: ${primaryToken.symbol} - ${primaryToken.amount}`);
 
-    return NextResponse.json({
-      success: true,
-      tokenDetected: true,
-      // Backward compatibility fields
-      tokenAddress: primaryToken.address,
-      tokenSymbol: primaryToken.symbol,
-      tokenAmount: primaryToken.amount,
-      // New fields for all tokens
-      tokens: allTokens.map(t => ({
-        address: t.address,
-        symbol: t.symbol,
-        amount: t.amount,
-        amountRaw: t.amountRaw,
-        decimals: t.decimals,
-      })),
-      tokenCount: allTokens.length,
-      status: "token_received",
-    });
+    // AUTOMATICALLY TRIGGER SWAP IMMEDIATELY AFTER TOKEN DETECTION
+    console.log(`[Check Token] 🔄 Automatically triggering swap for transaction ${transactionId}...`);
+    
+    try {
+      const swapResponse = await fetch(`${request.nextUrl.origin}/api/offramp/swap-token`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          transactionId,
+        }),
+      });
+
+      const swapData = await swapResponse.json();
+
+      if (swapData.success) {
+        console.log(`[Check Token] ✅ Swap triggered successfully. TX Hash: ${swapData.swapTxHash}`);
+        return NextResponse.json({
+          success: true,
+          tokenDetected: true,
+          // Backward compatibility fields
+          tokenAddress: primaryToken.address,
+          tokenSymbol: primaryToken.symbol,
+          tokenAmount: primaryToken.amount,
+          // New fields for all tokens
+          tokens: allTokens.map(t => ({
+            address: t.address,
+            symbol: t.symbol,
+            amount: t.amount,
+            amountRaw: t.amountRaw,
+            decimals: t.decimals,
+          })),
+          tokenCount: allTokens.length,
+          status: "swapping", // Status updated to swapping
+          swapTriggered: true,
+          swapTxHash: swapData.swapTxHash,
+          message: "Token detected and swap initiated automatically",
+        });
+      } else {
+        console.error(`[Check Token] ⚠️ Swap trigger failed: ${swapData.message}`);
+        // Return token detected but swap failed
+        return NextResponse.json({
+          success: true,
+          tokenDetected: true,
+          tokenAddress: primaryToken.address,
+          tokenSymbol: primaryToken.symbol,
+          tokenAmount: primaryToken.amount,
+          status: "token_received",
+          swapTriggered: false,
+          swapError: swapData.message,
+          message: "Token detected but swap failed. Please try again.",
+        });
+      }
+    } catch (swapError: any) {
+      console.error(`[Check Token] ❌ Error triggering swap:`, swapError);
+      // Return token detected but swap error
+      return NextResponse.json({
+        success: true,
+        tokenDetected: true,
+        tokenAddress: primaryToken.address,
+        tokenSymbol: primaryToken.symbol,
+        tokenAmount: primaryToken.amount,
+        status: "token_received",
+        swapTriggered: false,
+        swapError: swapError.message || "Failed to trigger swap",
+        message: "Token detected but swap failed. Please try again.",
+      });
+    }
   } catch (error) {
     console.error("[Check Token] Error checking token:", error);
     return NextResponse.json(
