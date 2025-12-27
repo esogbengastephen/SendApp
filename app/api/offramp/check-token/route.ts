@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { scanWalletForAllTokens } from "@/lib/wallet-scanner";
+import { getMasterWallet } from "@/lib/offramp-wallet";
 
 /**
  * Check wallet for incoming tokens
@@ -53,9 +54,14 @@ export async function POST(request: NextRequest) {
 
     const walletAddress = transaction.unique_wallet_address;
 
-    // Use wallet scanner to find ALL tokens
+    // Get master wallet address to exclude internal transfers
+    const masterWallet = getMasterWallet();
+    const masterWalletAddress = masterWallet.address;
+
+    // Use wallet scanner to find ALL tokens (excluding master wallet transfers)
     console.log(`[Check Token] Scanning wallet ${walletAddress} for all tokens...`);
-    const allTokens = await scanWalletForAllTokens(walletAddress);
+    console.log(`[Check Token] Excluding transfers from master wallet: ${masterWalletAddress}`);
+    const allTokens = await scanWalletForAllTokens(walletAddress, masterWalletAddress);
 
     // If no tokens detected, return
     if (allTokens.length === 0) {
@@ -69,9 +75,21 @@ export async function POST(request: NextRequest) {
 
     console.log(`[Check Token] Found ${allTokens.length} token(s):`, allTokens.map(t => `${t.symbol} (${t.amount})`));
 
-    // For backward compatibility, use the first token as the primary token
-    // But also store all tokens in the response
-    const primaryToken = allTokens[0];
+    // CRITICAL: Prioritize ERC20 tokens over ETH
+    // ETH is usually leftover gas, ERC20 tokens are what users actually sent
+    // Sort tokens: ERC20 tokens first, then ETH
+    const sortedTokens = allTokens.sort((a, b) => {
+      // If one is ETH and one is not, prioritize non-ETH
+      if (a.symbol === 'ETH' && b.symbol !== 'ETH') return 1;
+      if (b.symbol === 'ETH' && a.symbol !== 'ETH') return -1;
+      // Otherwise maintain original order
+      return 0;
+    });
+
+    // Use the first token (prioritized ERC20) as the primary token
+    const primaryToken = sortedTokens[0];
+    
+    console.log(`[Check Token] ✅ Primary token selected: ${primaryToken.symbol} (${primaryToken.amount})`);
 
     // Update transaction with primary token info (for backward compatibility)
     // Also store all tokens as JSON

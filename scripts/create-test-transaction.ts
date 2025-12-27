@@ -3,10 +3,44 @@
  * This allows testing with external wallets
  */
 
+// 1) Load .env.local first so Supabase keys are available,
+//    same pattern as other scripts (get-all-offramp-wallets.ts)
+import { readFileSync } from "fs";
+import { join } from "path";
+
+const envPath = join(process.cwd(), ".env.local");
+try {
+  const envContent = readFileSync(envPath, "utf-8");
+  const lines = envContent.split("\n");
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed && !trimmed.startsWith("#")) {
+      const [key, ...valueParts] = trimmed.split("=");
+      if (key && valueParts.length > 0) {
+        const value = valueParts.join("=").trim().replace(/^["']|["']$/g, "");
+        process.env[key.trim()] = value;
+      }
+    }
+  }
+} catch (error) {
+  console.error("⚠️  Could not read .env.local file.");
+}
+
+// 2) Now import Supabase client and helpers
 import { supabaseAdmin } from "../lib/supabase";
 import { nanoid } from "nanoid";
 
-const walletAddress = "0x20717a8732D3341201Fa33A06bBE5ed91DBfdEB2";
+// TEST CONFIG: update these values when creating a new manual test
+// This wallet has already been funded by the user (10 SEND on Base)
+const walletAddress = "0x15dA8947C2bCd22f4728d4898ed161F296b0D54B";
+// Logged-in user email (shown in the top-right of the app)
+const userEmail = "lightblockofweb3@gmail.com";
+// Bank details from the user's screenshot (OPay)
+const userAccountNumber = "7034494055";
+const userAccountName = "GBENGA KOLADE ESO";
+// We can leave bank code generic for now; Paystack recipient creation
+// will fall back or fail gracefully if this doesn't match exactly.
+const userBankCode: string | null = null;
 
 async function createTransaction() {
   console.log(`\n📝 Creating Test Transaction`);
@@ -21,10 +55,10 @@ async function createTransaction() {
       .insert({
         transaction_id: transactionId,
         user_id: null,
-        user_email: "test@example.com",
-        user_account_number: "1234567890",
-        user_account_name: "Test User",
-        user_bank_code: "058",
+        user_email: userEmail.toLowerCase(),
+        user_account_number: userAccountNumber,
+        user_account_name: userAccountName,
+        user_bank_code: userBankCode,
         unique_wallet_address: walletAddress.toLowerCase(),
         status: "pending",
       })

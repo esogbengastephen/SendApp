@@ -14,6 +14,12 @@ const ADMIN_WALLET = process.env.OFFRAMP_ADMIN_WALLET_ADDRESS;
 const RECEIVER_WALLET = process.env.OFFRAMP_RECEIVER_WALLET_ADDRESS; // Where final USDC goes after swap
 const MASTER_WALLET_PRIVATE_KEY = process.env.OFFRAMP_MASTER_WALLET_PRIVATE_KEY; // Optional: custom master wallet private key
 
+// DEBUG: Log exactly what we're getting
+console.log("[DEBUG] MASTER_MNEMONIC length:", MASTER_MNEMONIC?.length || 0);
+console.log("[DEBUG] MASTER_MNEMONIC word count:", MASTER_MNEMONIC?.split(/\s+/).length || 0);
+console.log("[DEBUG] MASTER_MNEMONIC first word:", MASTER_MNEMONIC?.split(/\s+/)[0] || "NONE");
+console.log("[DEBUG] MASTER_MNEMONIC last word:", MASTER_MNEMONIC?.split(/\s+/).slice(-1)[0] || "NONE");
+
 if (!MASTER_MNEMONIC) {
   console.warn("⚠️ OFFRAMP_MASTER_MNEMONIC environment variable is not set. Off-ramp wallet generation will fail.");
 } else {

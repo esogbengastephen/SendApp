@@ -41,18 +41,78 @@ export async function POST(request: NextRequest) {
     // Find transaction by wallet address
     // Note: Multiple transactions can share the same wallet address
     // Get the most recent pending or token_received transaction, or most recent overall
-    const { data: transactions, error } = await supabaseAdmin
+    // Normalize wallet address for comparison (handle checksummed addresses - EIP-55)
+    const normalizedWalletAddress = walletAddress.toLowerCase().trim();
+    
+    console.log(`[Restart By Wallet] Searching for wallet: ${normalizedWalletAddress}`);
+    
+    // Use case-insensitive search: try both exact match and lowercase comparison
+    // First try exact match (in case it's already lowercase in DB)
+    let { data: transactions, error } = await supabaseAdmin
       .from("offramp_transactions")
       .select("*")
-      .eq("unique_wallet_address", walletAddress.toLowerCase())
+      .eq("unique_wallet_address", normalizedWalletAddress)
       .order("created_at", { ascending: false });
+    
+    // If not found with exact match, try fetching all and filtering (handles checksummed addresses)
+    if ((error || !transactions || transactions.length === 0)) {
+      console.log(`[Restart By Wallet] Exact match not found, trying case-insensitive search...`);
+      const allResult = await supabaseAdmin
+        .from("offramp_transactions")
+        .select("*")
+        .order("created_at", { ascending: false });
+      
+      if (!allResult.error && allResult.data) {
+        // Filter by case-insensitive wallet address match
+        transactions = allResult.data.filter(tx => 
+          tx.unique_wallet_address?.toLowerCase() === normalizedWalletAddress
+        );
+        error = null;
+        console.log(`[Restart By Wallet] Found ${transactions.length} transaction(s) via case-insensitive search`);
+      } else {
+        error = allResult.error;
+      }
+    }
 
-    if (error || !transactions || transactions.length === 0) {
+    if (error) {
+      console.error(`[Restart By Wallet] Database error:`, error);
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Database error while searching for transaction",
+          details: error.message,
+          walletAddress: normalizedWalletAddress,
+        },
+        { status: 500 }
+      );
+    }
+    
+    if (!transactions || transactions.length === 0) {
+      // Helpful debug info
+      const { data: recentTxs } = await supabaseAdmin
+        .from("offramp_transactions")
+        .select("transaction_id, unique_wallet_address, status")
+        .order("created_at", { ascending: false })
+        .limit(5);
+      
+      console.error(`[Restart By Wallet] No transactions found for wallet: ${normalizedWalletAddress}`);
+      console.error(`[Restart By Wallet] Recent transactions:`, recentTxs?.map(t => ({
+        id: t.transaction_id,
+        wallet: t.unique_wallet_address,
+        status: t.status
+      })));
+      
       return NextResponse.json(
         {
           success: false,
           error: "Transaction not found for this wallet address",
-          walletAddress: walletAddress.toLowerCase(),
+          walletAddress: normalizedWalletAddress,
+          hint: "Please verify the wallet address is correct. Make sure you're using the exact wallet address from the transaction.",
+          recentTransactions: recentTxs?.map(t => ({
+            transactionId: t.transaction_id,
+            wallet: t.unique_wallet_address,
+            status: t.status
+          })) || [],
         },
         { status: 404 }
       );

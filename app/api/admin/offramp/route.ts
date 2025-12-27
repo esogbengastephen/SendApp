@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { isAdminWallet } from "@/lib/supabase";
+import { getOfframpExchangeRate, calculateOfframpFee } from "@/lib/offramp-settings";
 
 /**
  * Get all off-ramp transactions (Admin only)
@@ -49,9 +50,43 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    // Calculate NGN amount for transactions that have USDC but no NGN amount yet
+    const exchangeRate = await getOfframpExchangeRate();
+    const enrichedTransactions = await Promise.all(
+      (transactions || []).map(async (tx) => {
+        // If NGN amount is already set, use it
+        if (tx.ngn_amount != null && tx.ngn_amount > 0) {
+          return tx;
+        }
+
+        // If USDC amount is available, calculate NGN amount
+        if (tx.usdc_amount && parseFloat(tx.usdc_amount) > 0) {
+          try {
+            const usdcAmount = parseFloat(tx.usdc_amount);
+            const ngnAmountBeforeFees = Math.round((usdcAmount * exchangeRate) * 100) / 100;
+            const feeNGN = await calculateOfframpFee(ngnAmountBeforeFees);
+            const finalNGNAmount = Math.round((ngnAmountBeforeFees - feeNGN) * 100) / 100;
+
+            return {
+              ...tx,
+              ngn_amount: finalNGNAmount > 0 ? finalNGNAmount : null,
+              // Also set exchange_rate and fee_ngn if not already set
+              exchange_rate: tx.exchange_rate || exchangeRate,
+              fee_ngn: tx.fee_ngn || feeNGN,
+            };
+          } catch (calcError) {
+            console.error(`[Admin OffRamp] Error calculating NGN for tx ${tx.transaction_id}:`, calcError);
+            return tx;
+          }
+        }
+
+        return tx;
+      })
+    );
+
     return NextResponse.json({
       success: true,
-      transactions: transactions || [],
+      transactions: enrichedTransactions,
     });
   } catch (error: any) {
     console.error("[Admin OffRamp] Error:", error);

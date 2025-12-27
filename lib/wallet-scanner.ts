@@ -80,15 +80,89 @@ const KNOWN_BASE_TOKENS = [
 ] as const;
 
 /**
+ * Check if wallet has received tokens from external sources (not master wallet)
+ * @param walletAddress - Wallet address to check
+ * @param masterWalletAddress - Master wallet address to exclude
+ * @returns true if wallet has external tokens, false if only has master wallet transfers
+ */
+async function hasExternalTokenTransfers(
+  walletAddress: string,
+  masterWalletAddress: string
+): Promise<boolean> {
+  const publicClient = getPublicClient();
+  
+  try {
+    // Get recent blocks (last ~1 hour, ~300 blocks on Base)
+    const currentBlock = await publicClient.getBlockNumber();
+    const fromBlock = currentBlock - 300n;
+
+    // Check ETH transfers (native transfers)
+    const ethTransfers = await publicClient.getLogs({
+      address: undefined, // All addresses
+      fromBlock,
+      toBlock: currentBlock,
+      args: {
+        to: walletAddress as `0x${string}`,
+      },
+    });
+
+    // Check ERC20 Transfer events
+    const tokenTransfers = await publicClient.getLogs({
+      event: {
+        type: 'event',
+        name: 'Transfer',
+        inputs: [
+          { type: 'address', indexed: true, name: 'from' },
+          { type: 'address', indexed: true, name: 'to' },
+          { type: 'uint256', indexed: false, name: 'value' },
+        ],
+      },
+      fromBlock,
+      toBlock: currentBlock,
+      args: {
+        to: walletAddress as `0x${string}`,
+      },
+    });
+
+    // Check if any transfer is NOT from the master wallet
+    const hasExternalTransfer = tokenTransfers.some((log: any) => {
+      const from = log.args?.from?.toLowerCase();
+      return from && from !== masterWalletAddress.toLowerCase();
+    });
+
+    console.log(`[Wallet Scanner] Found ${tokenTransfers.length} token transfer(s) to ${walletAddress.slice(0, 10)}...`);
+    console.log(`[Wallet Scanner] Has external transfers (non-master): ${hasExternalTransfer}`);
+
+    return hasExternalTransfer;
+  } catch (error) {
+    console.error('[Wallet Scanner] Error checking transfers:', error);
+    // On error, assume external transfer (to avoid blocking legit transactions)
+    return true;
+  }
+}
+
+/**
  * Scan wallet for all tokens (ETH + ERC20)
  * @param walletAddress - Wallet address to scan
- * @returns Array of all tokens found with balances > 0
+ * @param masterWalletAddress - Optional master wallet address to exclude transfers from
+ * @returns Array of all tokens found with balances > 0 (excluding master wallet transfers if specified)
  */
 export async function scanWalletForAllTokens(
-  walletAddress: string
+  walletAddress: string,
+  masterWalletAddress?: string
 ): Promise<TokenInfo[]> {
   const publicClient = getPublicClient();
   const tokens: TokenInfo[] = [];
+
+  // If master wallet address is provided, check if wallet only has master wallet transfers
+  if (masterWalletAddress) {
+    const hasExternal = await hasExternalTokenTransfers(walletAddress, masterWalletAddress);
+    
+    if (!hasExternal) {
+      console.log(`[Wallet Scanner] ⚠️ Wallet ${walletAddress.slice(0, 10)}... only has transfers from master wallet. Ignoring.`);
+      return []; // Return empty array - no external tokens detected
+    }
+  }
 
   // 1. Check native ETH balance
   try {

@@ -20,6 +20,7 @@ import {
   Pie,
   Cell,
 } from "recharts";
+import OfframpSettingsPanel from "@/components/OfframpSettingsPanel";
 
 interface OffRampStats {
   totalTransactions: number;
@@ -76,6 +77,7 @@ export default function OffRampPage() {
   const router = useRouter();
   const pathname = usePathname();
   const [activeTab, setActiveTab] = useState<"main" | "onramp" | "offramp">("offramp");
+  const [activeSection, setActiveSection] = useState<"transactions" | "settings">("transactions");
   const [stats, setStats] = useState<OffRampStats | null>(null);
   const [transactions, setTransactions] = useState<OffRampTransaction[]>([]);
   const [filteredTransactions, setFilteredTransactions] = useState<OffRampTransaction[]>([]);
@@ -410,16 +412,28 @@ export default function OffRampPage() {
         }),
       });
       
+      if (!response.ok) {
+        const errorText = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch {
+          errorData = { error: errorText || `HTTP ${response.status}: ${response.statusText}` };
+        }
+        throw new Error(errorData.error || errorData.message || `HTTP ${response.status}`);
+      }
+      
       const data = await response.json();
       if (data.success) {
         alert(`✅ Restart and Swap Completed!\n\nTransaction ID: ${data.transactionId}\nWallet: ${data.walletAddress}\nSwap TX: ${data.swapTxHash || "Processing..."}\nUSDC Amount: ${data.usdcAmount || "Calculating..."}\n\n${data.details || ""}`);
         window.location.reload();
       } else {
-        alert(`Error: ${data.error || "Failed to restart transaction"}\n\n${data.hint || ""}\n${data.swapError || ""}`);
+        alert(`Error: ${data.error || "Failed to restart transaction"}\n\n${data.hint || ""}\n${data.swapError || ""}\n${data.details || ""}`);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error restarting transaction:", error);
-      alert("Failed to restart transaction");
+      const errorMessage = error.message || error.toString() || "Unknown error";
+      alert(`Failed to restart transaction\n\nError: ${errorMessage}\n\nPlease check the browser console for more details.`);
     }
   };
 
@@ -457,10 +471,41 @@ export default function OffRampPage() {
             </button>
           </div>
         </div>
+
+        {/* Section Tabs (Transactions / Settings) */}
+        <div className="flex justify-center mt-4">
+          <div className="inline-flex bg-slate-50 dark:bg-slate-800/50 p-1 rounded-lg">
+            <button
+              onClick={() => setActiveSection("transactions")}
+              className={`px-6 py-2 rounded-md font-medium transition-colors ${
+                activeSection === "transactions"
+                  ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+              }`}
+            >
+              Transactions
+            </button>
+            <button
+              onClick={() => setActiveSection("settings")}
+              className={`px-6 py-2 rounded-md font-medium transition-colors ${
+                activeSection === "settings"
+                  ? "bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 shadow-sm"
+                  : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+              }`}
+            >
+              Settings
+            </button>
+          </div>
+        </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
+      {/* Conditional Content Based on Active Section */}
+      {activeSection === "settings" ? (
+        <OfframpSettingsPanel />
+      ) : (
+        <>
+          {/* Stats Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         {statCards.map((stat, index) => (
           <div
             key={index}
@@ -554,7 +599,7 @@ export default function OffRampPage() {
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  label={({ name, percent }) => `${name} ${((percent || 0) * 100).toFixed(0)}%`}
                   outerRadius={80}
                   fill="#8884d8"
                   dataKey="value"
@@ -960,6 +1005,8 @@ export default function OffRampPage() {
             </div>
           </div>
         </div>
+      )}
+        </>
       )}
     </div>
   );

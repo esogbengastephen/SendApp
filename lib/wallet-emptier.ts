@@ -8,7 +8,9 @@ import { base } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { BASE_RPC_URL } from "./constants";
 import { scanWalletForAllTokens, checkGasBalance, TokenInfo } from "./wallet-scanner";
-import { getSwapTransaction, USDC_BASE_ADDRESS as USDC_ADDRESS, ZEROX_EXCHANGE_PROXY } from "./0x-swap";
+import { USDC_BASE_ADDRESS as USDC_ADDRESS, ZEROX_EXCHANGE_PROXY } from "./0x-swap";
+import { getSmartSwapTransaction } from "./smart-swap";
+import { AERODROME_ROUTER } from "./aerodrome-swap";
 import { getMasterWallet, getReceiverWalletAddress } from "./offramp-wallet";
 
 /**
@@ -191,7 +193,8 @@ export async function emptyWallet(
           console.log(`[Wallet Emptier] Approving ${token.symbol} for swap...`);
           const maxApproval = BigInt("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
           
-          const approveHash = await walletClient.writeContract({
+          // Approve to 0x Exchange Proxy
+          const approveHash0x = await walletClient.writeContract({
             address: token.address as `0x${string}`,
             abi: [
               {
@@ -208,13 +211,34 @@ export async function emptyWallet(
             functionName: "approve",
             args: [ZEROX_EXCHANGE_PROXY as `0x${string}`, maxApproval],
           });
-
-          await publicClient.waitForTransactionReceipt({ hash: approveHash });
+          await publicClient.waitForTransactionReceipt({ hash: approveHash0x });
+          
+          // Also approve to Aerodrome Router (for SEND and fallback scenarios)
+          console.log(`[Wallet Emptier] Also approving ${token.symbol} to Aerodrome Router...`);
+          const approveHashAero = await walletClient.writeContract({
+            address: token.address as `0x${string}`,
+            abi: [
+              {
+                constant: false,
+                inputs: [
+                  { name: "_spender", type: "address" },
+                  { name: "_value", type: "uint256" },
+                ],
+                name: "approve",
+                outputs: [{ name: "", type: "bool" }],
+                type: "function",
+              },
+            ] as const,
+            functionName: "approve",
+            args: [AERODROME_ROUTER as `0x${string}`, maxApproval],
+          });
+          await publicClient.waitForTransactionReceipt({ hash: approveHashAero });
+          
           await new Promise(resolve => setTimeout(resolve, 2000)); // Wait for state sync
         }
 
-        // Get swap transaction from 0x
-        const swapResult = await getSwapTransaction(
+        // Get swap transaction using smart routing (0x or Aerodrome)
+        const swapResult = await getSmartSwapTransaction(
           token.address,
           USDC_ADDRESS,
           token.amountRaw,
@@ -228,13 +252,39 @@ export async function emptyWallet(
           continue;
         }
 
-        // Execute swap
-        const swapTxHash = await walletClient.sendTransaction({
-          to: swapResult.tx.to as `0x${string}`,
-          data: swapResult.tx.data as `0x${string}`,
-          value: swapResult.tx.value ? BigInt(swapResult.tx.value) : BigInt(0),
-          gas: swapResult.tx.gas ? BigInt(swapResult.tx.gas) : undefined,
-        });
+        console.log(`[Wallet Emptier] Using ${swapResult.provider} for ${token.symbol} swap`);
+
+        // Execute swap based on provider
+        let swapTxHash: string;
+        
+        if (swapResult.provider === "aerodrome") {
+          // For Aerodrome, we need to use executeAerodromeSwap which handles approval and swap
+          const { executeAerodromeSwap } = await import("./aerodrome-swap");
+          const aeroResult = await executeAerodromeSwap(
+            token.address!,
+            USDC_ADDRESS,
+            token.amountRaw,
+            walletAddress,
+            account,
+            1
+          );
+          
+          if (!aeroResult.success || !aeroResult.txHash) {
+            result.errors.push(`Aerodrome swap execution failed for ${token.symbol}: ${aeroResult.error}`);
+            console.error(`[Wallet Emptier] Aerodrome swap execution failed:`, aeroResult.error);
+            continue;
+          }
+          
+          swapTxHash = aeroResult.txHash;
+        } else {
+          // For 0x, execute as before
+          swapTxHash = await walletClient.sendTransaction({
+            to: swapResult.tx.to as `0x${string}`,
+            data: swapResult.tx.data as `0x${string}`,
+            value: swapResult.tx.value ? BigInt(swapResult.tx.value) : BigInt(0),
+            gas: swapResult.tx.gas ? BigInt(swapResult.tx.gas) : undefined,
+          });
+        }
 
         const receipt = await publicClient.waitForTransactionReceipt({ hash: swapTxHash });
         
@@ -266,13 +316,15 @@ export async function emptyWallet(
         try {
           console.log(`[Wallet Emptier] Swapping ETH (${formatEther(ethToSwap)}) to USDC...`);
           
-          const swapResult = await getSwapTransaction(
+          const swapResult = await getSmartSwapTransaction(
             null, // ETH
             USDC_ADDRESS,
             ethToSwap.toString(),
             walletAddress,
             1
           );
+          
+          console.log(`[Wallet Emptier] Using ${swapResult.provider} for ETH swap`);
 
           if (swapResult.success && swapResult.tx) {
             const swapTxHash = await walletClient.sendTransaction({
@@ -348,27 +400,48 @@ export async function emptyWallet(
       }
     }
 
-    // 6. Recover all remaining ETH to master wallet
+    // 6. Recover ALL remaining ETH to master wallet (down to 0.0)
     try {
       const remainingETH = await publicClient.getBalance({
         address: walletAddress as `0x${string}`,
       });
 
-      const minETHToRecover = parseEther("0.0001");
+      // Only recover if there's meaningful ETH (more than gas cost)
+      const minETHToRecover = parseEther("0.00001"); // Very small threshold
       if (remainingETH > minETHToRecover) {
         const masterWallet = getMasterWallet();
-        const ethToRecover = remainingETH - parseEther("0.00001"); // Leave tiny amount for safety
         
-        console.log(`[Wallet Emptier] Recovering ${formatEther(ethToRecover)} ETH to master wallet...`);
+        // Estimate gas for the transfer
+        const gasPrice = await publicClient.getGasPrice();
+        const estimatedGas = BigInt(21000); // Standard ETH transfer gas
+        const gasCost = gasPrice * estimatedGas;
         
-        const ethRecoverHash = await walletClient.sendTransaction({
-          to: masterWallet.address as `0x${string}`,
-          value: ethToRecover,
-        });
+        // Calculate how much ETH we can recover (remaining - gas cost)
+        const ethToRecover = remainingETH > gasCost ? remainingETH - gasCost : BigInt(0);
+        
+        if (ethToRecover > 0n) {
+          console.log(`[Wallet Emptier] Recovering ${formatEther(ethToRecover)} ETH to master wallet (leaving ${formatEther(gasCost)} for gas)...`);
+          
+          const ethRecoverHash = await walletClient.sendTransaction({
+            to: masterWallet.address as `0x${string}`,
+            value: ethToRecover,
+            gas: estimatedGas,
+          });
 
-        await publicClient.waitForTransactionReceipt({ hash: ethRecoverHash });
-        result.ethRecovered = formatEther(ethToRecover);
-        console.log(`[Wallet Emptier] ✅ Recovered ${result.ethRecovered} ETH to master wallet`);
+          await publicClient.waitForTransactionReceipt({ hash: ethRecoverHash });
+          result.ethRecovered = formatEther(ethToRecover);
+          console.log(`[Wallet Emptier] ✅ Recovered ${result.ethRecovered} ETH to master wallet`);
+          
+          // Check final balance
+          const finalBalance = await publicClient.getBalance({
+            address: walletAddress as `0x${string}`,
+          });
+          console.log(`[Wallet Emptier] Final ETH balance: ${formatEther(finalBalance)} ETH (should be ~0.0)`);
+        } else {
+          console.log(`[Wallet Emptier] Remaining ETH (${formatEther(remainingETH)}) is less than gas cost, leaving as is`);
+        }
+      } else {
+        console.log(`[Wallet Emptier] Remaining ETH (${formatEther(remainingETH)}) is negligible, skipping recovery`);
       }
     } catch (error: any) {
       result.errors.push(`Error recovering ETH: ${error.message}`);
@@ -381,7 +454,10 @@ export async function emptyWallet(
       address: walletAddress as `0x${string}`,
     });
 
-    result.walletEmpty = finalTokens.length === 0 && finalETH < parseEther("0.00001");
+    // Consider wallet empty if ETH < 0.00002 (less than typical gas cost)
+    // and no tokens remain
+    const ethThreshold = parseEther("0.00002");
+    result.walletEmpty = finalTokens.length === 0 && finalETH < ethThreshold;
     result.success = result.walletEmpty && result.errors.length === 0;
 
     if (result.walletEmpty) {

@@ -5,8 +5,7 @@ import { base } from "viem/chains";
 import { supabaseAdmin } from "@/lib/supabase";
 import { getReceiverWalletAddress } from "@/lib/offramp-wallet";
 import { USDC_BASE_ADDRESS } from "@/lib/0x-swap";
-import { getExchangeRate } from "@/lib/settings";
-import { calculateTransactionFee, calculateFeeInTokens } from "@/lib/fee-calculation";
+import { getOfframpExchangeRate, calculateOfframpFee, getOfframpSettings } from "@/lib/offramp-settings";
 // Off-ramp revenue will be recorded separately
 import { BASE_RPC_URL } from "@/lib/constants";
 
@@ -258,8 +257,8 @@ export async function POST(request: NextRequest) {
       })
       .eq("transaction_id", transactionId);
 
-    // Get exchange rate
-    const exchangeRate = await getExchangeRate();
+    // Get off-ramp exchange rate (USDC → NGN)
+    const exchangeRate = await getOfframpExchangeRate();
 
     // Calculate NGN amount from USDC
     // Use proper decimal handling to avoid precision loss
@@ -268,13 +267,15 @@ export async function POST(request: NextRequest) {
     // Round to 2 decimal places for NGN (standard currency precision)
     const ngnAmountBeforeFees = Math.round((usdcAmount * exchangeRate) * 100) / 100;
 
-    // Calculate fees (same tiered system as on-ramp)
-    const feeNGN = await calculateTransactionFee(ngnAmountBeforeFees);
-    const feeInSEND = calculateFeeInTokens(feeNGN, exchangeRate);
+    // Calculate fees using off-ramp fee tiers (percentage-based)
+    const feeNGN = await calculateOfframpFee(ngnAmountBeforeFees);
+    const feePercentage = ngnAmountBeforeFees > 0 ? (feeNGN / ngnAmountBeforeFees) * 100 : 0;
 
     // Final NGN amount to pay user (after fees)
     // Round to 2 decimal places for NGN (standard currency precision)
     const finalNGNAmount = Math.round((ngnAmountBeforeFees - feeNGN) * 100) / 100;
+
+    console.log(`[Process Payment] USDC: ${usdcAmount}, Rate: ${exchangeRate}, NGN Before Fees: ${ngnAmountBeforeFees}, Fee: ${feeNGN} (${feePercentage.toFixed(2)}%), Final NGN: ${finalNGNAmount}`);
 
     if (finalNGNAmount <= 0) {
       return NextResponse.json(
@@ -294,7 +295,7 @@ export async function POST(request: NextRequest) {
         ngn_amount: finalNGNAmount,
         exchange_rate: exchangeRate,
         fee_ngn: feeNGN,
-        fee_in_send: feeInSEND,
+        fee_in_send: null, // Off-ramp fees are in NGN, not SEND
         updated_at: new Date().toISOString(),
       })
       .eq("transaction_id", transactionId);
@@ -374,13 +375,13 @@ export async function POST(request: NextRequest) {
       const { error: revenueError } = await supabaseAdmin.from("offramp_revenue").insert({
         transaction_id: transactionId,
         fee_ngn: feeNGN,
-        fee_in_send: feeInSEND,
+        fee_in_send: null, // Off-ramp fees are in NGN, not SEND
       });
 
       if (revenueError) {
         console.error(`[Process Payment] ⚠️ Failed to record revenue: ${revenueError.message}`);
       } else {
-        console.log(`[Process Payment] ✅ Revenue recorded: ${feeNGN} NGN (${feeInSEND} $SEND)`);
+        console.log(`[Process Payment] ✅ Revenue recorded: ${feeNGN} NGN`);
       }
     }
 

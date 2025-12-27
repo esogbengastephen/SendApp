@@ -27,12 +27,12 @@ const ERC20_ABI = [
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const body = await request.json();
     const { adminWallet, refundToAddress } = body;
-    const transactionId = params.id;
+    const { id: transactionId } = await params;
 
     // Verify admin access
     if (!adminWallet) {

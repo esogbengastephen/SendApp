@@ -18,14 +18,17 @@ import { BASE_RPC_URL } from "@/lib/constants";
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const body = await request.json();
     const { adminWallet } = body;
     
-    // Get transaction ID from params - ensure it exists
-    if (!params || !params.id) {
+    // Get transaction ID from params - await first
+    const resolvedParams = await params;
+    
+    // Ensure it exists
+    if (!resolvedParams || !resolvedParams.id) {
       return NextResponse.json(
         { success: false, error: "Transaction ID is required in URL path" },
         { status: 400 }
@@ -35,7 +38,7 @@ export async function POST(
     // Get transaction ID from params
     // Next.js automatically decodes URL parameters, so params.id should already be decoded
     // But we'll try both raw and decoded versions to be safe
-    const rawTransactionId = params.id;
+    const rawTransactionId = resolvedParams.id;
     let transactionId = rawTransactionId;
     
     // Try decoding only if it looks encoded (contains %)

@@ -1,108 +1,90 @@
 /**
- * Test complete off-ramp flow for a wallet
- * This will:
- * 1. Check if transaction exists, if not create one
- * 2. Check wallet balance
- * 3. Trigger swap if tokens found
+ * Test Complete Offramp Flow
+ * Generates a test wallet and walks through the entire offramp process
  */
 
-const walletAddress = "0x20717a8732D3341201Fa33A06bBE5ed91DBfdEB2";
-const API_URL = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
+import { readFileSync } from "fs";
+import { join } from "path";
+import { ethers } from "ethers";
 
-// You'll need to set this
-const ADMIN_WALLET = process.env.NEXT_PUBLIC_ADMIN_WALLETS?.split(",")[0] || "";
+// Load environment variables from .env.local
+const envPath = join(process.cwd(), ".env.local");
+const envContent = readFileSync(envPath, "utf-8");
 
-async function testFlow() {
-  console.log(`\n🧪 Testing Off-Ramp Flow`);
-  console.log(`========================\n`);
-  console.log(`Wallet: ${walletAddress}\n`);
-
-  if (!ADMIN_WALLET) {
-    console.log("⚠️  Please set NEXT_PUBLIC_ADMIN_WALLETS in .env.local\n");
-    console.log("   Or set it here: const ADMIN_WALLET = 'your_wallet_address';\n");
-    return;
+let MASTER_MNEMONIC = "";
+envContent.split("\n").forEach((line) => {
+  if (line.startsWith("OFFRAMP_MASTER_MNEMONIC=")) {
+    MASTER_MNEMONIC = line.split("=")[1].replace(/"/g, "").trim();
   }
+});
 
-  // Step 1: Check if transaction exists
-  console.log(`1️⃣ Checking for existing transaction...\n`);
-  try {
-    const listResponse = await fetch(`${API_URL}/api/admin/offramp?adminWallet=${ADMIN_WALLET}&status=all`);
-    const listData = await listResponse.json();
-
-    if (!listData.success) {
-      console.error(`❌ Failed to fetch transactions: ${listData.error}\n`);
-      return;
-    }
-
-    const transactions = listData.transactions || [];
-    const existingTx = transactions.find(
-      (tx: any) => tx.unique_wallet_address?.toLowerCase() === walletAddress.toLowerCase()
-    );
-
-    if (existingTx) {
-      console.log(`✅ Found existing transaction:`);
-      console.log(`   ID: ${existingTx.transaction_id}`);
-      console.log(`   Status: ${existingTx.status}`);
-      console.log(`   Token: ${existingTx.token_symbol || "Not detected"} ${existingTx.token_amount || ""}\n`);
-
-      // Step 2: Try restart-by-wallet (will check balance and swap)
-      console.log(`2️⃣ Triggering restart & swap...\n`);
-      const restartResponse = await fetch(`${API_URL}/api/admin/offramp/restart-by-wallet`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          adminWallet: ADMIN_WALLET,
-          walletAddress: walletAddress,
-        }),
-      });
-
-      const restartData = await restartResponse.json();
-
-      if (restartData.success) {
-        console.log(`✅ Restart & Swap Successful!\n`);
-        console.log(`   Transaction ID: ${restartData.transactionId}`);
-        console.log(`   Swap TX: ${restartData.swapTxHash || "Processing..."}`);
-        console.log(`   USDC: ${restartData.usdcAmount || "Calculating..."}\n`);
-      } else {
-        console.log(`❌ Restart Failed: ${restartData.error}\n`);
-        if (restartData.hint) {
-          console.log(`   Hint: ${restartData.hint}\n`);
-        }
-      }
-    } else {
-      console.log(`⚠️  No transaction found for this wallet\n`);
-      console.log(`💡 Options:`);
-      console.log(`   1. Create transaction via frontend: ${API_URL}/offramp`);
-      console.log(`   2. Or use manual-swap which can work without transaction\n`);
-      
-      // Try manual swap (can work even without transaction)
-      console.log(`3️⃣ Trying manual swap (will create transaction if needed)...\n`);
-      const manualSwapResponse = await fetch(`${API_URL}/api/admin/offramp/manual-swap`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          adminWallet: ADMIN_WALLET,
-          walletAddress: walletAddress,
-          tokenAmount: "50", // User said they have 50 SEND
-          tokenAmountRaw: "50000000000000000000", // 50 * 10^18
-        }),
-      });
-
-      const manualSwapData = await manualSwapResponse.json();
-
-      if (manualSwapData.success) {
-        console.log(`✅ Manual Swap Triggered!\n`);
-        console.log(`   Transaction ID: ${manualSwapData.transactionId}`);
-        console.log(`   Wallet: ${manualSwapData.walletAddress}\n`);
-        console.log(`   Swap Result:`, JSON.stringify(manualSwapData.swapResult, null, 2));
-      } else {
-        console.log(`❌ Manual Swap Failed: ${manualSwapData.error}\n`);
-      }
-    }
-  } catch (error: any) {
-    console.error(`❌ Error: ${error.message}\n`);
-  }
+if (!MASTER_MNEMONIC) {
+  console.error("❌ OFFRAMP_MASTER_MNEMONIC not found!");
+  process.exit(1);
 }
 
-testFlow();
+console.log("🧪 OFFRAMP TEST WALLET GENERATOR\n");
+console.log("=".repeat(60));
 
+// Generate test wallet using same logic as the system
+const testUserId = `test_${Date.now()}`; // Unique test user ID
+const userIdentifier = testUserId;
+
+// Hash user identifier to get derivation index
+const indexHash = ethers.keccak256(ethers.toUtf8Bytes(`user_${userIdentifier.toLowerCase()}`));
+const indexNumber = BigInt(indexHash) % BigInt(2147483647);
+const derivationPath = `m/44'/60'/0'/0/${indexNumber}`;
+
+// Derive wallet
+const mnemonic = ethers.Mnemonic.fromPhrase(MASTER_MNEMONIC);
+const seed = mnemonic.computeSeed();
+const rootNode = ethers.HDNodeWallet.fromSeed(seed);
+const wallet = rootNode.derivePath(derivationPath);
+
+console.log("\n📋 TEST USER DETAILS:");
+console.log(`   User ID: ${testUserId}`);
+console.log(`   Derivation Path: ${derivationPath}`);
+console.log(`   Derivation Index: ${indexNumber.toString()}`);
+
+console.log("\n🔑 TEST WALLET:");
+console.log(`   Address: ${wallet.address}`);
+console.log(`   Private Key: ${wallet.privateKey}`);
+
+console.log("\n📝 TESTING INSTRUCTIONS:");
+console.log("=".repeat(60));
+console.log("\n1️⃣  GENERATE ADDRESS (via API):");
+console.log(`   POST /api/offramp/generate-address`);
+console.log(`   Body: {`);
+console.log(`     "accountNumber": "1234567890",`);
+console.log(`     "accountName": "Test User",`);
+console.log(`     "bankCode": "058",`);
+console.log(`     "userEmail": "${testUserId}@test.com"`);
+console.log(`   }`);
+console.log(`   Expected wallet address: ${wallet.address}`);
+
+console.log("\n2️⃣  FUND THIS WALLET:");
+console.log(`   Send test tokens to: ${wallet.address}`);
+console.log(`   Recommended: 1 USDC or 0.001 ETH or small amount of SEND`);
+console.log(`   Network: Base (Chain ID: 8453)`);
+
+console.log("\n3️⃣  CHECK FOR TOKENS:");
+console.log(`   POST /api/offramp/check-token`);
+console.log(`   Body: { "transactionId": "<transaction_id_from_step_1>" }`);
+console.log(`   This will auto-trigger the swap!`);
+
+console.log("\n4️⃣  VERIFY SWAP:");
+console.log(`   Check transaction status in database`);
+console.log(`   Or check BaseScan: https://basescan.org/address/${wallet.address}`);
+
+console.log("\n5️⃣  TRIGGER PAYMENT:");
+console.log(`   POST /api/offramp/process-payment`);
+console.log(`   Body: { "transactionId": "<transaction_id_from_step_1>" }`);
+
+console.log("\n" + "=".repeat(60));
+console.log("✅ Test wallet ready! Fund it and let's begin testing.\n");
+
+// Save test user info for easy reference
+console.log("💾 SAVE THIS INFO:");
+console.log(`   Test User Email: ${testUserId}@test.com`);
+console.log(`   Test Wallet: ${wallet.address}`);
+console.log(`   Test Account: 1234567890 (Guaranty Trust Bank - 058)`);
