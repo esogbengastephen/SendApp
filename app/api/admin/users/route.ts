@@ -11,6 +11,15 @@ export async function GET(request: Request) {
     const search = searchParams.get("search") || "";
     const sortBy = searchParams.get("sortBy") || "created_at";
     const sortOrder = searchParams.get("sortOrder") || "desc";
+    
+    // Transaction filters
+    const minTransactions = searchParams.get("minTransactions");
+    const maxTransactions = searchParams.get("maxTransactions");
+    const minSpent = searchParams.get("minSpent");
+    const maxSpent = searchParams.get("maxSpent");
+    const transactionDateFrom = searchParams.get("transactionDateFrom");
+    const transactionDateTo = searchParams.get("transactionDateTo");
+    const hasTransactions = searchParams.get("hasTransactions") || "all"; // 'all', 'yes', 'no'
 
     // Return user statistics
     if (stats === "true") {
@@ -70,14 +79,11 @@ export async function GET(request: Request) {
     const sortColumn = validSortColumns.includes(sortBy) ? sortBy : "created_at";
     query = query.order(sortColumn, { ascending: sortOrder === "asc" });
 
-    // Get total count
+    // Get total count for all users (before pagination)
     const { count: totalCount } = await query;
 
-    // Apply pagination
-    const from = (page - 1) * pageSize;
-    const to = from + pageSize - 1;
-    
-    const { data: emailUsers, error: emailError } = await query.range(from, to);
+    // Get ALL users (we'll paginate after filtering)
+    const { data: emailUsers, error: emailError } = await query;
 
     if (emailError) {
       console.error("Error fetching users:", emailError);
@@ -90,11 +96,24 @@ export async function GET(request: Request) {
     // For each user, calculate their stats from transactions table
     const usersWithStats = await Promise.all(
       (emailUsers || []).map(async (user) => {
-        // Get user's transaction statistics
-        const { data: userTransactions } = await supabase
+        // Get user's transaction statistics with date filter if provided
+        let transactionQuery = supabase
           .from("transactions")
           .select("status, ngn_amount, send_amount, created_at, tx_hash")
           .eq("user_id", user.id);
+        
+        // Apply date filters if provided
+        if (transactionDateFrom) {
+          transactionQuery = transactionQuery.gte("created_at", transactionDateFrom);
+        }
+        if (transactionDateTo) {
+          // Add one day to include the entire end date
+          const endDate = new Date(transactionDateTo);
+          endDate.setDate(endDate.getDate() + 1);
+          transactionQuery = transactionQuery.lt("created_at", endDate.toISOString());
+        }
+        
+        const { data: userTransactions } = await transactionQuery;
 
         const completedTransactions = userTransactions?.filter(t => t.status === "completed") || [];
         
@@ -150,15 +169,52 @@ export async function GET(request: Request) {
         };
       })
     );
+    
+    // Apply transaction filters
+    let filteredUsers = usersWithStats;
+    
+    // Filter by transaction count
+    if (minTransactions) {
+      const min = parseInt(minTransactions);
+      filteredUsers = filteredUsers.filter(user => user.totalTransactions >= min);
+    }
+    if (maxTransactions) {
+      const max = parseInt(maxTransactions);
+      filteredUsers = filteredUsers.filter(user => user.totalTransactions <= max);
+    }
+    
+    // Filter by spent amount
+    if (minSpent) {
+      const min = parseFloat(minSpent);
+      filteredUsers = filteredUsers.filter(user => user.totalSpentNGN >= min);
+    }
+    if (maxSpent) {
+      const max = parseFloat(maxSpent);
+      filteredUsers = filteredUsers.filter(user => user.totalSpentNGN <= max);
+    }
+    
+    // Filter by has transactions
+    if (hasTransactions === "yes") {
+      filteredUsers = filteredUsers.filter(user => user.totalTransactions > 0);
+    } else if (hasTransactions === "no") {
+      filteredUsers = filteredUsers.filter(user => user.totalTransactions === 0);
+    }
+    
+    // Apply pagination AFTER all filters
+    const totalFiltered = filteredUsers.length;
+    const totalPages = Math.ceil(totalFiltered / pageSize);
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize;
+    const paginatedUsers = filteredUsers.slice(from, to);
 
     return NextResponse.json({
       success: true,
-      users: usersWithStats,
+      users: paginatedUsers,
       pagination: {
         page,
         pageSize,
-        totalCount: totalCount || 0,
-        totalPages: Math.ceil((totalCount || 0) / pageSize),
+        totalCount: totalFiltered,
+        totalPages: totalPages,
       },
     });
   } catch (error: any) {

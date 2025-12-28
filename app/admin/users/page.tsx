@@ -53,6 +53,23 @@ export default function UsersPage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   
+  // Transaction filters
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState({
+    minTransactions: "",
+    maxTransactions: "",
+    minSpent: "",
+    maxSpent: "",
+    transactionDateFrom: "",
+    transactionDateTo: "",
+    hasTransactions: "all", // 'all', 'yes', 'no'
+  });
+  
+  // User selection for export
+  const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
+  const [selectAll, setSelectAll] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  
   // Reset user search
   const [resetEmail, setResetEmail] = useState("");
   const [searchedUser, setSearchedUser] = useState<any>(null);
@@ -70,6 +87,7 @@ export default function UsersPage() {
         search,
         sortBy,
         sortOrder,
+        ...filters, // Add filters to query params
       });
 
       const [usersResponse, statsResponse] = await Promise.all([
@@ -83,6 +101,9 @@ export default function UsersPage() {
       if (usersData.success) {
         setUsers(usersData.users);
         setPagination(usersData.pagination);
+        // Reset selection when users change
+        setSelectedUsers(new Set());
+        setSelectAll(false);
       }
 
       if (statsData.success) {
@@ -97,7 +118,7 @@ export default function UsersPage() {
 
   useEffect(() => {
     fetchUsers();
-  }, [pagination.page, pagination.pageSize, search, sortBy, sortOrder]);
+  }, [pagination.page, pagination.pageSize, search, sortBy, sortOrder, filters]);
 
   const handlePageSizeChange = (newSize: number) => {
     setPagination({ ...pagination, pageSize: newSize, page: 1 });
@@ -230,6 +251,95 @@ export default function UsersPage() {
     }
   };
 
+  // Handle select all checkbox
+  const handleSelectAll = () => {
+    if (selectAll) {
+      setSelectedUsers(new Set());
+    } else {
+      setSelectedUsers(new Set(users.map(u => u.id)));
+    }
+    setSelectAll(!selectAll);
+  };
+
+  // Handle individual user checkbox
+  const handleSelectUser = (userId: string) => {
+    const newSelected = new Set(selectedUsers);
+    if (newSelected.has(userId)) {
+      newSelected.delete(userId);
+    } else {
+      newSelected.add(userId);
+    }
+    setSelectedUsers(newSelected);
+    setSelectAll(newSelected.size === users.length && users.length > 0);
+  };
+
+  // Handle export
+  const handleExport = async () => {
+    if (selectedUsers.size === 0) {
+      alert("Please select at least one user to export");
+      return;
+    }
+
+    setExporting(true);
+    try {
+      const response = await fetch("/api/admin/users/export", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userIds: Array.from(selectedUsers),
+          includeTransactions: true,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to export users");
+      }
+
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `users-export-${Date.now()}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+
+      setActionSuccess(`Successfully exported ${selectedUsers.size} user(s)`);
+      setTimeout(() => setActionSuccess(null), 5000);
+    } catch (error: any) {
+      console.error("Failed to export users:", error);
+      setActionError(error.message || "Failed to export users");
+      setTimeout(() => setActionError(null), 5000);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // Handle filter change
+  const handleFilterChange = (key: string, value: string) => {
+    setFilters(prev => ({ ...prev, [key]: value }));
+    setPagination(prev => ({ ...prev, page: 1 })); // Reset to page 1 when filters change
+  };
+
+  // Clear all filters
+  const clearFilters = () => {
+    setFilters({
+      minTransactions: "",
+      maxTransactions: "",
+      minSpent: "",
+      maxSpent: "",
+      transactionDateFrom: "",
+      transactionDateTo: "",
+      hasTransactions: "all",
+    });
+  };
+
+  // Check if any filters are active
+  const hasActiveFilters = Object.entries(filters).some(([key, value]) => 
+    key !== "hasTransactions" ? value !== "" : value !== "all"
+  );
+
   return (
     <div className="space-y-4 sm:space-y-6">
       <div>
@@ -335,7 +445,155 @@ export default function UsersPage() {
             </select>
           </div>
         </div>
+        
+        {/* Advanced Filters Toggle */}
+        <div className="mt-4 flex items-center justify-between">
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors"
+          >
+            <span>🔍</span>
+            <span>Advanced Filters</span>
+            {hasActiveFilters && (
+              <span className="bg-primary text-white text-xs px-2 py-0.5 rounded-full">Active</span>
+            )}
+            <span>{showFilters ? "▲" : "▼"}</span>
+          </button>
+          
+          {hasActiveFilters && (
+            <button
+              onClick={clearFilters}
+              className="text-sm text-primary hover:text-primary/80 transition-colors"
+            >
+              Clear Filters
+            </button>
+          )}
+        </div>
+        
+        {/* Advanced Filters Panel */}
+        {showFilters && (
+          <div className="mt-4 p-4 bg-slate-50 dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700">
+            <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300 mb-3">
+              Transaction Filters
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {/* Transaction Count */}
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  Transaction Count
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    placeholder="Min"
+                    value={filters.minTransactions}
+                    onChange={(e) => handleFilterChange("minTransactions", e.target.value)}
+                    className="flex-1 px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                  />
+                  <input
+                    type="number"
+                    placeholder="Max"
+                    value={filters.maxTransactions}
+                    onChange={(e) => handleFilterChange("maxTransactions", e.target.value)}
+                    className="flex-1 px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                  />
+                </div>
+              </div>
+
+              {/* Amount Spent */}
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  Amount Spent (₦)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    placeholder="Min"
+                    value={filters.minSpent}
+                    onChange={(e) => handleFilterChange("minSpent", e.target.value)}
+                    className="flex-1 px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                  />
+                  <input
+                    type="number"
+                    placeholder="Max"
+                    value={filters.maxSpent}
+                    onChange={(e) => handleFilterChange("maxSpent", e.target.value)}
+                    className="flex-1 px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                  />
+                </div>
+              </div>
+
+              {/* Has Transactions */}
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  Transaction Status
+                </label>
+                <select
+                  value={filters.hasTransactions}
+                  onChange={(e) => handleFilterChange("hasTransactions", e.target.value)}
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                >
+                  <option value="all">All Users</option>
+                  <option value="yes">With Transactions</option>
+                  <option value="no">No Transactions</option>
+                </select>
+              </div>
+
+              {/* Date From */}
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  Transaction Date From
+                </label>
+                <input
+                  type="date"
+                  value={filters.transactionDateFrom}
+                  onChange={(e) => handleFilterChange("transactionDateFrom", e.target.value)}
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                />
+              </div>
+
+              {/* Date To */}
+              <div>
+                <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
+                  Transaction Date To
+                </label>
+                <input
+                  type="date"
+                  value={filters.transactionDateTo}
+                  onChange={(e) => handleFilterChange("transactionDateTo", e.target.value)}
+                  className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Export Section */}
+      {selectedUsers.size > 0 && (
+        <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 p-4 rounded-xl flex items-center justify-between">
+          <div className="text-sm text-green-700 dark:text-green-300">
+            <span className="font-semibold">{selectedUsers.size}</span> user(s) selected
+          </div>
+          <button
+            onClick={handleExport}
+            disabled={exporting}
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {exporting ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                Exporting...
+              </>
+            ) : (
+              <>
+                <span>📥</span>
+                <span>Export Selected</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Users Table */}
       <div className="bg-white dark:bg-slate-900 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
@@ -343,6 +601,15 @@ export default function UsersPage() {
           <table className="min-w-full divide-y divide-slate-200 dark:divide-slate-700">
             <thead className="bg-slate-50 dark:bg-slate-800">
               <tr>
+                <th className="px-4 py-3 text-left">
+                  <input
+                    type="checkbox"
+                    checked={selectAll}
+                    onChange={handleSelectAll}
+                    className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer"
+                    title="Select all users"
+                  />
+                </th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
                   Email
                 </th>
@@ -372,13 +639,13 @@ export default function UsersPage() {
             <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-8 text-center text-slate-500">
+                  <td colSpan={9} className="px-6 py-8 text-center text-slate-500">
                     Loading users...
                   </td>
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-6 py-8 text-center text-slate-500">
+                  <td colSpan={9} className="px-6 py-8 text-center text-slate-500">
                     No users found
                   </td>
                 </tr>
@@ -388,6 +655,14 @@ export default function UsersPage() {
                     key={user.id}
                     className="hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                   >
+                    <td className="px-4 py-4">
+                      <input
+                        type="checkbox"
+                        checked={selectedUsers.has(user.id)}
+                        onChange={() => handleSelectUser(user.id)}
+                        className="w-4 h-4 rounded border-slate-300 text-primary focus:ring-primary cursor-pointer"
+                      />
+                    </td>
                     <td className="px-4 py-4">
                       <div className="text-sm text-slate-900 dark:text-slate-100">
                         {user.email || <span className="text-slate-400">—</span>}
