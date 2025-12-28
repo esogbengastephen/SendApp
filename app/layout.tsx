@@ -52,6 +52,23 @@ export default function RootLayout({
             })();
           `}
         </Script>
+        <Script id="disable-right-click" strategy="afterInteractive">
+          {`
+            (function() {
+              // Check if we're on an admin page
+              const isAdminPage = window.location.pathname.startsWith('/admin');
+              
+              // Only disable right-click if NOT on admin page
+              if (!isAdminPage) {
+                // Disable right-click context menu
+                document.addEventListener('contextmenu', function(e) {
+                  e.preventDefault();
+                  return false;
+                });
+              }
+            })();
+          `}
+        </Script>
       </head>
       <body className="bg-background-light dark:bg-background-dark font-display">
         {children}
