@@ -48,9 +48,12 @@ Edit `.env.local` with your actual values:
 - Supabase credentials (optional)
 - Admin wallet addresses
 
-**📖 For detailed setup guides:**
-- [Paystack Setup](./PAYSTACK_SETUP.md) - Payment integration
-- [Admin Dashboard Setup](./ADMIN_SETUP.md) - Admin authentication
+**📖 For detailed documentation, see [DOCUMENTATION.md](./DOCUMENTATION.md)**
+
+**Quick Setup Links:**
+- [Setup Guides](./docs/setup/) - All setup and configuration
+- [Paystack Setup](./docs/setup/PAYSTACK_SETUP.md) - Payment integration
+- [Admin Dashboard Setup](./docs/setup/ADMIN_SETUP.md) - Admin authentication
 
 4. Run the development server:
 ```bash
@@ -115,7 +118,28 @@ Access the admin dashboard at `/admin`. You'll need to:
 2. Sign the authentication message
 3. Ensure your wallet is in the admin list
 
-See [ADMIN_SETUP.md](./ADMIN_SETUP.md) for detailed setup instructions.
+See [ADMIN_SETUP.md](./docs/setup/ADMIN_SETUP.md) for detailed setup instructions.
+
+## 📚 Documentation
+
+Comprehensive documentation is organized in the `docs/` folder:
+
+- **[Complete Documentation Index](./DOCUMENTATION.md)** - Full documentation catalog
+- **[Setup & Configuration](./docs/setup/)** - Initial setup guides
+- **[User Guides](./docs/guides/)** - Feature guides and best practices
+- **[Troubleshooting](./docs/troubleshooting/)** - Problem-solving guides
+- **[Migration](./docs/migration/)** - Database and system migrations
+- **[Deployment](./docs/deployment/)** - Deployment instructions
+- **[Implementation](./docs/implementation/)** - Technical implementation details
+
+### Quick Documentation Links
+
+| Category | Description | Link |
+|----------|-------------|------|
+| 🚀 Setup | Initial configuration and setup | [docs/setup/](./docs/setup/) |
+| 📖 Guides | Feature guides and tutorials | [docs/guides/](./docs/guides/) |
+| 🔧 Troubleshooting | Fix common issues | [docs/troubleshooting/](./docs/troubleshooting/) |
+| 🚢 Deployment | Deploy to production | [docs/deployment/](./docs/deployment/) |
 
 ## Security Notes
 
