@@ -97,6 +97,12 @@ export default function SettingsPage() {
   const [userProfile, setUserProfile] = useState<any>(null);
   const [walletAddresses, setWalletAddresses] = useState<Record<string, string>>({});
   
+  // Invoice settings state
+  const [invoiceType, setInvoiceType] = useState<"personal" | "business">("personal");
+  const [savingInvoiceSettings, setSavingInvoiceSettings] = useState(false);
+  const [invoiceSettingsSuccess, setInvoiceSettingsSuccess] = useState("");
+  const [invoiceSettingsError, setInvoiceSettingsError] = useState("");
+  
   // Seed phrase state
   const [showSeedPhrase, setShowSeedPhrase] = useState(false);
   const [seedPhrase, setSeedPhrase] = useState<string>("");
@@ -190,6 +196,49 @@ export default function SettingsPage() {
   const copyAddress = (address: string) => {
     navigator.clipboard.writeText(address);
     // You can add a toast notification here
+  };
+
+  const handleSaveInvoiceSettings = async () => {
+    if (!user?.id) return;
+
+    setSavingInvoiceSettings(true);
+    setInvoiceSettingsError("");
+    setInvoiceSettingsSuccess("");
+
+    try {
+      const response = await fetch("/api/user/profile", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: user.id,
+          invoice_type: invoiceType,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setInvoiceSettingsSuccess("Invoice settings saved successfully!");
+        setTimeout(() => {
+          setInvoiceSettingsSuccess("");
+        }, 3000);
+        // Refresh profile to get updated data
+        fetchUserProfile(user.id);
+      } else {
+        setInvoiceSettingsError(data.error || "Failed to save invoice settings");
+        setTimeout(() => {
+          setInvoiceSettingsError("");
+        }, 5000);
+      }
+    } catch (error: any) {
+      console.error("Error saving invoice settings:", error);
+      setInvoiceSettingsError(error.message || "Failed to save invoice settings");
+      setTimeout(() => {
+        setInvoiceSettingsError("");
+      }, 5000);
+    } finally {
+      setSavingInvoiceSettings(false);
+    }
   };
 
   if (loading) {
@@ -660,6 +709,97 @@ export default function SettingsPage() {
                   })}
                 </div>
               )}
+            </div>
+
+            {/* Invoice Settings */}
+            <div className="bg-white/40 dark:bg-white/20 backdrop-blur-md rounded-3xl p-6 border border-white/30 shadow-sm">
+              <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+                <span className="material-icons-outlined">receipt_long</span>
+                Invoice Settings
+              </h2>
+              <div className="space-y-4">
+                {/* Invoice Type Toggle */}
+                <div>
+                  <label className="block text-sm font-medium mb-3 text-gray-700 dark:text-gray-300">
+                    Invoice Type
+                  </label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setInvoiceType("personal")}
+                      className={`flex-1 py-2 px-4 rounded-xl font-semibold transition-colors ${
+                        invoiceType === "personal"
+                          ? "bg-primary text-secondary"
+                          : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"
+                      }`}
+                    >
+                      Personal
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInvoiceType("business")}
+                      className={`flex-1 py-2 px-4 rounded-xl font-semibold transition-colors ${
+                        invoiceType === "business"
+                          ? "bg-primary text-secondary"
+                          : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"
+                      }`}
+                    >
+                      Business
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                    {invoiceType === "personal" 
+                      ? "Invoices will show your personal name and email"
+                      : "Invoices will show your business information and logo"}
+                  </p>
+                </div>
+
+                {/* Success/Error Messages */}
+                {invoiceSettingsSuccess && (
+                  <div className="p-3 bg-green-100/80 dark:bg-green-900/30 border border-green-300 dark:border-green-800 rounded-xl">
+                    <p className="text-sm text-green-700 dark:text-green-300">{invoiceSettingsSuccess}</p>
+                  </div>
+                )}
+                {invoiceSettingsError && (
+                  <div className="p-3 bg-red-100/80 dark:bg-red-900/30 border border-red-300 dark:border-red-800 rounded-xl">
+                    <p className="text-sm text-red-700 dark:text-red-300">{invoiceSettingsError}</p>
+                  </div>
+                )}
+
+                {/* Save Button */}
+                <button
+                  onClick={handleSaveInvoiceSettings}
+                  disabled={savingInvoiceSettings}
+                  className="w-full bg-secondary hover:bg-secondary/90 text-primary font-semibold py-3 px-6 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                >
+                  {savingInvoiceSettings ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-icons-outlined">save</span>
+                      <span>Save Invoice Settings</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Link to Profile for Business Details */}
+                {invoiceType === "business" && (
+                  <div className="p-3 bg-blue-100/80 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-800 rounded-xl">
+                    <p className="text-xs text-blue-800 dark:text-blue-300 mb-2">
+                      💡 To set up your business information (name, logo, address), visit your Profile page.
+                    </p>
+                    <button
+                      onClick={() => router.push("/profile")}
+                      className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium"
+                    >
+                      Go to Profile →
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Other Settings */}

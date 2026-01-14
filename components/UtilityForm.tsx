@@ -227,7 +227,13 @@ export default function UtilityForm({
 
   const validateForm = () => {
     if (!phoneNumber.trim()) {
-      setError(serviceId === "gift-card-redeem" ? "Please enter a gift card code" : "Please enter a phone number");
+      if (serviceId === "gift-card-redeem") {
+        setError("Please enter a gift card code");
+      } else if (serviceId === "electricity") {
+        setError("Please enter a meter number");
+      } else {
+        setError("Please enter a phone number");
+      }
       return false;
     }
 
@@ -242,6 +248,14 @@ export default function UtilityForm({
       }
       // For gift card redemption, amount is not required (will be determined from code)
       return true;
+    } else if (serviceId === "electricity") {
+      // Meter number validation (alphanumeric, typically 10-15 characters)
+      const meterRegex = /^[A-Za-z0-9]{10,15}$/;
+      const cleanedMeter = phoneNumber.trim().replace(/\s/g, "");
+      if (!meterRegex.test(cleanedMeter)) {
+        setError("Please enter a valid meter number (10-15 alphanumeric characters)");
+        return false;
+      }
     } else {
       // Basic phone number validation (Nigerian format)
       const phoneRegex = /^(0|\+234)[789][01]\d{8}$/;
@@ -315,7 +329,26 @@ export default function UtilityForm({
         }),
       });
 
-      const data = await response.json();
+      // Read response text first (can only be read once)
+      const responseText = await response.text();
+      
+      // Check if response is ok before parsing
+      if (!response.ok) {
+        let errorMessage = `Server error (${response.status})`;
+        try {
+          // Try to parse as JSON
+          const errorData = JSON.parse(responseText);
+          errorMessage = errorData.error || errorMessage;
+        } catch {
+          // If not JSON, use the text as error message
+          errorMessage = responseText || errorMessage;
+        }
+        setError(errorMessage);
+        return;
+      }
+
+      // Parse the response as JSON
+      const data = JSON.parse(responseText);
 
       if (data.success) {
         setSuccess(data.message || `${serviceName} purchase successful!`);
@@ -331,7 +364,16 @@ export default function UtilityForm({
       }
     } catch (error: any) {
       console.error("Error processing purchase:", error);
-      setError("An error occurred. Please try again.");
+      // Provide more specific error messages
+      if (error.message) {
+        setError(error.message);
+      } else if (error.name === "TypeError" && error.message?.includes("fetch")) {
+        setError("Network error. Server may be down. Please check your connection and try again.");
+      } else if (error.name === "SyntaxError") {
+        setError("Invalid response from server. Please try again.");
+      } else {
+        setError(`An error occurred: ${error.message || "Unknown error"}`);
+      }
     } finally {
       setLoading(false);
     }
@@ -532,6 +574,15 @@ export default function UtilityForm({
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 py-8 px-4">
       <div className="max-w-md mx-auto">
+        {/* Back Button - Top Left */}
+        <button
+          onClick={() => router.push("/")}
+          className="mb-4 flex items-center gap-2 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
+        >
+          <span className="material-icons-outlined">arrow_back</span>
+          <span className="font-medium">Back to Dashboard</span>
+        </button>
+
         {/* Header */}
         <div className="text-center mb-8">
           <div className="bg-primary/10 dark:bg-primary/20 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -542,7 +593,9 @@ export default function UtilityForm({
           </h1>
           <p className="text-slate-600 dark:text-slate-400">
             {serviceId === "gift-card-redeem" 
-              ? "Enter your gift card code to redeem its value" 
+              ? "Enter your gift card code to redeem its value"
+              : serviceId === "electricity"
+              ? "Pay your electricity bills quickly and securely"
               : "Quick and secure transactions"}
           </p>
         </div>
@@ -651,6 +704,9 @@ export default function UtilityForm({
                                   logoUrl = getTelecomNetworkLogo(network);
                                 } else if (serviceId === "tv") {
                                   logoUrl = getTVNetworkLogo(network);
+                                } else if (serviceId === "electricity") {
+                                  // Electricity discos - no logos for now, will show letter
+                                  logoUrl = "";
                                 } else if (serviceId === "gift-card-redeem") {
                                   // Use Reloadly product logo if available, otherwise fallback to local logo
                                   const product = productMap[network];
@@ -768,15 +824,21 @@ export default function UtilityForm({
                 type="text"
                 value={phoneNumber}
                 onChange={(e) => {
-                  if (serviceId === "gift-card-redeem") {
-                    // For gift cards, don't format as phone number
+                  if (serviceId === "gift-card-redeem" || serviceId === "electricity") {
+                    // For gift cards and electricity, don't format as phone number
                     setPhoneNumber(e.target.value);
                   } else {
                     setPhoneNumber(formatPhoneNumber(e.target.value));
                   }
                 }}
-                placeholder={serviceId === "gift-card-redeem" ? "Enter gift card code" : "08012345678 or +2348012345678"}
-                maxLength={serviceId === "gift-card-redeem" ? 50 : 14}
+                placeholder={
+                  serviceId === "gift-card-redeem" 
+                    ? "Enter gift card code" 
+                    : serviceId === "electricity"
+                    ? "Enter meter number"
+                    : placeholder || "08012345678 or +2348012345678"
+                }
+                maxLength={serviceId === "gift-card-redeem" ? 50 : serviceId === "electricity" ? 15 : 14}
                 className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 px-4 py-3 focus:ring-2 focus:ring-primary focus:border-primary"
                 required
               />

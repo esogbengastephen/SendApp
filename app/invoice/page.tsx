@@ -142,7 +142,22 @@ export default function InvoicePage() {
     setUser(currentUser);
     fetchInvoices(currentUser.email);
     fetchWalletBalances(currentUser.id);
+    fetchUserProfile(currentUser.id);
   }, [router]);
+
+  const fetchUserProfile = async (userId: string) => {
+    try {
+      const response = await fetch(`/api/user/profile?userId=${userId}`);
+      const data = await response.json();
+      
+      if (data.success && data.profile && data.profile.invoiceType) {
+        // Set default invoice type from user profile
+        setFormData(prev => ({ ...prev, invoiceType: data.profile.invoiceType }));
+      }
+    } catch (error) {
+      console.error("Error fetching user profile:", error);
+    }
+  };
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -1114,40 +1129,27 @@ export default function InvoicePage() {
                 </div>
 
               <form onSubmit={handleCreateInvoice} className="space-y-4">
-                {/* Invoice Type Toggle */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium mb-3 text-gray-700 dark:text-gray-300">
-                    Invoice Type
-                  </label>
-                  <div className="flex gap-2">
+                {/* Invoice Type Display (read-only, managed in Settings) */}
+                <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Invoice Type: <span className="capitalize">{formData.invoiceType}</span>
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        {formData.invoiceType === "personal" 
+                          ? "Invoice will show your personal name and email"
+                          : "Invoice will show your business information and logo"}
+                      </p>
+                    </div>
                     <button
                       type="button"
-                      onClick={() => setFormData({ ...formData, invoiceType: "personal" })}
-                      className={`flex-1 py-2 px-4 rounded-xl font-semibold transition-colors ${
-                        formData.invoiceType === "personal"
-                          ? "bg-primary text-secondary"
-                          : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"
-                      }`}
+                      onClick={() => router.push("/settings")}
+                      className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium"
                     >
-                      Personal
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ ...formData, invoiceType: "business" })}
-                      className={`flex-1 py-2 px-4 rounded-xl font-semibold transition-colors ${
-                        formData.invoiceType === "business"
-                          ? "bg-primary text-secondary"
-                          : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"
-                      }`}
-                    >
-                      Business
+                      Change in Settings →
                     </button>
                   </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                    {formData.invoiceType === "personal" 
-                      ? "Invoice will show your personal name and email"
-                      : "Invoice will show your business information and logo"}
-                  </p>
                 </div>
 
                 {/* Tab Selection */}
@@ -1652,40 +1654,27 @@ export default function InvoicePage() {
               </div>
 
               <form onSubmit={handleUpdateInvoice} className="space-y-4">
-                {/* Invoice Type Toggle */}
-                <div className="mb-4">
-                  <label className="block text-sm font-medium mb-3 text-gray-700 dark:text-gray-300">
-                    Invoice Type
-                  </label>
-                  <div className="flex gap-2">
+                {/* Invoice Type Display (read-only, managed in Settings) */}
+                <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                        Invoice Type: <span className="capitalize">{editFormData.invoiceType}</span>
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        {editFormData.invoiceType === "personal" 
+                          ? "Invoice will show your personal name and email"
+                          : "Invoice will show your business information and logo"}
+                      </p>
+                    </div>
                     <button
                       type="button"
-                      onClick={() => setEditFormData({ ...editFormData, invoiceType: "personal" })}
-                      className={`flex-1 py-2 px-4 rounded-xl font-semibold transition-colors ${
-                        editFormData.invoiceType === "personal"
-                          ? "bg-primary text-secondary"
-                          : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"
-                      }`}
+                      onClick={() => router.push("/settings")}
+                      className="text-xs text-blue-600 dark:text-blue-400 hover:underline font-medium"
                     >
-                      Personal
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setEditFormData({ ...editFormData, invoiceType: "business" })}
-                      className={`flex-1 py-2 px-4 rounded-xl font-semibold transition-colors ${
-                        editFormData.invoiceType === "business"
-                          ? "bg-primary text-secondary"
-                          : "bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-600"
-                      }`}
-                    >
-                      Business
+                      Change in Settings →
                     </button>
                   </div>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                    {editFormData.invoiceType === "personal" 
-                      ? "Invoice will show your personal name and email"
-                      : "Invoice will show your business information and logo"}
-                  </p>
                 </div>
 
                 {/* Tab Selection */}

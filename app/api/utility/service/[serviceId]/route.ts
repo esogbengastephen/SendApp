@@ -70,6 +70,14 @@ export async function GET(
           minAmount: 500,
           maxAmount: 50000,
         },
+        electricity: {
+          id: "electricity",
+          name: "Electricity Bill Payment",
+          status: "active",
+          markup: 2.0,
+          minAmount: 100,
+          maxAmount: 100000,
+        },
       };
 
       const defaultService = defaultServices[serviceId] || {

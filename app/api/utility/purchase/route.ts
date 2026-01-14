@@ -325,6 +325,7 @@ export async function POST(request: NextRequest) {
       data: "https://www.nellobytesystems.com/APIDatabundleV1.asp", // Note: lowercase 'b' in bundle
       tv: "https://www.nellobytesystems.com/APICableTVV1.asp",
       betting: "https://www.nellobytesystems.com/APIBettingV1.asp",
+      electricity: "https://www.nellobytesystems.com/APIElectricityV1.asp",
     };
     
     // Always use the correct endpoint - ignore api_endpoint from database (it may have wrong URL)
@@ -335,11 +336,23 @@ export async function POST(request: NextRequest) {
 
     // Map network names to ClubKonnect network codes
     const networkCodes: Record<string, string> = {
+      // Mobile networks
       "MTN": "01",
       "GLO": "02",
       "9mobile": "03",
       "9Mobile": "03",
       "Airtel": "04",
+      // Electricity discos
+      "EKEDC": "01", // Eko Electricity Distribution Company
+      "IKEDC": "02", // Ikeja Electric Distribution Company
+      "AEDC": "03", // Abuja Electricity Distribution Company
+      "PHED": "04", // Port Harcourt Electricity Distribution
+      "KEDCO": "05", // Kano Electricity Distribution Company
+      "EEDC": "06", // Enugu Electricity Distribution Company
+      "IBEDC": "07", // Ibadan Electricity Distribution Company
+      "KAEDCO": "08", // Kaduna Electric
+      "JED": "09", // Jos Electricity Distribution
+      "YEDC": "10", // Yola Electricity Distribution Company
     };
 
     // Prepare ClubKonnect API request parameters
@@ -359,12 +372,16 @@ export async function POST(request: NextRequest) {
       APIKeyLength: clubkonnectApiKey.length,
     });
 
-    // Add network code - required for airtime, data, and TV
+    // Add network code - required for airtime, data, TV, and electricity
     if (network) {
       const networkCode = networkCodes[network] || network;
-      clubkonnectParams.MobileNetwork = networkCode;
-    } else if (serviceId === "airtime" || serviceId === "data") {
-      // Network is required for airtime and data
+      if (serviceId === "electricity") {
+        clubkonnectParams.Disco = networkCode; // Electricity uses "Disco" parameter
+      } else {
+        clubkonnectParams.MobileNetwork = networkCode;
+      }
+    } else if (serviceId === "airtime" || serviceId === "data" || serviceId === "electricity") {
+      // Network is required for airtime, data, and electricity
       return NextResponse.json(
         { success: false, error: "Network selection is required" },
         { status: 400 }
@@ -401,17 +418,40 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    // Add phone number (parameter name varies by service)
-    if (serviceId === "betting") {
+    // Add phone/meter number (parameter name varies by service)
+    if (serviceId === "electricity") {
+      // For electricity, use meter number
+      const cleanedMeterNumber = phoneNumber.trim().replace(/\s/g, "");
+      if (!cleanedMeterNumber || cleanedMeterNumber.length < 10) {
+        await supabaseAdmin
+          .from("utility_transactions")
+          .update({
+            status: "failed",
+            error_message: "Invalid meter number",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", transaction.id);
+        
+        return NextResponse.json(
+          { success: false, error: "Please enter a valid meter number" },
+          { status: 400 }
+        );
+      }
+      clubkonnectParams.MeterNumber = cleanedMeterNumber;
+      console.log("[ClubKonnect] Meter number:", cleanedMeterNumber);
+    } else if (serviceId === "betting") {
       clubkonnectParams.AccountNumber = cleanedPhoneNumber;
+      console.log("[ClubKonnect] Account number:", {
+        original: phoneNumber,
+        cleaned: cleanedPhoneNumber,
+      });
     } else {
       clubkonnectParams.MobileNumber = cleanedPhoneNumber;
+      console.log("[ClubKonnect] Phone number:", {
+        original: phoneNumber,
+        cleaned: cleanedPhoneNumber,
+      });
     }
-    
-    console.log("[ClubKonnect] Phone number:", {
-      original: phoneNumber,
-      cleaned: cleanedPhoneNumber,
-    });
 
     // Add package_id for TV and Data subscriptions
     if (packageId && (serviceId === "tv" || serviceId === "data")) {
@@ -561,9 +601,14 @@ export async function POST(request: NextRequest) {
             detectedStatus = "success";
           } else if (lowerText.includes("authentication failed") || 
                      lowerText.includes("auth failed") || 
-                     trimmedText.match(/authentication\s*failed\s*\d*/i) ||
+                     lowerText.includes("authentication_failed") ||
+                     lowerText.includes("auth_failed") ||
+                     trimmedText.match(/authentication[\s_]*failed[\s_]*\d*/i) ||
+                     trimmedText.match(/auth[\s_]*failed[\s_]*\d*/i) ||
                      trimmedText.toLowerCase().includes("authentication failed 1") ||
-                     trimmedText.toLowerCase().includes("authentication failed1")) {
+                     trimmedText.toLowerCase().includes("authentication failed1") ||
+                     trimmedText.toLowerCase().includes("authentication_failed_1") ||
+                     trimmedText.toLowerCase().includes("authentication_failed1")) {
             detectedStatus = "failed";
             detectedMessage = "API authentication failed. Please verify your API credentials and ensure your server IP is whitelisted in ClubKonnect. Visit https://www.clubkonnect.com/APIParaWhitelistServerIPV1.asp to whitelist your IP.";
           } else if (lowerText.includes("invalid credentials") || lowerText.includes("invalid_credentials")) {
@@ -647,6 +692,11 @@ export async function POST(request: NextRequest) {
         "INVALID_AMOUNT": "Invalid amount entered.",
         "MINIMUM_50": "Minimum amount is ₦50.",
         "INVALID_RECIPIENT": "Invalid phone number. Please check and try again.",
+        "AUTHENTICATION_FAILED": "API authentication failed. Please verify your API credentials and ensure your server IP is whitelisted in ClubKonnect. Visit https://www.clubkonnect.com/APIParaWhitelistServerIPV1.asp to whitelist your IP.",
+        "AUTHENTICATION_FAILED_1": "API authentication failed. Please verify your API credentials and ensure your server IP is whitelisted in ClubKonnect. Visit https://www.clubkonnect.com/APIParaWhitelistServerIPV1.asp to whitelist your IP.",
+        "AUTHENTICATION_FAILED1": "API authentication failed. Please verify your API credentials and ensure your server IP is whitelisted in ClubKonnect. Visit https://www.clubkonnect.com/APIParaWhitelistServerIPV1.asp to whitelist your IP.",
+        "AUTH_FAILED": "API authentication failed. Please verify your API credentials and ensure your server IP is whitelisted in ClubKonnect. Visit https://www.clubkonnect.com/APIParaWhitelistServerIPV1.asp to whitelist your IP.",
+        "AUTH_FAILED_1": "API authentication failed. Please verify your API credentials and ensure your server IP is whitelisted in ClubKonnect. Visit https://www.clubkonnect.com/APIParaWhitelistServerIPV1.asp to whitelist your IP.",
       };
 
       // Get error message - extract from various possible fields
@@ -662,9 +712,29 @@ export async function POST(request: NextRequest) {
                     clubkonnectData.Status || // Check Status field
                     null;
       
+      // Check if the extracted errorMsg itself contains authentication failure patterns
+      // This handles cases where "AUTHENTICATION_FAILED_1" is in the status/error field
+      if (errorMsg) {
+        const errorMsgLower = String(errorMsg).toLowerCase();
+        const authFailedPatterns = [
+          /authentication\s*failed\s*\d*/i,
+          /authentication_failed\s*\d*/i,
+          /authentication_failed_\d+/i,
+          /auth\s*failed\s*\d*/i,
+          /auth_failed\s*\d*/i,
+        ];
+        
+        for (const pattern of authFailedPatterns) {
+          if (pattern.test(errorMsgLower)) {
+            errorMsg = "API authentication failed. Please verify your API credentials and ensure your server IP is whitelisted in ClubKonnect. Visit https://www.clubkonnect.com/APIParaWhitelistServerIPV1.asp to whitelist your IP.";
+            break;
+          }
+        }
+      }
+      
       // Check if the raw response contains "Authentication Failed" pattern (including "Authentication Failed 1")
       if (!errorMsg && clubkonnectData.raw) {
-        const authFailedMatch = clubkonnectData.raw.match(/authentication\s*failed\s*\d*/i);
+        const authFailedMatch = clubkonnectData.raw.match(/authentication[\s_]*failed[\s_]*\d*/i);
         if (authFailedMatch) {
           errorMsg = "API authentication failed. Please verify your API credentials and ensure your server IP is whitelisted in ClubKonnect. Visit https://www.clubkonnect.com/APIParaWhitelistServerIPV1.asp to whitelist your IP.";
         }
@@ -673,7 +743,7 @@ export async function POST(request: NextRequest) {
       // Also check the parsed data itself for "Authentication Failed" patterns
       if (!errorMsg) {
         const responseString = JSON.stringify(clubkonnectData).toLowerCase();
-        if (responseString.includes("authentication failed")) {
+        if (responseString.includes("authentication failed") || responseString.includes("authentication_failed")) {
           errorMsg = "API authentication failed. Please verify your API credentials and ensure your server IP is whitelisted in ClubKonnect. Visit https://www.clubkonnect.com/APIParaWhitelistServerIPV1.asp to whitelist your IP.";
         }
       }

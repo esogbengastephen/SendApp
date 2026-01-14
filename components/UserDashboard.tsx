@@ -47,6 +47,7 @@ const services: Service[] = [
   { id: "buy-airtime", name: "Buy\nAirtime", icon: "phone_iphone", route: "/buy-airtime" },
   { id: "pay-betting", name: "Pay\nBetting", icon: "sports_soccer", route: "/pay-betting" },
   { id: "tv-sub", name: "TV\nSub", icon: "tv", route: "/tv-sub" },
+  { id: "buy-electricity", name: "Electricity", icon: "bolt", route: "/buy-electricity" },
   { id: "gift-card-redeem", name: "Gift Card\nRedeem", icon: "card_giftcard", route: "/gift-card-redeem" },
 ];
 
@@ -617,9 +618,14 @@ export default function UserDashboard() {
               onClick={() => handleServiceClick(services[7])}
             />
             <ServiceButton 
+              icon="bolt" 
+              label={"Electricity"} 
+              onClick={() => handleServiceClick(services[8])}
+            />
+            <ServiceButton 
               icon="card_giftcard" 
               label={"Gift Card\nRedeem"} 
-              onClick={() => handleServiceClick(services[8])}
+              onClick={() => handleServiceClick(services[9])}
             />
           </div>
         </div>
