@@ -1,7 +1,9 @@
 import { createWalletClient, createPublicClient, http, formatUnits, parseUnits } from "viem";
 import { base } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
+import { defineChain } from "viem";
 import { BASE_RPC_URL, SEND_TOKEN_ADDRESS } from "./constants";
+import { SUPPORTED_CHAINS } from "./chains";
 
 // ERC20 Token ABI (minimal - just what we need for transfers)
 const ERC20_ABI = [
@@ -33,6 +35,13 @@ const ERC20_ABI = [
     constant: true,
     inputs: [],
     name: "symbol",
+    outputs: [{ name: "", type: "string" }],
+    type: "function",
+  },
+  {
+    constant: true,
+    inputs: [],
+    name: "name",
     outputs: [{ name: "", type: "string" }],
     type: "function",
   },
@@ -253,5 +262,107 @@ export async function estimateGas(
  */
 export function isValidBaseAddress(address: string): boolean {
   return /^0x[a-fA-F0-9]{40}$/.test(address);
+}
+
+/**
+ * Get public client for any EVM chain
+ */
+export function getPublicClientForChain(chainId: string) {
+  const chainConfig = SUPPORTED_CHAINS[chainId];
+  if (!chainConfig || chainConfig.type !== "EVM" || !chainConfig.rpcUrl) {
+    throw new Error(`Invalid EVM chain: ${chainId}`);
+  }
+
+  const customChain = defineChain({
+    id: chainConfig.chainId!,
+    name: chainConfig.name,
+    nativeCurrency: chainConfig.nativeCurrency,
+    rpcUrls: {
+      default: {
+        http: [chainConfig.rpcUrl],
+      },
+    },
+  });
+
+  return createPublicClient({
+    chain: customChain,
+    transport: http(chainConfig.rpcUrl, {
+      retryCount: 3,
+      retryDelay: 1000,
+    }),
+  });
+}
+
+/**
+ * Get ERC20 token balance for any EVM chain
+ */
+export async function getERC20Balance(
+  chainId: string,
+  walletAddress: string,
+  tokenAddress: string
+): Promise<{ balance: string; decimals: number; symbol: string; name: string }> {
+  try {
+    const publicClient = getPublicClientForChain(chainId);
+
+    // Get token decimals, symbol, name, and balance
+    const [decimals, symbol, name, balance] = await Promise.all([
+      publicClient.readContract({
+        address: tokenAddress as `0x${string}`,
+        abi: ERC20_ABI,
+        functionName: "decimals",
+      }) as Promise<number>,
+      publicClient.readContract({
+        address: tokenAddress as `0x${string}`,
+        abi: ERC20_ABI,
+        functionName: "symbol",
+      }) as Promise<string>,
+      publicClient.readContract({
+        address: tokenAddress as `0x${string}`,
+        abi: ERC20_ABI,
+        functionName: "name",
+      }) as Promise<string>,
+      publicClient.readContract({
+        address: tokenAddress as `0x${string}`,
+        abi: ERC20_ABI,
+        functionName: "balanceOf",
+        args: [walletAddress as `0x${string}`],
+      }) as Promise<bigint>,
+    ]);
+
+    const formattedBalance = formatUnits(balance, decimals);
+
+    return {
+      balance: formattedBalance,
+      decimals,
+      symbol,
+      name,
+    };
+  } catch (error: any) {
+    console.error(`[getERC20Balance] Error for ${chainId}:`, error);
+    throw error;
+  }
+}
+
+/**
+ * Get native token balance for any EVM chain
+ */
+export async function getNativeBalance(
+  chainId: string,
+  walletAddress: string
+): Promise<string> {
+  try {
+    const publicClient = getPublicClientForChain(chainId);
+    const balance = await publicClient.getBalance({
+      address: walletAddress as `0x${string}`,
+    });
+    
+    const chainConfig = SUPPORTED_CHAINS[chainId];
+    const decimals = chainConfig?.nativeCurrency?.decimals || 18;
+    
+    return formatUnits(balance, decimals);
+  } catch (error: any) {
+    console.error(`[getNativeBalance] Error for ${chainId}:`, error);
+    throw error;
+  }
 }
 

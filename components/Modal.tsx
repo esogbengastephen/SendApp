@@ -49,7 +49,7 @@ function Modal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background-dark/80 backdrop-blur-sm">
       <div
         className={`bg-white dark:bg-slate-800 rounded-xl shadow-xl max-w-md w-full p-6 border-2 ${typeStyles[type]}`}
       >

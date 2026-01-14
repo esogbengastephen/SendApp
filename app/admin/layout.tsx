@@ -34,7 +34,7 @@ function AdminLayoutContent({
       {/* Mobile Overlay */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
+          className="fixed inset-0 bg-background-dark/80 z-40 lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
@@ -180,12 +180,36 @@ function AdminLayoutContent({
                 <span className="whitespace-nowrap">Token Distribution</span>
               </Link>
               <Link
+                href="/admin/utility"
+                onClick={() => setSidebarOpen(false)}
+                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <span className="material-icons-outlined text-lg sm:text-xl">build</span>
+                <span>Utility</span>
+              </Link>
+              <Link
                 href="/admin/test-transfer"
                 onClick={() => setSidebarOpen(false)}
                 className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
               >
                 <span className="material-icons-outlined text-lg sm:text-xl">send</span>
                 <span>Test Transfer</span>
+              </Link>
+              <Link
+                href="/admin/token-prices"
+                onClick={() => setSidebarOpen(false)}
+                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <span className="material-icons-outlined text-lg sm:text-xl">attach_money</span>
+                <span>Token Prices</span>
+              </Link>
+              <Link
+                href="/admin/banners"
+                onClick={() => setSidebarOpen(false)}
+                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <span className="material-icons-outlined text-lg sm:text-xl">image</span>
+                <span>Banners</span>
               </Link>
               <Link
                 href="/admin/settings"

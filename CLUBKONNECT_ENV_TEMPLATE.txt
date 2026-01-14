@@ -1,0 +1,21 @@
+# ============================================
+# ClubKonnect API Credentials
+# ============================================
+# Copy these lines to your .env.local file
+# Get these from: https://www.clubkonnect.com/APIParaGetAirTimeV1.asp
+# After logging in to your ClubKonnect account
+
+CLUBKONNECT_API_USERNAME=CK101264658
+CLUBKONNECT_API_KEY=3WV852K1T5O148SF3707NTLXT3UBM79M79P028877KRV3C1914D7C8EZTUJF7WDI
+CLUBKONNECT_API_PASSWORD=uF@p394a.n#bs8H
+
+# Optional: Custom API URL (defaults to https://www.clubkonnect.com)
+# CLUBKONNECT_API_URL=https://www.clubkonnect.com
+
+# ============================================
+# Application URL (for webhooks)
+# ============================================
+# For production, set this to your domain
+# For Vercel, this is automatically set via VERCEL_URL
+# NEXT_PUBLIC_APP_URL=https://your-domain.com
+

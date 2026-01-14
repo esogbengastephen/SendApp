@@ -8,8 +8,9 @@ import {
   createTransaction,
 } from "@/lib/transactions";
 import { distributeTokens } from "@/lib/token-distribution";
+import { notifyPaymentReceived, notifyTokensDistributed } from "@/lib/notifications";
 import { getExchangeRate, getTransactionsEnabled } from "@/lib/settings";
-import { supabase, updateReferralCountOnTransaction } from "@/lib/supabase";
+import { supabase, supabaseAdmin, updateReferralCountOnTransaction } from "@/lib/supabase";
 import { nanoid } from "nanoid";
 import { sendPaymentVerificationEmail, sendTokenDistributionEmail } from "@/lib/transaction-emails";
 import { calculateTransactionFee, calculateFinalTokens, calculateFeeInTokens } from "@/lib/fee-calculation";
@@ -61,6 +62,50 @@ export async function POST(request: NextRequest) {
 
       console.log(`📥 [Webhook] Payment received: ${paystackAmount} NGN via ${channel}`);
       console.log(`📥 [Webhook] Reference: ${reference}`);
+      console.log(`📥 [Webhook] Metadata:`, JSON.stringify(metadata));
+
+      // Check if this is an invoice payment
+      if (metadata.invoice_number) {
+        console.log(`📄 [Webhook] Invoice payment detected: ${metadata.invoice_number}`);
+        
+        // Update invoice status to paid
+        const { data: invoice, error: invoiceError } = await supabaseAdmin
+          .from("invoices")
+          .update({
+            status: "paid",
+            paid_at: new Date().toISOString(),
+            paystack_reference: reference,
+            transaction_id: metadata.transaction_id || null,
+          })
+          .eq("invoice_number", metadata.invoice_number)
+          .select()
+          .single();
+
+        if (invoiceError) {
+          console.error(`❌ [Webhook] Failed to update invoice:`, invoiceError);
+          return NextResponse.json(
+            { success: false, error: "Failed to update invoice" },
+            { status: 500 }
+          );
+        }
+
+        if (!invoice) {
+          console.error(`❌ [Webhook] Invoice not found: ${metadata.invoice_number}`);
+          return NextResponse.json(
+            { success: false, error: "Invoice not found" },
+            { status: 404 }
+          );
+        }
+
+        console.log(`✅ [Webhook] Invoice ${metadata.invoice_number} marked as paid`);
+        
+        // Return success - invoice payments don't need token distribution
+        return NextResponse.json({
+          success: true,
+          message: "Invoice payment processed",
+          invoice_number: metadata.invoice_number,
+        });
+      }
 
       // Check if transaction has already been processed
       if (isTransactionProcessed(reference)) {
@@ -432,6 +477,15 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // Create payment received notification
+      if (transaction.userId) {
+        try {
+          await notifyPaymentReceived(transaction.userId, paystackAmount, reference);
+        } catch (notifError) {
+          console.error(`[Webhook] Failed to create payment notification:`, notifError);
+        }
+      }
+
       // Distribute tokens to user's wallet
       console.log(`Transaction ${reference} verified. Distributing tokens...`);
       console.log(`Wallet: ${transaction.walletAddress}, Amount: ${finalSendAmount} SEND`);
@@ -459,6 +513,15 @@ export async function POST(request: NextRequest) {
             } catch (emailError) {
               console.error(`[Webhook] Failed to send token distribution email:`, emailError);
               // Don't fail the transaction if email fails
+            }
+          }
+
+          // Create token distribution notification
+          if (transaction.userId) {
+            try {
+              await notifyTokensDistributed(transaction.userId, finalSendAmount, transaction.transactionId);
+            } catch (notifError) {
+              console.error(`[Webhook] Failed to create token notification:`, notifError);
             }
           }
           

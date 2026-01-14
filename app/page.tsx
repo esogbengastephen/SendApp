@@ -2,9 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import PaymentForm from "@/components/PaymentForm";
-import DarkModeToggle from "@/components/DarkModeToggle";
+import dynamic from "next/dynamic";
 import { isUserLoggedIn, getUserFromStorage, clearUserSession } from "@/lib/session";
+
+// Lazy load UserDashboard to reduce initial bundle size
+const UserDashboard = dynamic(() => import("@/components/UserDashboard"), {
+  loading: () => (
+    <div className="flex items-center justify-center min-h-screen bg-primary">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-secondary mx-auto mb-4"></div>
+        <p className="text-secondary">Loading...</p>
+      </div>
+    </div>
+  ),
+  ssr: false,
+});
 
 export default function Home() {
   const router = useRouter();
@@ -45,7 +57,22 @@ export default function Home() {
           return;
         }
 
-        // User exists in database - allow access
+        // Check if user has passkey - redirect to setup if not
+        try {
+          const passkeyResponse = await fetch(`/api/user/check-passkey?userId=${currentUser.id}`);
+          const passkeyData = await passkeyResponse.json();
+
+          if (passkeyData.success && passkeyData.needsPasskeySetup) {
+            // User doesn't have passkey - redirect to setup
+            router.push("/passkey-setup");
+            return;
+          }
+        } catch (error) {
+          console.error("Error checking passkey:", error);
+          // Continue to dashboard if check fails
+        }
+
+        // User exists in database and has passkey - allow access
         setUser(currentUser);
         setIsChecking(false);
       } catch (error) {
@@ -59,41 +86,17 @@ export default function Home() {
     verifyUser();
   }, [router]);
 
-  const handleLogout = () => {
-    clearUserSession();
-    router.push("/auth");
-  };
-
   if (isChecking) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-slate-50 dark:bg-slate-900">
+      <div className="flex items-center justify-center min-h-screen bg-primary">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-slate-600 dark:text-slate-400">Loading...</p>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-secondary mx-auto mb-4"></div>
+          <p className="text-secondary">Loading...</p>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="flex items-center justify-center min-h-screen relative">
-      {/* Header with User Info and Logout */}
-      <div className="absolute top-4 right-4 flex items-center gap-4 z-10">
-        {user && (
-          <div className="text-sm text-slate-700 dark:text-slate-300">
-            {user.email}
-          </div>
-        )}
-        <button
-          onClick={handleLogout}
-          className="text-sm font-medium text-slate-700 dark:text-slate-300 hover:text-primary transition-colors"
-        >
-          Logout
-        </button>
-        <DarkModeToggle fixed={false} />
-      </div>
-      <PaymentForm />
-    </div>
-  );
+  return <UserDashboard />;
 }
 

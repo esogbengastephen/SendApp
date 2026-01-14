@@ -4,7 +4,7 @@ import { generateSessionToken } from "@/lib/session";
 
 export async function POST(request: NextRequest) {
   try {
-    const { email, code, referralCode } = await request.json();
+    const { email, code, referralCode, phoneNumber } = await request.json();
 
     if (!email || !code) {
       return NextResponse.json(
@@ -63,10 +63,10 @@ export async function POST(request: NextRequest) {
       }
     }
     
-    // Create Paystack customer and virtual account automatically
+    // Create Paystack customer and virtual account automatically (keep for backward compatibility)
     if (result.user?.id && result.user?.email) {
       try {
-        console.log(`[Signup] Creating virtual account for ${email}`);
+        console.log(`[Signup] Creating Paystack virtual account for ${email}`);
         
         const virtualAccountResponse = await fetch(
           `${request.nextUrl.origin}/api/paystack/create-virtual-account-signup`,
@@ -82,15 +82,50 @@ export async function POST(request: NextRequest) {
         
         if (virtualAccountResponse.ok) {
           const vaData = await virtualAccountResponse.json();
-          console.log(`[Signup] ✅ Virtual account created: ${vaData.data?.accountNumber} (${vaData.data?.bankName})`);
+          console.log(`[Signup] ✅ Paystack virtual account created: ${vaData.data?.accountNumber} (${vaData.data?.bankName})`);
         } else {
           const errorData = await virtualAccountResponse.json();
-          console.error(`[Signup] ⚠️ Failed to create virtual account:`, errorData.error);
+          console.error(`[Signup] ⚠️ Failed to create Paystack virtual account:`, errorData.error);
         }
       } catch (vaError) {
-        console.error(`[Signup] Error creating virtual account:`, vaError);
+        console.error(`[Signup] Error creating Paystack virtual account:`, vaError);
         // Don't fail signup if virtual account creation fails
       }
+    }
+
+    // Create Flutterwave virtual account (main NGN account)
+    if (result.user?.id && result.user?.email && phoneNumber) {
+      try {
+        console.log(`[Signup] Creating Flutterwave virtual account for ${email} (${phoneNumber})`);
+        
+        const flutterwaveResponse = await fetch(
+          `${request.nextUrl.origin}/api/flutterwave/create-virtual-account-signup`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              userId: result.user.id, 
+              email: result.user.email,
+              phoneNumber: phoneNumber,
+              firstName: "User",
+              lastName: "Account",
+            }),
+          }
+        );
+        
+        if (flutterwaveResponse.ok) {
+          const fwData = await flutterwaveResponse.json();
+          console.log(`[Signup] ✅ Flutterwave virtual account created: ${fwData.data?.accountNumber} (${fwData.data?.bankName})`);
+        } else {
+          const errorData = await flutterwaveResponse.json();
+          console.error(`[Signup] ⚠️ Failed to create Flutterwave virtual account:`, errorData.error);
+        }
+      } catch (fwError) {
+        console.error(`[Signup] Error creating Flutterwave virtual account:`, fwError);
+        // Don't fail signup if Flutterwave account creation fails
+      }
+    } else if (!phoneNumber) {
+      console.warn(`[Signup] ⚠️ Phone number not provided, Flutterwave account not created`);
     }
     
     // Set httpOnly cookie

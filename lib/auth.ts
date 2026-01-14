@@ -4,11 +4,18 @@ import { nanoid } from "nanoid";
 export interface AuthUser {
   id: string;
   email: string;
-  walletAddress?: string; // Can be linked later
+  walletAddress?: string; // Can be linked later (legacy field)
   referralCode: string;
   referredBy?: string;
   emailVerified: boolean;
   createdAt: Date;
+  // Profile fields
+  displayName?: string;
+  photoUrl?: string;
+  // Passkey and wallet fields
+  hasPasskey?: boolean;
+  hasWallet?: boolean;
+  walletAddresses?: Record<string, string>; // Multi-chain addresses (JSONB from database)
   // Transaction stats (from existing user system)
   firstTransactionAt?: Date;
   lastTransactionAt?: Date;

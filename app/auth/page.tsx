@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import DarkModeToggle from "@/components/DarkModeToggle";
 import PoweredBySEND from "@/components/PoweredBySEND";
+import { authenticateWithPasskey, isPasskeySupported } from "@/lib/passkey";
 
 type AuthMode = "login" | "signup" | "verify";
 
@@ -13,21 +14,48 @@ export default function AuthPage() {
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [referralCode, setReferralCode] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [codeSent, setCodeSent] = useState(false);
   const [resending, setResending] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [hasPasskey, setHasPasskey] = useState(false);
+  const [passkeyUserId, setPasskeyUserId] = useState<string | null>(null);
+  const [passkeyUser, setPasskeyUser] = useState<any>(null);
+  const [authenticatingPasskey, setAuthenticatingPasskey] = useState(false);
 
   const handleSendCode = async () => {
     setError("");
     setMessage("");
     setLoading(true);
+    setHasPasskey(false);
+    setPasskeyUserId(null);
+    setPasskeyUser(null);
 
     try {
       if (mode === "login") {
-        // For login: check if user exists and redirect immediately
+        // First check if user has passkey
+        const passkeyCheckResponse = await fetch("/api/auth/passkey-login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
+
+        const passkeyData = await passkeyCheckResponse.json();
+
+        if (passkeyData.success && passkeyData.hasPasskey) {
+          // User has passkey - show passkey option
+          setHasPasskey(true);
+          setPasskeyUserId(passkeyData.userId);
+          setPasskeyUser(passkeyData.user);
+          setMessage("Passkey detected! You can sign in with passkey or continue with email.");
+          setLoading(false);
+          return;
+        }
+
+        // User doesn't have passkey - proceed with email login
         const response = await fetch("/api/auth/login", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -41,10 +69,10 @@ export default function AuthPage() {
           return;
         }
 
-        // User exists - store session and redirect
+        // User exists - store session and redirect to passkey setup
         setMessage("Login successful! Redirecting...");
         localStorage.setItem("user", JSON.stringify(data.user));
-        setTimeout(() => router.push("/"), 1500);
+        setTimeout(() => router.push("/passkey-setup"), 1500);
       } else {
         // For signup: send confirmation code
         const response = await fetch("/api/auth/send-code", {
@@ -138,6 +166,13 @@ export default function AuthPage() {
 
     try {
       // Sign up flow only (login doesn't need code verification)
+      // Phone number is required for signup
+      if (mode === "signup" && !phoneNumber) {
+        setError("Phone number is required");
+        setLoading(false);
+        return;
+      }
+
       const response = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -145,6 +180,7 @@ export default function AuthPage() {
           email,
           code,
           referralCode: referralCode || undefined,
+          phoneNumber: mode === "signup" ? phoneNumber : undefined,
         }),
       });
 
@@ -158,11 +194,44 @@ export default function AuthPage() {
       setMessage("Account created successfully! Redirecting...");
       // Store user in localStorage
       localStorage.setItem("user", JSON.stringify(data.user));
-      setTimeout(() => router.push("/"), 1500);
+      
+      // New users must set up passkey before accessing dashboard
+      setTimeout(() => router.push("/passkey-setup"), 1500);
     } catch (err: any) {
       setError("Verification failed. Please try again.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePasskeyLogin = async () => {
+    if (!passkeyUserId || !isPasskeySupported()) {
+      setError("Passkey authentication is not available");
+      return;
+    }
+
+    setAuthenticatingPasskey(true);
+    setError("");
+    setMessage("");
+
+    try {
+      const authResult = await authenticateWithPasskey(passkeyUserId);
+
+      if (!authResult.success) {
+        setError(authResult.error || "Passkey authentication failed");
+        return;
+      }
+
+      // Authentication successful
+      setMessage("Passkey authentication successful! Redirecting...");
+      localStorage.setItem("user", JSON.stringify(passkeyUser));
+      
+      setTimeout(() => router.push("/"), 1500);
+    } catch (err: any) {
+      console.error("Passkey login error:", err);
+      setError(err.message || "Failed to authenticate with passkey");
+    } finally {
+      setAuthenticatingPasskey(false);
     }
   };
 
@@ -224,10 +293,16 @@ export default function AuthPage() {
                 <input
                   type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    // Reset passkey state when email changes
+                    setHasPasskey(false);
+                    setPasskeyUserId(null);
+                    setPasskeyUser(null);
+                  }}
                   placeholder="you@example.com"
                   className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-3 focus:ring-2 focus:ring-primary focus:border-primary"
-                  disabled={loading}
+                  disabled={loading || authenticatingPasskey}
                 />
               </div>
 
@@ -248,15 +323,47 @@ export default function AuthPage() {
                 </div>
               )}
 
+              {/* Passkey Login Button (only for login mode when passkey detected) */}
+              {mode === "login" && hasPasskey && isPasskeySupported() && (
+                <button
+                  onClick={handlePasskeyLogin}
+                  disabled={authenticatingPasskey}
+                  className="w-full bg-secondary text-primary font-bold px-4 py-3 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 border-2 border-primary"
+                >
+                  {authenticatingPasskey ? (
+                    <>
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary"></div>
+                      <span>Authenticating...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-icons-outlined">fingerprint</span>
+                      <span>Sign in with Passkey</span>
+                    </>
+                  )}
+                </button>
+              )}
+
+              {/* Divider */}
+              {mode === "login" && hasPasskey && (
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 border-t border-slate-300 dark:border-slate-600"></div>
+                  <span className="text-xs text-slate-500 dark:text-slate-400">OR</span>
+                  <div className="flex-1 border-t border-slate-300 dark:border-slate-600"></div>
+                </div>
+              )}
+
               <button
                 onClick={handleSendCode}
-                disabled={loading || !email}
+                disabled={loading || !email || authenticatingPasskey}
                 className="w-full bg-primary text-slate-900 font-bold px-4 py-3 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading 
                   ? "Processing..." 
                   : mode === "login" 
-                    ? "Login" 
+                    ? hasPasskey 
+                      ? "Continue with Email"
+                      : "Login"
                     : "Send Confirmation Code"}
               </button>
             </div>
@@ -299,7 +406,7 @@ export default function AuthPage() {
 
               <button
                 onClick={handleVerifyCode}
-                disabled={loading || code.length !== 6}
+                disabled={loading || code.length !== 6 || (mode === "signup" && (!phoneNumber || phoneNumber.length < 11))}
                 className="w-full bg-primary text-slate-900 font-bold px-4 py-3 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? "Verifying..." : mode === "login" ? "Login" : "Sign Up"}
@@ -309,6 +416,7 @@ export default function AuthPage() {
                 onClick={() => {
                   setCodeSent(false);
                   setCode("");
+                  setPhoneNumber("");
                   setError("");
                   setMessage("");
                   setResendCooldown(0); // Reset cooldown when changing email

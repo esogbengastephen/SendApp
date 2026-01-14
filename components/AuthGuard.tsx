@@ -47,7 +47,22 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // User exists in database - allow access
+      // Check if user has passkey - redirect to setup if not
+      try {
+        const passkeyResponse = await fetch(`/api/user/check-passkey?userId=${currentUser.id}`);
+        const passkeyData = await passkeyResponse.json();
+
+        if (passkeyData.success && passkeyData.needsPasskeySetup) {
+          // User doesn't have passkey - redirect to setup
+          router.push("/passkey-setup");
+          return;
+        }
+      } catch (error) {
+        console.error("Error checking passkey:", error);
+        // Continue to dashboard if check fails (don't block access)
+      }
+
+      // User exists in database and has passkey - allow access
       setIsAuthenticated(true);
       setIsChecking(false);
     } catch (error) {
