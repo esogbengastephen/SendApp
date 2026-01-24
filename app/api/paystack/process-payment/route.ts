@@ -104,10 +104,25 @@ async function findClaimablePendingTransaction(
 }
 
 /**
- * Combined endpoint: Store transaction and check for payment
- * This ensures the transaction is available when checking
+ * DEPRECATED: Paystack payment processing endpoint
+ * This endpoint is deprecated. Please use Flutterwave checkout for new payments.
+ * Kept for backward compatibility with historical Paystack transactions.
+ * 
+ * New payments should use: /api/flutterwave/initialize-payment
  */
 export async function POST(request: NextRequest) {
+  // Return deprecation error - Paystack is no longer supported
+  return NextResponse.json(
+    {
+      success: false,
+      error: "Paystack payment method is deprecated. Please use Flutterwave checkout instead.",
+      deprecated: true,
+      message: "This payment method is no longer supported. Please refresh the page and use Flutterwave checkout.",
+    },
+    { status: 410 } // 410 Gone - indicates the resource is permanently unavailable
+  );
+
+  /* COMMENTED OUT - Paystack code kept for reference
   try {
     // Check if transactions are enabled
     const transactionsEnabled = await getTransactionsEnabled();
@@ -719,4 +734,5 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+  */ // End of commented Paystack code
 }

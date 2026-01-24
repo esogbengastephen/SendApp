@@ -88,7 +88,7 @@ export async function POST(request: NextRequest) {
       // Send invoice email to customer if email is provided
       if (customerEmail && invoice) {
         const invoiceUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/invoice/${invoice.invoice_number}`;
-        const merchantName = userResult.user.display_name || userResult.user.email || "FlipPay";
+        const merchantName = (userResult.user as any).display_name || userResult.user.email || "FlipPay";
         
         // Send email asynchronously (don't wait for it)
         sendInvoiceEmail(
@@ -147,7 +147,7 @@ export async function POST(request: NextRequest) {
     // Send invoice email to customer if email is provided
     if (customerEmail && invoice) {
       const invoiceUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/invoice/${invoice.invoice_number}`;
-      const merchantName = userResult.user.display_name || userResult.user.email || "FlipPay";
+      const merchantName = (userResult.user as any).display_name || userResult.user.email || "FlipPay";
       
       // Send email asynchronously (don't wait for it)
       sendInvoiceEmail(

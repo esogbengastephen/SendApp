@@ -16,7 +16,8 @@ export interface VerificationAttempt {
   point2Verified: boolean;
   point3Verified: boolean;
   allPointsVerified: boolean;
-  paystackReference?: string;
+  paymentReference?: string; // Renamed from paystackReference (deprecated)
+  paystackReference?: string; // DEPRECATED: Use paymentReference instead
   errorMessage?: string;
   createdAt: Date;
 }
@@ -24,7 +25,8 @@ export interface VerificationAttempt {
 export interface Transaction {
   transactionId: string;
   idempotencyKey?: string; // Same as transactionId, used for idempotency
-  paystackReference: string;
+  paymentReference?: string; // Payment reference (Paystack or Flutterwave)
+  paystackReference?: string; // DEPRECATED: Use paymentReference instead. Kept for backward compatibility.
   ngnAmount: number;
   sendAmount: string;
   walletAddress: string;
@@ -55,7 +57,8 @@ function convertSupabaseTransaction(supabaseTx: SupabaseTransaction): Transactio
   return {
     transactionId: supabaseTx.transaction_id,
     idempotencyKey: supabaseTx.transaction_id,
-    paystackReference: supabaseTx.paystack_reference || "",
+    paymentReference: supabaseTx.payment_reference || supabaseTx.paystack_reference || "", // Use new column, fallback to old for compatibility
+    paystackReference: supabaseTx.payment_reference || supabaseTx.paystack_reference || "", // DEPRECATED: Keep for backward compatibility
     ngnAmount: parseFloat(supabaseTx.ngn_amount.toString()),
     sendAmount: supabaseTx.send_amount,
     walletAddress: supabaseTx.wallet_address,
@@ -232,7 +235,8 @@ export async function updateTransaction(
     if (updates.ngnAmount) supabaseUpdates.ngn_amount = updates.ngnAmount;
     if (updates.sendAmount) supabaseUpdates.send_amount = updates.sendAmount;
     if (updates.walletAddress) supabaseUpdates.wallet_address = updates.walletAddress;
-    if (updates.paystackReference) supabaseUpdates.paystack_reference = updates.paystackReference;
+    if (updates.paymentReference) supabaseUpdates.payment_reference = updates.paymentReference; // Use payment_reference
+    if (updates.paystackReference) supabaseUpdates.payment_reference = updates.paystackReference; // DEPRECATED: Map to payment_reference for backward compatibility
     if (updates.txHash) supabaseUpdates.tx_hash = updates.txHash;
     if (updates.sendtag) supabaseUpdates.sendtag = updates.sendtag;
     if (updates.exchangeRate) supabaseUpdates.exchange_rate = updates.exchangeRate;

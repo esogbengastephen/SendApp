@@ -187,7 +187,11 @@ export async function GET(request: NextRequest) {
         .select("token_symbol, buy_price_ngn");
 
       if (dbPrices && dbPrices.length > 0) {
-        const fallbackPricesNGN: typeof pricesNGN = {
+        const fallbackPricesNGN: {
+          SEND: number | null;
+          USDC: number | null;
+          USDT: number | null;
+        } = {
           SEND: null,
           USDC: null,
           USDT: null,

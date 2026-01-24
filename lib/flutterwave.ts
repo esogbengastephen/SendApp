@@ -2,8 +2,12 @@ import axios from "axios";
 
 const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY;
 const FLUTTERWAVE_PUBLIC_KEY = process.env.NEXT_PUBLIC_FLUTTERWAVE_PUBLIC_KEY;
-const FLUTTERWAVE_USE_TEST_MODE = process.env.FLUTTERWAVE_USE_TEST_MODE === "true" || 
-                                   process.env.NODE_ENV === "development";
+const FLUTTERWAVE_WEBHOOK_SECRET_HASH = process.env.FLUTTERWAVE_WEBHOOK_SECRET_HASH;
+// If FLUTTERWAVE_USE_TEST_MODE is explicitly set, use that value
+// Otherwise, default to test mode in development, production mode otherwise
+const FLUTTERWAVE_USE_TEST_MODE = process.env.FLUTTERWAVE_USE_TEST_MODE !== undefined
+  ? process.env.FLUTTERWAVE_USE_TEST_MODE === "true"
+  : process.env.NODE_ENV === "development";
 
 if (!FLUTTERWAVE_SECRET_KEY) {
   console.warn("FLUTTERWAVE_SECRET_KEY is not set in environment variables");
@@ -141,22 +145,31 @@ export async function createVirtualAccount(
 
     const normalizedPhone = normalizeMobileNumber(params.phoneNumber);
 
+    // Flutterwave requires BVN/NIN for static accounts
+    // If no BVN/NIN, create dynamic account (temporary, requires amount)
+    // If BVN/NIN provided, create static account (permanent, no amount needed)
+    const hasBVNOrNIN = !!(params.bvn || params.nin);
+    
     const requestBody: any = {
       email: params.email,
       firstname: params.firstName,
       lastname: params.lastName,
       phonenumber: normalizedPhone,
       tx_ref: `VA-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-      is_permanent: params.isPermanent || false,
+      is_permanent: hasBVNOrNIN, // Static only if BVN/NIN provided
     };
 
-    // Add BVN or NIN if provided (for static/permanent accounts)
+    // Add BVN or NIN if provided (creates static account)
     if (params.bvn) {
       requestBody.bvn = params.bvn;
       requestBody.is_permanent = true;
     } else if (params.nin) {
       requestBody.nin = params.nin;
       requestBody.is_permanent = true;
+    } else {
+      // Dynamic account requires amount (minimum 1 NGN)
+      // Note: Dynamic accounts expire after use, but we'll upgrade to static when BVN is verified
+      requestBody.amount = 1; // Minimum amount for dynamic accounts
     }
 
     const response = await axios.post(
@@ -268,18 +281,138 @@ export async function createTransfer(params: TransferParams) {
 
 /**
  * Verify Flutterwave webhook signature
+ * According to Flutterwave docs, webhooks use a separate secret hash
+ * configured in the dashboard (Settings > Webhooks > Secret hash)
+ * 
+ * The verif-hash header contains the hash that should match our computed hash
  */
 export function verifyWebhookSignature(
   payload: string,
   signature: string
 ): boolean {
   const crypto = require("crypto");
-  const hash = crypto
-    .createHmac("sha256", FLUTTERWAVE_SECRET_KEY || "")
+  
+  // Use webhook secret hash if configured, otherwise fall back to API secret key
+  // The webhook secret hash is set in Flutterwave dashboard (Settings > Webhooks)
+  const secretHash = FLUTTERWAVE_WEBHOOK_SECRET_HASH || FLUTTERWAVE_SECRET_KEY || "";
+  
+  if (!secretHash) {
+    console.warn("[Flutterwave] No webhook secret hash configured. Using API secret key as fallback.");
+  }
+  
+  // Flutterwave sends the hash in the verif-hash header
+  // We compute the hash using HMAC SHA256 of the payload with the secret hash
+  const computedHash = crypto
+    .createHmac("sha256", secretHash)
     .update(payload)
     .digest("hex");
 
-  return hash === signature;
+  // Compare the received signature with our computed hash
+  return computedHash === signature;
+}
+
+/**
+ * Verify bank account number and get account holder name
+ * Uses Flutterwave's account resolution API
+ */
+export async function verifyBankAccount(accountNumber: string, bankCode: string) {
+  try {
+    if (!FLUTTERWAVE_SECRET_KEY) {
+      return {
+        success: false,
+        error: "Flutterwave secret key not configured",
+      };
+    }
+
+    console.log(`[Flutterwave Verify Account] Verifying account ${accountNumber} with bank ${bankCode}`);
+    console.log(`[Flutterwave Verify Account] API Base: ${FLUTTERWAVE_API_BASE}`);
+    console.log(`[Flutterwave Verify Account] Test Mode: ${FLUTTERWAVE_USE_TEST_MODE}`);
+
+    const response = await axios.post(
+      `${FLUTTERWAVE_API_BASE}/accounts/resolve`,
+      {
+        account_number: accountNumber,
+        account_bank: bankCode,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    console.log(`[Flutterwave Verify Account] Response status: ${response.data.status}`);
+    console.log(`[Flutterwave Verify Account] Response data:`, JSON.stringify(response.data, null, 2));
+
+    if (response.data.status === "success" && response.data.data) {
+      const accountName = response.data.data.account_name;
+      const accountNumberFromResponse = response.data.data.account_number;
+      
+      if (!accountName) {
+        console.warn("[Flutterwave Verify Account] Account name is missing in response");
+        return {
+          success: false,
+          error: "Account verified but name not available",
+          details: response.data,
+        };
+      }
+
+      return {
+        success: true,
+        data: {
+          accountNumber: accountNumberFromResponse || accountNumber,
+          accountName: accountName,
+        },
+      };
+    }
+
+    const errorMessage = response.data.message || "Failed to verify account";
+    console.error(`[Flutterwave Verify Account] Verification failed: ${errorMessage}`);
+    
+    // Provide helpful error message for test mode limitations
+    let userFriendlyError = errorMessage;
+    if (FLUTTERWAVE_USE_TEST_MODE && bankCode !== "044") {
+      userFriendlyError = `Account verification in test mode only supports Access Bank (044). For other banks, please use production mode or contact support. Original error: ${errorMessage}`;
+    } else if (errorMessage.toLowerCase().includes("invalid") || errorMessage.toLowerCase().includes("not found")) {
+      userFriendlyError = `Invalid account number or bank code. Please verify the account number and selected bank are correct.`;
+    }
+    
+    return {
+      success: false,
+      error: userFriendlyError,
+      details: response.data,
+      isTestMode: FLUTTERWAVE_USE_TEST_MODE,
+    };
+  } catch (error: any) {
+    console.error("[Flutterwave Verify Account] Error:", error);
+    console.error("[Flutterwave Verify Account] Error response:", error.response?.data);
+    
+    let errorMessage = "Failed to verify account";
+    
+    if (error.response?.data?.message) {
+      errorMessage = error.response.data.message;
+    } else if (error.response?.status === 401) {
+      errorMessage = "Authentication failed. Please check your API credentials.";
+    } else if (error.response?.status === 400) {
+      const apiError = error.response.data?.message || "Invalid account number or bank code";
+      // Provide helpful context for test mode
+      if (FLUTTERWAVE_USE_TEST_MODE && bankCode !== "044") {
+        errorMessage = `Account verification in test mode only supports Access Bank (044). For other banks, please use production mode. Original error: ${apiError}`;
+      } else {
+        errorMessage = apiError;
+      }
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    
+    return {
+      success: false,
+      error: errorMessage,
+      details: error.response?.data,
+      isTestMode: FLUTTERWAVE_USE_TEST_MODE,
+    };
+  }
 }
 
 /**
@@ -319,6 +452,154 @@ export async function getAccountBalance() {
     return {
       success: false,
       error: error.response?.data?.message || "Failed to get balance",
+    };
+  }
+}
+
+export interface InitializePaymentParams {
+  email: string;
+  amount: number; // Amount in NGN (not kobo)
+  txRef: string; // Unique transaction reference
+  callbackUrl?: string;
+  redirectUrl?: string;
+  metadata?: Record<string, any>;
+  customer?: {
+    email: string;
+    name?: string;
+    phone_number?: string;
+  };
+}
+
+export interface PaymentLinkResponse {
+  link: string; // Payment link URL
+  status: string;
+  message: string;
+  data: {
+    link: string;
+    status: string;
+  };
+}
+
+/**
+ * Initialize Flutterwave payment (creates payment link/checkout)
+ * Similar to Paystack's initializeTransaction but uses Flutterwave API
+ */
+export async function initializePayment(
+  params: InitializePaymentParams
+): Promise<{ success: boolean; data?: PaymentLinkResponse["data"]; error?: string }> {
+  try {
+    if (!FLUTTERWAVE_SECRET_KEY) {
+      return {
+        success: false,
+        error: "Flutterwave secret key not configured",
+      };
+    }
+
+    const requestBody: any = {
+      tx_ref: params.txRef,
+      amount: params.amount, // Flutterwave expects amount in NGN (not kobo)
+      currency: "NGN",
+      redirect_url: params.redirectUrl || params.callbackUrl || `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/payment/callback`,
+      payment_options: "card,account,ussd,transfer,banktransfer",
+      customer: {
+        email: params.customer?.email || params.email,
+        name: params.customer?.name || "Customer",
+        phone_number: params.customer?.phone_number || "",
+      },
+      customizations: {
+        title: "SEND Token Purchase",
+        description: "Purchase SEND tokens with Naira",
+        logo: `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/logo.png`,
+      },
+    };
+
+    // Add metadata if provided
+    if (params.metadata) {
+      requestBody.meta = params.metadata;
+    }
+
+    console.log(`[Flutterwave Payment] Initializing payment: ${params.amount} NGN, txRef: ${params.txRef}`);
+
+    const response = await axios.post(
+      `${FLUTTERWAVE_API_BASE}/payments`,
+      requestBody,
+      {
+        headers: {
+          Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+
+    console.log(`[Flutterwave Payment] Response:`, response.data);
+
+    if (response.data.status === "success") {
+      return {
+        success: true,
+        data: {
+          link: response.data.data.link,
+          status: response.data.status,
+        },
+      };
+    }
+
+    return {
+      success: false,
+      error: response.data.message || "Failed to initialize payment",
+    };
+  } catch (error: any) {
+    console.error("[Flutterwave Payment] Initialization error:", error);
+    console.error("[Flutterwave Payment] Error response:", error.response?.data);
+    
+    const errorMessage = error.response?.data?.message || 
+                        error.response?.data?.error || 
+                        error.message || 
+                        "Failed to initialize payment";
+    
+    return {
+      success: false,
+      error: errorMessage,
+    };
+  }
+}
+
+/**
+ * Verify Flutterwave payment transaction
+ */
+export async function verifyPayment(txRef: string) {
+  try {
+    if (!FLUTTERWAVE_SECRET_KEY) {
+      return {
+        success: false,
+        error: "Flutterwave secret key not configured",
+      };
+    }
+
+    const response = await axios.get(
+      `${FLUTTERWAVE_API_BASE}/transactions/${txRef}/verify`,
+      {
+        headers: {
+          Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
+        },
+      }
+    );
+
+    if (response.data.status === "success") {
+      return {
+        success: true,
+        data: response.data.data,
+      };
+    }
+
+    return {
+      success: false,
+      error: response.data.message || "Failed to verify payment",
+    };
+  } catch (error: any) {
+    console.error("[Flutterwave Payment] Verification error:", error);
+    return {
+      success: false,
+      error: error.response?.data?.message || "Failed to verify payment",
     };
   }
 }

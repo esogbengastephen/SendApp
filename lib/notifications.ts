@@ -195,3 +195,104 @@ export async function notifySystemMessage(
 ): Promise<void> {
   await createNotification(userId, 'system', title, message, data);
 }
+
+/**
+ * Create notification for transfer completed
+ */
+export async function notifyTransferCompleted(
+  userId: string,
+  amount: number,
+  recipientPhoneNumber: string,
+  reference: string
+): Promise<void> {
+  await createNotification(
+    userId,
+    'transaction',
+    'Transfer Completed',
+    `Your transfer of ₦${amount.toLocaleString()} to ${recipientPhoneNumber} was successful. Reference: ${reference}`,
+    {
+      amount,
+      currency: 'NGN',
+      reference,
+      recipient_phone: recipientPhoneNumber,
+      status: 'completed',
+      type: 'transfer',
+    }
+  );
+}
+
+/**
+ * Create notification for transfer failed
+ */
+export async function notifyTransferFailed(
+  userId: string,
+  amount: number,
+  recipientPhoneNumber: string,
+  reference: string,
+  errorMessage?: string
+): Promise<void> {
+  await createNotification(
+    userId,
+    'transaction',
+    'Transfer Failed',
+    `Your transfer of ₦${amount.toLocaleString()} to ${recipientPhoneNumber} failed.${errorMessage ? ` Reason: ${errorMessage}` : ''} Reference: ${reference}`,
+    {
+      amount,
+      currency: 'NGN',
+      reference,
+      recipient_phone: recipientPhoneNumber,
+      status: 'failed',
+      type: 'transfer',
+      error_message: errorMessage,
+    }
+  );
+}
+
+/**
+ * Create notification for payment failed
+ */
+export async function notifyPaymentFailed(
+  userId: string,
+  amount: number,
+  reference: string,
+  errorMessage?: string
+): Promise<void> {
+  await createNotification(
+    userId,
+    'payment',
+    'Payment Failed',
+    `Your payment of ₦${amount.toLocaleString()} failed.${errorMessage ? ` Reason: ${errorMessage}` : ''} Reference: ${reference}`,
+    {
+      amount,
+      currency: 'NGN',
+      reference,
+      status: 'failed',
+      error_message: errorMessage,
+    }
+  );
+}
+
+/**
+ * Create notification for refund received
+ */
+export async function notifyRefundReceived(
+  userId: string,
+  amount: number,
+  reference: string,
+  originalReference?: string
+): Promise<void> {
+  await createNotification(
+    userId,
+    'payment',
+    'Refund Received',
+    `You received a refund of ₦${amount.toLocaleString()}.${originalReference ? ` Original transaction: ${originalReference}` : ''} Reference: ${reference}`,
+    {
+      amount,
+      currency: 'NGN',
+      reference,
+      original_reference: originalReference,
+      status: 'refunded',
+      type: 'refund',
+    }
+  );
+}

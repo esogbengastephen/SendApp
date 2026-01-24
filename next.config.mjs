@@ -54,7 +54,11 @@ const nextConfig = {
   },
   // Turbopack configuration (Next.js 16 uses Turbopack by default)
   turbopack: {
-    // Turbopack handles webpack configs automatically
+    // Resolve aliases for packages with subpath exports
+    resolveAlias: {
+      // Fix for @scure/bip39 wordlists resolution in Turbopack
+      '@scure/bip39/wordlists/english': '@scure/bip39/wordlists/english.js',
+    },
   },
 };
 

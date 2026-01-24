@@ -10,40 +10,83 @@ function PaymentCallbackContent() {
   const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
   const [message, setMessage] = useState<string>("");
   const [txHash, setTxHash] = useState<string | null>(null);
-  const reference = searchParams.get("reference");
+  // Flutterwave uses tx_ref, but we also check reference for compatibility
+  const txRef = searchParams.get("tx_ref") || searchParams.get("reference");
+  const statusParam = searchParams.get("status");
 
   useEffect(() => {
-    if (!reference) {
+    if (!txRef) {
       setStatus("error");
       setMessage("No payment reference found");
       return;
     }
 
-    // Verify the payment
-    const verifyPayment = async () => {
-      try {
-        const response = await fetch(`/api/paystack/verify?reference=${reference}`);
-        const data = await response.json();
+    // Check status from URL params first (Flutterwave redirects with status)
+    if (statusParam === "successful" || statusParam === "success") {
+      // Payment was successful, verify and check transaction status
+      verifyPayment();
+    } else if (statusParam === "cancelled" || statusParam === "failed") {
+      setStatus("error");
+      setMessage("Payment was cancelled or failed. Please try again.");
+    } else {
+      // No status param, verify payment
+      verifyPayment();
+    }
 
-        if (data.success && data.data?.status === "success") {
-          setStatus("success");
-          setMessage(
-            `Payment successful! Your $SEND tokens are being distributed to your wallet.`
-          );
-          // Note: Token distribution happens via webhook, so we don't have txHash here
+    // Verify the payment
+    async function verifyPayment() {
+      try {
+        // Extract transaction ID from Flutterwave tx_ref
+        // Format: FLW-{transactionId}-{timestamp}-{random}
+        let transactionId = txRef;
+        if (txRef.startsWith("FLW-")) {
+          // Extract our transaction ID from Flutterwave reference
+          const parts = txRef.split("-");
+          if (parts.length >= 2) {
+            transactionId = parts.slice(1, -2).join("-"); // Get transaction ID (skip FLW prefix and last 2 parts which are timestamp-random)
+            // Actually, let's try a simpler approach - find by payment_reference
+            // The webhook stores the Flutterwave tx_ref in payment_reference
+          }
+        }
+
+        // Try to find transaction by payment_reference first (Flutterwave tx_ref)
+        // If not found, try by transaction_id
+        let response = await fetch(`/api/transactions/create-id?paymentReference=${txRef}`);
+        let data = await response.json();
+
+        // If not found by payment_reference, try by transaction_id
+        if (!data.success || !data.exists) {
+          response = await fetch(`/api/transactions/create-id?transactionId=${transactionId}`);
+          data = await response.json();
+        }
+
+        if (data.success && data.exists) {
+          if (data.status === "completed" && data.txHash) {
+            setStatus("success");
+            setTxHash(data.txHash);
+            setMessage(
+              `Payment successful! ${data.sendAmount || ""} $SEND tokens have been sent to your wallet.`
+            );
+          } else if (data.status === "pending") {
+            setStatus("loading");
+            setMessage("Payment received! Processing token distribution...");
+            // Poll for completion (webhook might still be processing)
+            setTimeout(() => verifyPayment(), 3000);
+          } else {
+            setStatus("error");
+            setMessage(data.error_message || "Payment verification failed");
+          }
         } else {
           setStatus("error");
-          setMessage(data.message || "Payment verification failed");
+          setMessage("Transaction not found. The webhook may still be processing. Please check your transaction history in a few moments.");
         }
       } catch (error) {
         console.error("Payment verification error:", error);
         setStatus("error");
-        setMessage("Failed to verify payment. Please check your transaction in Paystack dashboard.");
+        setMessage("Failed to verify payment. Please check your transaction history or contact support.");
       }
-    };
-
-    verifyPayment();
-  }, [reference]);
+    }
+  }, [txRef, statusParam]);
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-background-light dark:bg-background-dark p-4">

@@ -28,6 +28,10 @@ yarn-error.log*
 .env*.local
 .env
 
+# Flutterwave API keys (contains real secrets)
+FLUTTERWAVE_ENV_LIVE_KEYS.txt
+FLUTTERWAVE_ENV_COPY_PASTE.txt
+
 # vercel
 .vercel
 

@@ -46,7 +46,8 @@ export interface SupabaseTransaction {
   transaction_id: string;
   user_id?: string;
   wallet_address: string;
-  paystack_reference?: string;
+  payment_reference?: string; // Payment reference (Paystack or Flutterwave)
+  paystack_reference?: string; // DEPRECATED: Use payment_reference instead. Kept for backward compatibility.
   ngn_amount: number;
   send_amount: string;
   status: "pending" | "completed" | "failed";
@@ -357,7 +358,8 @@ export async function createSupabaseTransaction(
     transaction_id: string;
     user_id?: string;
     wallet_address: string;
-    paystack_reference?: string;
+    payment_reference?: string; // Payment reference (Paystack or Flutterwave)
+    paystack_reference?: string; // DEPRECATED: Use payment_reference instead
     ngn_amount: number;
     send_amount: string;
     status?: "pending" | "completed" | "failed";
@@ -387,7 +389,7 @@ export async function createSupabaseTransaction(
         transaction_id: transactionData.transaction_id,
         user_id: transactionData.user_id || null,
         wallet_address: normalizedWallet,
-        paystack_reference: transactionData.paystack_reference || null,
+        payment_reference: transactionData.payment_reference || transactionData.paystack_reference || null, // Use payment_reference, fallback to deprecated paystack_reference
         ngn_amount: transactionData.ngn_amount,
         send_amount: transactionData.send_amount,
         status: status,

@@ -16,7 +16,15 @@ import { sendPaymentVerificationEmail, sendTokenDistributionEmail } from "@/lib/
 import { calculateTransactionFee, calculateFinalTokens, calculateFeeInTokens } from "@/lib/fee-calculation";
 import { recordRevenue } from "@/lib/revenue";
 
+/**
+ * DEPRECATED: Paystack webhook endpoint
+ * This endpoint is deprecated. Please use Flutterwave checkout for new payments.
+ * Kept for backward compatibility with historical Paystack transactions.
+ */
 export async function POST(request: NextRequest) {
+  // Return deprecation message but still process for backward compatibility
+  console.warn("[Paystack Webhook] DEPRECATED: Paystack is deprecated. Use Flutterwave checkout instead.");
+  
   try {
     // Get the raw body for signature verification
     const body = await request.text();
@@ -24,7 +32,12 @@ export async function POST(request: NextRequest) {
 
     if (!signature) {
       return NextResponse.json(
-        { success: false, error: "Missing signature" },
+        { 
+          success: false, 
+          error: "Missing signature",
+          deprecated: true,
+          message: "Paystack is deprecated. Please use Flutterwave checkout."
+        },
         { status: 401 }
       );
     }

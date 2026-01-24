@@ -1,6 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { verifyWebhookSignature } from "@/lib/flutterwave";
+import { 
+  notifyPaymentReceived, 
+  notifyTransferCompleted, 
+  notifyTransferFailed, 
+  notifyPaymentFailed,
+  notifyRefundReceived 
+} from "@/lib/notifications";
+import { nanoid } from "nanoid";
+import { getTransaction, updateTransaction } from "@/lib/transactions";
+import { distributeTokens } from "@/lib/token-distribution";
+import { getExchangeRate } from "@/lib/settings";
+import { calculateTransactionFee, calculateFinalTokens, calculateFeeInTokens } from "@/lib/fee-calculation";
+import { recordRevenue } from "@/lib/revenue";
+import { sendPaymentVerificationEmail, sendTokenDistributionEmail } from "@/lib/transaction-emails";
+import { updateReferralCountOnTransaction } from "@/lib/supabase";
 
 /**
  * Flutterwave webhook handler
@@ -35,6 +50,172 @@ export async function POST(request: NextRequest) {
     const event = JSON.parse(body);
 
     console.log(`[Flutterwave Webhook] Event received:`, event.event);
+    console.log(`[Flutterwave Webhook] Full event data:`, JSON.stringify(event, null, 2));
+
+    // Handle charge.success (payment link/checkout payments - ON-RAMP)
+    if (event.event === "charge.success") {
+      const chargeData = event.data;
+      const txRef = chargeData.tx_ref;
+      const flwRef = chargeData.flw_ref;
+      const amount = parseFloat(chargeData.amount || "0");
+      const status = chargeData.status;
+      const metadata = chargeData.meta || {};
+
+      console.log(`[Flutterwave Webhook] Charge successful: ${txRef} - ₦${amount}`);
+
+      // Only process if status is successful
+      if (status !== "successful" && status !== "success") {
+        console.log(`[Flutterwave Webhook] Payment status is not successful: ${status}`);
+        return NextResponse.json({
+          success: true,
+          message: "Payment not successful, skipping processing",
+        });
+      }
+
+      // Check if this is an on-ramp payment (has transaction_id in metadata)
+      if (metadata.transaction_id) {
+        const transactionId = metadata.transaction_id;
+        const walletAddress = metadata.wallet_address;
+        const userId = metadata.user_id;
+
+        console.log(`[Flutterwave Webhook] On-ramp payment detected: transaction ${transactionId}`);
+
+        // Find existing transaction
+        const transaction = await getTransaction(transactionId);
+
+        if (!transaction) {
+          console.error(`[Flutterwave Webhook] Transaction not found: ${transactionId}`);
+          return NextResponse.json(
+            { success: false, error: "Transaction not found" },
+            { status: 404 }
+          );
+        }
+
+        // Check if already processed
+        if (transaction.status === "completed" && transaction.txHash) {
+          console.log(`[Flutterwave Webhook] Transaction already completed: ${transactionId}`);
+          return NextResponse.json({
+            success: true,
+            message: "Transaction already processed",
+          });
+        }
+
+        // Get exchange rate and calculate fees
+        const exchangeRate = await getExchangeRate();
+        const feeNGN = await calculateTransactionFee(amount);
+        const feeInSEND = calculateFeeInTokens(feeNGN, exchangeRate);
+        const finalSendAmount = calculateFinalTokens(amount, feeNGN, exchangeRate);
+
+        console.log(`[Flutterwave Webhook] Converting ${amount} NGN → ${finalSendAmount} SEND (rate: ${exchangeRate}, fee: ${feeNGN} NGN / ${feeInSEND} $SEND)`);
+
+        // Update transaction status
+        // Store Flutterwave reference (txRef/flwRef) in payment_reference
+        // The txRef from Flutterwave is unique, but we use transaction_id from metadata to find our transaction
+        await updateTransaction(transactionId, {
+          status: "completed",
+          paymentReference: flwRef || txRef || metadata.flutterwave_tx_ref, // Store Flutterwave reference
+          ngnAmount: amount,
+          sendAmount: finalSendAmount,
+          exchangeRate,
+          completedAt: new Date(),
+          fee_ngn: feeNGN,
+          fee_in_send: feeInSEND,
+        });
+
+        // Record revenue
+        if (feeNGN > 0) {
+          const revenueResult = await recordRevenue(transactionId, feeNGN, feeInSEND);
+          if (!revenueResult.success) {
+            console.error(`[Flutterwave Webhook] ⚠️ Failed to record revenue: ${revenueResult.error}`);
+          }
+        }
+
+        // Get user email for notifications
+        let userEmail: string | null = null;
+        if (userId) {
+          const { data: user } = await supabaseAdmin
+            .from("users")
+            .select("email")
+            .eq("id", userId)
+            .single();
+          userEmail = user?.email || null;
+        }
+
+        // Send payment verification email
+        if (userEmail) {
+          try {
+            await sendPaymentVerificationEmail(userEmail, amount, flwRef || txRef);
+          } catch (emailError) {
+            console.error(`[Flutterwave Webhook] Failed to send payment verification email:`, emailError);
+          }
+        }
+
+        // Update referral count if this is user's first completed transaction
+        if (userId) {
+          try {
+            const referralResult = await updateReferralCountOnTransaction(userId);
+            if (referralResult.success) {
+              console.log(`[Flutterwave Webhook] ✅ Referral count updated for user ${userId}`);
+            }
+          } catch (error) {
+            console.error(`[Flutterwave Webhook] ⚠️ Exception updating referral count:`, error);
+          }
+        }
+
+        // Distribute tokens
+        try {
+          const distributionResult = await distributeTokens(
+            transactionId,
+            walletAddress,
+            finalSendAmount
+          );
+
+          if (distributionResult.success) {
+            console.log(`[Flutterwave Webhook] 🎉 Tokens distributed successfully! TX: ${distributionResult.txHash}`);
+
+            // Send token distribution email
+            if (userEmail) {
+              try {
+                await sendTokenDistributionEmail(
+                  userEmail,
+                  finalSendAmount,
+                  distributionResult.txHash || "",
+                  walletAddress
+                );
+              } catch (emailError) {
+                console.error(`[Flutterwave Webhook] Failed to send token distribution email:`, emailError);
+              }
+            }
+
+            return NextResponse.json({
+              success: true,
+              message: "On-ramp payment processed and tokens distributed",
+              data: {
+                transactionId,
+                txHash: distributionResult.txHash,
+                amount,
+                sendAmount: finalSendAmount,
+              },
+            });
+          } else {
+            console.error(`[Flutterwave Webhook] Token distribution failed: ${distributionResult.error}`);
+            return NextResponse.json(
+              { success: false, error: `Token distribution failed: ${distributionResult.error}` },
+              { status: 500 }
+            );
+          }
+        } catch (distError: any) {
+          console.error(`[Flutterwave Webhook] Token distribution error:`, distError);
+          return NextResponse.json(
+            { success: false, error: `Token distribution error: ${distError.message}` },
+            { status: 500 }
+          );
+        }
+      } else {
+        // Not an on-ramp payment, might be a regular payment
+        console.log(`[Flutterwave Webhook] Regular payment (not on-ramp), skipping token distribution`);
+      }
+    }
 
     // Handle virtual account payment
     if (event.event === "virtualaccountpayment") {
@@ -100,8 +281,50 @@ export async function POST(request: NextRequest) {
 
       console.log(`[Flutterwave Webhook] ✅ Balance updated for user ${user.id}: ₦${currentBalance} → ₦${newBalance}`);
 
-      // TODO: Create transaction record if needed
-      // TODO: Send notification email to user
+      // Create transaction record
+      const transactionId = `NGN-${Date.now()}-${nanoid(8)}`;
+      const { error: txError } = await supabaseAdmin
+        .from("transactions")
+        .insert({
+          transaction_id: transactionId,
+          user_id: user.id,
+          wallet_address: `ngn_account_${accountNumber}`, // Placeholder for NGN account
+          ngn_amount: amount,
+          send_amount: "0", // No crypto conversion for NGN deposits
+          status: "completed",
+          paystack_reference: flwRef || txRef || null,
+          exchange_rate: null,
+          initialized_at: new Date().toISOString(),
+          completed_at: new Date().toISOString(),
+          metadata: {
+            type: "ngn_deposit",
+            account_number: accountNumber,
+            tx_ref: txRef,
+            flw_ref: flwRef,
+            source: "flutterwave_webhook",
+          },
+        });
+
+      if (txError) {
+        console.error("[Flutterwave Webhook] Error creating transaction record:", txError);
+        // Don't fail the webhook if transaction record creation fails
+      } else {
+        console.log(`[Flutterwave Webhook] ✅ Transaction record created: ${transactionId}`);
+      }
+
+      // Send notification to user
+      try {
+        await notifyPaymentReceived(
+          user.id,
+          amount,
+          txRef || flwRef || transactionId,
+          "NGN"
+        );
+        console.log(`[Flutterwave Webhook] ✅ Notification sent to user ${user.id}`);
+      } catch (notifError) {
+        console.error("[Flutterwave Webhook] Error sending notification:", notifError);
+        // Don't fail the webhook if notification fails
+      }
 
       return NextResponse.json({
         success: true,
@@ -115,11 +338,319 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Handle other events (transfer completed, etc.)
+    // Handle transfer completed
+    if (event.event === "transfer.completed") {
+      const transferData = event.data;
+      const transferId = transferData.id;
+      const reference = transferData.reference;
+      const amount = parseFloat(transferData.amount || "0");
+      const accountNumber = transferData.account_number;
+      const status = transferData.status;
+
+      console.log(`[Flutterwave Webhook] Transfer completed: ${reference} - ₦${amount}`);
+
+      // Find transaction by reference (from send-money)
+      const { data: transaction, error: txError } = await supabaseAdmin
+        .from("transactions")
+        .select("id, transaction_id, user_id, ngn_amount, status, metadata")
+        .eq("payment_reference", reference) // Updated to use payment_reference
+        .or("metadata->>reference.eq." + reference)
+        .maybeSingle();
+
+      if (transaction && transaction.status === "pending") {
+        // Update transaction status to completed
+        await supabaseAdmin
+          .from("transactions")
+          .update({
+            status: "completed",
+            completed_at: new Date().toISOString(),
+            metadata: {
+              ...(transaction.metadata as any || {}),
+              transfer_id: transferId,
+              transfer_status: status,
+            },
+          })
+          .eq("id", transaction.id);
+
+        console.log(`[Flutterwave Webhook] ✅ Transfer transaction updated: ${transaction.transaction_id}`);
+
+        // Send notification to sender
+        if (transaction.user_id) {
+          try {
+            const metadata = transaction.metadata as any || {};
+            await notifyTransferCompleted(
+              transaction.user_id,
+              parseFloat(transaction.ngn_amount?.toString() || "0"),
+              metadata.recipient_phone || accountNumber || "recipient",
+              reference
+            );
+          } catch (notifError) {
+            console.error("[Flutterwave Webhook] Error sending transfer completed notification:", notifError);
+          }
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: "Transfer completed processed",
+        data: { transferId, reference, amount },
+      });
+    }
+
+    // Handle transfer failed
+    if (event.event === "transfer.failed" || event.event === "transfer.failed") {
+      const transferData = event.data;
+      const transferId = transferData.id;
+      const reference = transferData.reference;
+      const amount = parseFloat(transferData.amount || "0");
+      const accountNumber = transferData.account_number;
+      const errorMessage = transferData.complete_message || transferData.narration || "Transfer failed";
+
+      console.log(`[Flutterwave Webhook] Transfer failed: ${reference} - ₦${amount}`);
+
+      // Find transaction by reference
+      const { data: transaction, error: txError } = await supabaseAdmin
+        .from("transactions")
+        .select("id, transaction_id, user_id, ngn_amount, status, metadata")
+        .eq("payment_reference", reference) // Updated to use payment_reference
+        .or("metadata->>reference.eq." + reference)
+        .maybeSingle();
+
+      if (transaction) {
+        // Update transaction status to failed
+        await supabaseAdmin
+          .from("transactions")
+          .update({
+            status: "failed",
+            error_message: errorMessage,
+            metadata: {
+              ...(transaction.metadata as any || {}),
+              transfer_id: transferId,
+              transfer_status: "failed",
+              error: errorMessage,
+            },
+          })
+          .eq("id", transaction.id);
+
+        // Revert sender's balance (add back the amount) and recipient's balance (subtract the amount)
+        if (transaction.user_id) {
+          const { data: sender } = await supabaseAdmin
+            .from("users")
+            .select("flutterwave_balance")
+            .eq("id", transaction.user_id)
+            .single();
+
+          if (sender) {
+            const currentBalance = parseFloat(sender.flutterwave_balance?.toString() || "0");
+            const refundedBalance = currentBalance + parseFloat(transaction.ngn_amount?.toString() || "0");
+
+            await supabaseAdmin
+              .from("users")
+              .update({
+                flutterwave_balance: refundedBalance,
+                flutterwave_balance_updated_at: new Date().toISOString(),
+              })
+              .eq("id", transaction.user_id);
+
+            console.log(`[Flutterwave Webhook] ✅ Balance refunded for sender ${transaction.user_id}: ₦${currentBalance} → ₦${refundedBalance}`);
+
+            // Also revert recipient's balance if we have recipient info
+            const metadata = transaction.metadata as any || {};
+            if (metadata.recipient_id) {
+              const { data: recipient } = await supabaseAdmin
+                .from("users")
+                .select("flutterwave_balance")
+                .eq("id", metadata.recipient_id)
+                .single();
+
+              if (recipient) {
+                const recipientBalance = parseFloat(recipient.flutterwave_balance?.toString() || "0");
+                const revertedRecipientBalance = recipientBalance - parseFloat(transaction.ngn_amount?.toString() || "0");
+
+                await supabaseAdmin
+                  .from("users")
+                  .update({
+                    flutterwave_balance: revertedRecipientBalance,
+                    flutterwave_balance_updated_at: new Date().toISOString(),
+                  })
+                  .eq("id", metadata.recipient_id);
+
+                console.log(`[Flutterwave Webhook] ✅ Balance reverted for recipient ${metadata.recipient_id}: ₦${recipientBalance} → ₦${revertedRecipientBalance}`);
+              }
+            }
+
+            // Send notification
+            try {
+              await notifyTransferFailed(
+                transaction.user_id,
+                parseFloat(transaction.ngn_amount?.toString() || "0"),
+                metadata.recipient_phone || accountNumber || "recipient",
+                reference,
+                errorMessage
+              );
+            } catch (notifError) {
+              console.error("[Flutterwave Webhook] Error sending transfer failed notification:", notifError);
+            }
+          }
+        }
+
+        console.log(`[Flutterwave Webhook] ✅ Transfer failed transaction updated: ${transaction.transaction_id}`);
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: "Transfer failed processed",
+        data: { transferId, reference, amount },
+      });
+    }
+
+    // Handle charge failed (payment/deposit failed)
+    if (event.event === "charge.failed") {
+      const chargeData = event.data;
+      const txRef = chargeData.tx_ref;
+      const flwRef = chargeData.flw_ref;
+      const amount = parseFloat(chargeData.amount || "0");
+      const accountNumber = chargeData.account_number;
+      const errorMessage = chargeData.processor_response || chargeData.status || "Payment failed";
+
+      console.log(`[Flutterwave Webhook] Charge failed: ${txRef || flwRef} - ₦${amount}`);
+
+      // Find user by account number if available
+      if (accountNumber) {
+        const { data: user } = await supabaseAdmin
+          .from("users")
+          .select("id, flutterwave_balance")
+          .eq("flutterwave_virtual_account_number", accountNumber)
+          .maybeSingle();
+
+        if (user) {
+          // Find and update any pending transaction
+          const { data: transaction } = await supabaseAdmin
+            .from("transactions")
+            .select("id, transaction_id, status")
+            .eq("paystack_reference", flwRef || txRef)
+            .eq("status", "pending")
+            .maybeSingle();
+
+          if (transaction) {
+            await supabaseAdmin
+              .from("transactions")
+              .update({
+                status: "failed",
+                error_message: errorMessage,
+              })
+              .eq("id", transaction.id);
+          }
+
+          // Send notification
+          try {
+            await notifyPaymentFailed(
+              user.id,
+              amount,
+              flwRef || txRef || "N/A",
+              errorMessage
+            );
+          } catch (notifError) {
+            console.error("[Flutterwave Webhook] Error sending payment failed notification:", notifError);
+          }
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: "Charge failed processed",
+        data: { txRef, flwRef, amount },
+      });
+    }
+
+    // Handle refund completed
+    if (event.event === "refund.completed" || event.event === "refund") {
+      const refundData = event.data;
+      const refundId = refundData.id;
+      const amount = parseFloat(refundData.amount || "0");
+      const txRef = refundData.tx_ref;
+      const flwRef = refundData.flw_ref;
+      const accountNumber = refundData.account_number;
+      const originalTxRef = refundData.original_tx_ref || txRef;
+
+      console.log(`[Flutterwave Webhook] Refund completed: ${refundId} - ₦${amount}`);
+
+      // Find user by account number
+      if (accountNumber) {
+        const { data: user } = await supabaseAdmin
+          .from("users")
+          .select("id, flutterwave_balance")
+          .eq("flutterwave_virtual_account_number", accountNumber)
+          .maybeSingle();
+
+        if (user) {
+          // Update user's balance (add refund amount)
+          const currentBalance = parseFloat(user.flutterwave_balance?.toString() || "0");
+          const newBalance = currentBalance + amount;
+
+          await supabaseAdmin
+            .from("users")
+            .update({
+              flutterwave_balance: newBalance,
+              flutterwave_balance_updated_at: new Date().toISOString(),
+            })
+            .eq("id", user.id);
+
+          console.log(`[Flutterwave Webhook] ✅ Refund processed for user ${user.id}: ₦${currentBalance} → ₦${newBalance}`);
+
+          // Create refund transaction record
+          const transactionId = `REFUND-${Date.now()}-${nanoid(8)}`;
+          await supabaseAdmin
+            .from("transactions")
+            .insert({
+              transaction_id: transactionId,
+              user_id: user.id,
+              wallet_address: `ngn_account_${accountNumber}`,
+              ngn_amount: amount,
+              send_amount: "0",
+              status: "completed",
+              payment_reference: flwRef || refundId || null, // Updated to use payment_reference
+              exchange_rate: null,
+              initialized_at: new Date().toISOString(),
+              completed_at: new Date().toISOString(),
+              metadata: {
+                type: "refund",
+                account_number: accountNumber,
+                refund_id: refundId,
+                original_tx_ref: originalTxRef,
+                tx_ref: txRef,
+                flw_ref: flwRef,
+                source: "flutterwave_webhook",
+              },
+            });
+
+          // Send notification
+          try {
+            await notifyRefundReceived(
+              user.id,
+              amount,
+              flwRef || refundId || transactionId,
+              originalTxRef
+            );
+          } catch (notifError) {
+            console.error("[Flutterwave Webhook] Error sending refund notification:", notifError);
+          }
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: "Refund processed successfully",
+        data: { refundId, amount, accountNumber },
+      });
+    }
+
+    // Handle other events
     console.log(`[Flutterwave Webhook] Unhandled event: ${event.event}`);
     return NextResponse.json({
       success: true,
       message: "Event received but not processed",
+      event: event.event,
     });
   } catch (error: any) {
     console.error("[Flutterwave Webhook] Error:", error);

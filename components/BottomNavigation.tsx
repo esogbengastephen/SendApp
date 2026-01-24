@@ -21,6 +21,8 @@ export default function BottomNavigation() {
       setActiveTab("history");
     } else if (pathname === "/chart" || pathname.startsWith("/chart")) {
       setActiveTab("chart");
+    } else if (pathname === "/banners" || pathname.startsWith("/banners")) {
+      setActiveTab("www");
     } else if (pathname === "/settings" || pathname.startsWith("/settings")) {
       setActiveTab("www");
     } else if (pathname === "/profile" || pathname.startsWith("/profile")) {
@@ -44,7 +46,7 @@ export default function BottomNavigation() {
         <div className="relative bg-background-dark dark:bg-background-dark rounded-2xl h-20 shadow-lg backdrop-blur-md overflow-visible border-2 dark:border-primary border-transparent">
           {/* Animated blue highlight circle with active icon inside */}
           <div 
-            className={`absolute top-1/2 w-14 h-14 bg-primary rounded-full transition-all duration-500 ease-out shadow-lg flex flex-col items-center justify-center z-30 ${
+            className={`absolute top-1/2 w-14 h-14 bg-primary rounded-full transition-all duration-500 ease-out shadow-lg flex flex-col items-center justify-center pointer-events-none ${
               isAnimating ? "animate-popIn" : ""
             }`}
             style={{
@@ -55,6 +57,7 @@ export default function BottomNavigation() {
                 activeTab === "chart" ? "70%" : "90%"
               } - 1.75rem)`,
               transform: "translateY(-50%)",
+              zIndex: 20,
             }}
             onAnimationEnd={() => setIsAnimating(false)}
           >
@@ -84,7 +87,7 @@ export default function BottomNavigation() {
             {/* Home */}
             <button 
               onClick={() => handleNavigation("home", "/")}
-              className="relative z-10 flex flex-col items-center justify-center transition-all duration-300"
+              className="relative z-30 flex flex-col items-center justify-center transition-all duration-300"
               aria-label="Home"
             >
               <span className={`material-icons-outlined text-xl transition-all duration-300 ${
@@ -106,7 +109,7 @@ export default function BottomNavigation() {
             {/* History */}
             <button 
               onClick={() => handleNavigation("history", "/history")}
-              className="relative z-10 flex flex-col items-center justify-center transition-all duration-300"
+              className="relative z-30 flex flex-col items-center justify-center transition-all duration-300"
               aria-label="History"
             >
               <span className={`material-icons-outlined text-xl transition-all duration-300 ${
@@ -128,7 +131,7 @@ export default function BottomNavigation() {
             {/* Send */}
             <button 
               onClick={() => handleNavigation("upload", "/send")}
-              className="relative z-10 flex flex-col items-center justify-center transition-all duration-300"
+              className="relative z-30 flex flex-col items-center justify-center transition-all duration-300"
               aria-label="Send"
             >
               <span className={`material-icons-outlined text-xl transition-all duration-300 ${
@@ -150,7 +153,7 @@ export default function BottomNavigation() {
             {/* Chart */}
             <button 
               onClick={() => handleNavigation("chart", "/chart")}
-              className="relative z-10 flex flex-col items-center justify-center transition-all duration-300"
+              className="relative z-30 flex flex-col items-center justify-center transition-all duration-300"
               aria-label="Chart"
             >
               <span className={`material-icons-outlined text-xl transition-all duration-300 ${
@@ -172,7 +175,7 @@ export default function BottomNavigation() {
             {/* More */}
             <button 
               onClick={() => handleNavigation("www", "/banners")}
-              className="relative z-10 flex flex-col items-center justify-center transition-all duration-300"
+              className="relative z-30 flex flex-col items-center justify-center transition-all duration-300"
               aria-label="More"
             >
               <span className={`material-icons-outlined text-xl transition-all duration-300 ${

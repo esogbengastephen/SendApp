@@ -299,7 +299,7 @@ export default function SettingsPage() {
               </div>
             </div>
 
-            {/* Phone Number & Flutterwave Account Section */}
+            {/* Phone Number & NGN Account Section */}
             <div className="bg-white/40 dark:bg-white/20 backdrop-blur-md rounded-3xl p-6 border border-white/30 shadow-sm">
               <h2 className="text-lg font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
                 <span className="material-icons-outlined">phone</span>
@@ -315,15 +315,21 @@ export default function SettingsPage() {
                     {userProfile.flutterwaveAccountNumber && (
                       <>
                         <div className="pt-4 border-t border-gray-200 dark:border-white/10">
-                          <p className="text-sm text-gray-600 dark:text-white/60 mb-1">Flutterwave Account</p>
+                          <p className="text-sm text-gray-600 dark:text-white/60 mb-1">NGN Account Number</p>
                           <p className="text-base font-mono text-gray-900 dark:text-white">{userProfile.flutterwaveAccountNumber}</p>
                           <p className="text-xs text-gray-500 dark:text-white/40 mt-1">{userProfile.flutterwaveBank}</p>
                         </div>
                         {!userProfile.flutterwaveIsPermanent && (
                           <div className="p-3 bg-yellow-100/80 dark:bg-yellow-900/30 border border-yellow-300 dark:border-yellow-800 rounded-xl">
-                            <p className="text-xs text-yellow-800 dark:text-yellow-300">
-                              ⚠️ Temporary account (Tier 1). Verify your BVN to upgrade to Tier 2 and unlock higher limits.
+                            <p className="text-xs text-yellow-800 dark:text-yellow-300 mb-2">
+                              ⚠️ Temporary account (Tier 1). Verify your BVN to get a permanent account and upgrade to Tier 2 with higher limits.
                             </p>
+                            <button
+                              onClick={() => router.push("/kyc/verify-bvn")}
+                              className="text-xs bg-yellow-600 hover:bg-yellow-700 text-white font-semibold py-1.5 px-3 rounded-lg transition-colors"
+                            >
+                              Verify BVN Now
+                            </button>
                           </div>
                         )}
                       </>
@@ -332,7 +338,7 @@ export default function SettingsPage() {
                 ) : (
                   <div className="space-y-4">
                     <p className="text-sm text-gray-600 dark:text-white/60">
-                      Add your phone number to create a Flutterwave NGN wallet account.
+                      Add your phone number to create your NGN wallet account.
                     </p>
                     <AddPhoneNumberForm onSuccess={() => fetchUserProfile(user.id)} userId={user.id} />
                   </div>
@@ -359,7 +365,7 @@ export default function SettingsPage() {
                         {!hasAccount && (
                           <div className="p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-xl mb-4">
                             <p className="text-sm text-yellow-800 dark:text-yellow-300">
-                              Add your phone number above to create your Flutterwave account. Once created, you'll start at Tier 1.
+                              Add your phone number above to create your NGN account. Once created, you'll start at Tier 1.
                             </p>
                           </div>
                         )}

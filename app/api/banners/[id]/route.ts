@@ -6,10 +6,12 @@ import { supabaseAdmin } from "@/lib/supabase";
  */
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
-    const bannerId = params.id;
+    // Handle both Promise and direct params (Next.js 15+ uses Promise)
+    const resolvedParams = params instanceof Promise ? await params : params;
+    const bannerId = resolvedParams.id;
     const body = await request.json();
     const { title, image_url, link_url, display_order, is_active } = body;
 
@@ -53,10 +55,12 @@ export async function PUT(
  */
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
-    const bannerId = params.id;
+    // Handle both Promise and direct params (Next.js 15+ uses Promise)
+    const resolvedParams = params instanceof Promise ? await params : params;
+    const bannerId = resolvedParams.id;
 
     const { error } = await supabaseAdmin
       .from("banners")

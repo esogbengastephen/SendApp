@@ -15,6 +15,7 @@ Initial setup and configuration guides for Send Xino components.
 
 ### Payment Integration
 - **[Paystack Setup](PAYSTACK_SETUP.md)** - Payment gateway integration
+- **[Flutterwave Credentials Guide](FLUTTERWAVE_CREDENTIALS_GUIDE.md)** - NGN virtual accounts setup
 
 ### Database & Backend
 - **[Supabase API Guide](SUPABASE_API_GUIDE.md)** - Supabase integration
@@ -37,7 +38,7 @@ Initial setup and configuration guides for Send Xino components.
 1. **Database**: Supabase setup and verification
 2. **Authentication**: Admin and user auth configuration
 3. **Email**: Email service setup
-4. **Payment**: Paystack integration
+4. **Payment**: Paystack and Flutterwave integration
 5. **Blockchain**: RPC and wallet setup
 6. **Features**: Virtual accounts, Sendtag, etc.
 

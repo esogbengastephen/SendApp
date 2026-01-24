@@ -22,9 +22,10 @@ export async function GET(request: NextRequest) {
     console.log(`[Get Virtual Account] Request for user ${userId}${walletAddress ? `, wallet ${walletAddress}` : ''}`);
 
     // Get virtual account from USERS table (EMAIL-BASED, not wallet-based)
+    // Use Flutterwave account as primary, fallback to Paystack
     const { data: user, error } = await supabase
       .from("users")
-      .select("default_virtual_account_number, default_virtual_account_bank, paystack_customer_code, virtual_account_assigned_at")
+      .select("default_virtual_account_number, default_virtual_account_bank, paystack_customer_code, virtual_account_assigned_at, flutterwave_virtual_account_number, flutterwave_virtual_account_bank, flutterwave_balance")
       .eq("id", userId)
       .single();
 
@@ -49,7 +50,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const hasVirtualAccount = !!user?.default_virtual_account_number;
+    // Use Flutterwave account as primary, fallback to Paystack
+    const accountNumber = user?.flutterwave_virtual_account_number || user?.default_virtual_account_number;
+    const bankName = user?.flutterwave_virtual_account_bank || user?.default_virtual_account_bank;
+    const hasVirtualAccount = !!accountNumber;
 
     // If wallet address provided, ensure it's linked to user (for tracking)
     if (walletAddress && hasVirtualAccount) {
@@ -64,16 +68,17 @@ export async function GET(request: NextRequest) {
         });
     }
 
-    console.log(`[Get Virtual Account] ${hasVirtualAccount ? 'Found' : 'No'} virtual account for user ${userId} (EMAIL-BASED)`);
+    console.log(`[Get Virtual Account] ${hasVirtualAccount ? 'Found' : 'No'} virtual account for user ${userId} (Flutterwave primary, Paystack fallback)`);
 
     return NextResponse.json({
       success: true,
       data: {
         hasVirtualAccount,
-        accountNumber: user?.default_virtual_account_number,
-        bankName: user?.default_virtual_account_bank,
+        accountNumber,
+        bankName,
         customerCode: user?.paystack_customer_code,
         assignedAt: user?.virtual_account_assigned_at,
+        balance: user?.flutterwave_balance ? parseFloat(user.flutterwave_balance.toString()) : null,
       },
     });
   } catch (error: any) {

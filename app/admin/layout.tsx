@@ -19,7 +19,16 @@ function AdminLayoutContent({
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-background-light dark:bg-background-dark">
+    <div className="min-h-screen bg-background-light dark:bg-background-dark" style={{ backgroundColor: "var(--background-light)" }}>
+      <style jsx global>{`
+        :root {
+          --background-light: #FFFFFF;
+          --background-dark: #011931;
+        }
+        .dark {
+          --background-light: #011931;
+        }
+      `}</style>
       {/* Mobile Menu Button */}
       <button
         onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -140,12 +149,20 @@ function AdminLayoutContent({
                 <span>Dashboard</span>
               </Link>
               <Link
+                href="/admin/onramp"
+                onClick={() => setSidebarOpen(false)}
+                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <span className="material-icons-outlined text-lg sm:text-xl">arrow_downward</span>
+                <span>Onramp</span>
+              </Link>
+              <Link
                 href="/admin/transactions"
                 onClick={() => setSidebarOpen(false)}
                 className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
               >
                 <span className="material-icons-outlined text-lg sm:text-xl">receipt_long</span>
-                <span>Transactions</span>
+                <span>All Transactions</span>
               </Link>
               <Link
                 href="/admin/payments"
@@ -210,6 +227,22 @@ function AdminLayoutContent({
               >
                 <span className="material-icons-outlined text-lg sm:text-xl">image</span>
                 <span>Banners</span>
+              </Link>
+              <Link
+                href="/admin/offramp"
+                onClick={() => setSidebarOpen(false)}
+                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <span className="material-icons-outlined text-lg sm:text-xl">arrow_upward</span>
+                <span>Offramp</span>
+              </Link>
+              <Link
+                href="/admin/kyc"
+                onClick={() => setSidebarOpen(false)}
+                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <span className="material-icons-outlined text-lg sm:text-xl">verified_user</span>
+                <span>KYC Management</span>
               </Link>
               <Link
                 href="/admin/settings"

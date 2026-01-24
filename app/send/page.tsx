@@ -1,20 +1,30 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import { getUserFromStorage, isUserLoggedIn } from "@/lib/session";
 import { authenticateWithPasskey } from "@/lib/passkey";
 import { SUPPORTED_CHAINS } from "@/lib/chains";
 import { getChainLogo, getTokenLogo } from "@/lib/logos";
 import BottomNavigation from "@/components/BottomNavigation";
+import { NIGERIAN_BANKS, isValidBankAccountNumber } from "@/lib/nigerian-banks";
+
+interface NigerianBank {
+  code: string;
+  name: string;
+}
 
 type SendType = "ngn" | "crypto";
+type NGNRecipientType = "user" | "bank";
 
-export default function SendPage() {
+function SendPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [user, setUser] = useState<any>(null);
   const [sendType, setSendType] = useState<SendType>("ngn");
+  const [ngnRecipientType, setNgnRecipientType] = useState<NGNRecipientType>("user");
+  const [selectedBank, setSelectedBank] = useState<string>("");
   const [walletAddresses, setWalletAddresses] = useState<Record<string, string>>({});
   const [walletBalances, setWalletBalances] = useState<Record<string, Record<string, { balance: string; usdValue: number; symbol: string; name: string; address: string }>>>({});
   const [virtualAccount, setVirtualAccount] = useState<any>(null);
@@ -28,8 +38,16 @@ export default function SendPage() {
   const [loadingBalances, setLoadingBalances] = useState(false);
   const [isChainDropdownOpen, setIsChainDropdownOpen] = useState(false);
   const [isTokenDropdownOpen, setIsTokenDropdownOpen] = useState(false);
+  const [isBankDropdownOpen, setIsBankDropdownOpen] = useState(false);
+  const [availableBanks, setAvailableBanks] = useState<NigerianBank[]>(NIGERIAN_BANKS);
+  const [loadingBanks, setLoadingBanks] = useState(false);
+  const [bankSearchQuery, setBankSearchQuery] = useState("");
+  const [verifiedAccount, setVerifiedAccount] = useState<{ accountName: string; accountNumber: string; bankCode: string } | null>(null);
+  const [verifyingAccount, setVerifyingAccount] = useState(false);
+  const [verificationError, setVerificationError] = useState<string | null>(null);
   const chainDropdownRef = useRef<HTMLDivElement>(null);
   const tokenDropdownRef = useRef<HTMLDivElement>(null);
+  const bankDropdownRef = useRef<HTMLDivElement>(null);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -39,6 +57,9 @@ export default function SendPage() {
       }
       if (tokenDropdownRef.current && !tokenDropdownRef.current.contains(event.target as Node)) {
         setIsTokenDropdownOpen(false);
+      }
+      if (bankDropdownRef.current && !bankDropdownRef.current.contains(event.target as Node)) {
+        setIsBankDropdownOpen(false);
       }
     };
 
@@ -60,14 +81,52 @@ export default function SendPage() {
       return;
     }
     setUser(currentUser);
-  }, []);
+
+    // Check for query parameters
+    const chainParam = searchParams.get("chain");
+    const tokenParam = searchParams.get("token");
+    const typeParam = searchParams.get("type");
+
+    if (chainParam && SUPPORTED_CHAINS[chainParam]) {
+      setSelectedChain(chainParam);
+    }
+    if (tokenParam) {
+      setSelectedToken(tokenParam);
+    }
+    if (typeParam === "crypto") {
+      setSendType("crypto");
+    }
+  }, [searchParams, router]);
 
   useEffect(() => {
     if (user) {
       fetchWalletAddresses();
       fetchVirtualAccount();
+      fetchBanksList();
     }
   }, [user]);
+
+  const fetchBanksList = async () => {
+    setLoadingBanks(true);
+    try {
+      // Fetch from our API endpoint which calls Flutterwave API
+      const response = await fetch("/api/flutterwave/banks");
+      const data = await response.json();
+      
+      if (data.success && data.data.banks) {
+        setAvailableBanks(data.data.banks);
+      } else {
+        // Fallback to static list
+        setAvailableBanks(NIGERIAN_BANKS);
+      }
+    } catch (error) {
+      console.error("Error fetching banks list:", error);
+      // Keep static list as fallback
+      setAvailableBanks(NIGERIAN_BANKS);
+    } finally {
+      setLoadingBanks(false);
+    }
+  };
 
   // Fetch balances when crypto is selected
   useEffect(() => {
@@ -136,14 +195,27 @@ export default function SendPage() {
     if (!user) return;
     
     try {
-      const response = await fetch(`/api/user/virtual-account?userId=${user.id}`);
-      const data = await response.json();
-      if (data.success && data.data) {
+      // Fetch dashboard data to get balance and account info
+      const dashboardResponse = await fetch(`/api/user/dashboard?userId=${user.id}`);
+      const dashboardData = await dashboardResponse.json();
+      
+      if (dashboardData.success && dashboardData.data) {
         setVirtualAccount({
-          accountNumber: data.data.accountNumber,
-          bankName: data.data.bankName,
-          balance: 0, // TODO: Fetch actual balance
+          accountNumber: dashboardData.data.user.accountNumber,
+          bankName: dashboardData.data.user.bankName,
+          balance: dashboardData.data.balance.ngn || 0,
         });
+      } else {
+        // Fallback to virtual account API
+        const response = await fetch(`/api/user/virtual-account?userId=${user.id}`);
+        const data = await response.json();
+        if (data.success && data.data) {
+          setVirtualAccount({
+            accountNumber: data.data.accountNumber,
+            bankName: data.data.bankName,
+            balance: 0,
+          });
+        }
       }
     } catch (error) {
       console.error("Error fetching virtual account:", error);
@@ -190,13 +262,86 @@ export default function SendPage() {
         // TODO: Implement actual crypto transaction signing and sending
         alert(`Send ${amount} ${SUPPORTED_CHAINS[selectedChain]?.nativeCurrency?.symbol || ""} to ${recipient}\n\nTransaction functionality coming soon!`);
       } else {
-        // NGN send - bank transfer
-        // TODO: Implement NGN bank transfer API
-        alert(`Send ₦${amount} to account ${recipient}\n\nBank transfer functionality coming soon!`);
+        // NGN send - either to user (phone) or bank account
+        if (ngnRecipientType === "user") {
+          // Send to user - validate phone number format (Nigerian mobile)
+          const cleanedPhone = recipient.replace(/\D/g, "");
+          const isValidPhone = cleanedPhone.length >= 10 && cleanedPhone.length <= 13 && 
+                              (cleanedPhone.startsWith("0") || cleanedPhone.startsWith("234")) &&
+                              ["7", "8", "9"].includes(cleanedPhone.replace(/^(0|234)/, "").charAt(0));
+
+          if (!isValidPhone) {
+            setError("Please enter a valid Nigerian mobile number (e.g., 07034494055)");
+            setLoading(false);
+            return;
+          }
+        } else {
+          // Send to bank account - validate account number and bank
+          if (!isValidBankAccountNumber(recipient)) {
+            setError("Please enter a valid 10-digit bank account number");
+            setLoading(false);
+            return;
+          }
+
+          if (!selectedBank) {
+            setError("Please select a bank");
+            setLoading(false);
+            return;
+          }
+        }
+
+        // Validate balance
+        if (!virtualAccount || parseFloat(virtualAccount.balance?.toString() || "0") < amountNum) {
+          setError(`Insufficient balance. Available: ₦${parseFloat(virtualAccount?.balance?.toString() || "0").toLocaleString()}`);
+          setLoading(false);
+          return;
+        }
+
+        // Call send-money API
+        const sendResponse = await fetch("/api/flutterwave/send-money", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            recipientType: ngnRecipientType,
+            recipientPhoneNumber: ngnRecipientType === "user" ? recipient : undefined,
+            recipientAccountNumber: ngnRecipientType === "bank" ? recipient : undefined,
+            recipientBankCode: ngnRecipientType === "bank" ? selectedBank : undefined,
+            amount: amountNum,
+              narration: ngnRecipientType === "user" 
+              ? `Transfer to ${recipient}` 
+              : `Transfer to ${availableBanks.find(b => b.code === selectedBank)?.name || "Bank"} account`,
+          }),
+        });
+
+        const sendData = await sendResponse.json();
+
+        if (!sendData.success) {
+          setError(sendData.error || "Transfer failed. Please try again.");
+          setLoading(false);
+          return;
+        }
+
+        // Success - show message and redirect
+        const recipientDisplay = ngnRecipientType === "user" 
+          ? recipient 
+          : `${availableBanks.find(b => b.code === selectedBank)?.name || "Bank"} - ${recipient}`;
+        alert(`Successfully sent ₦${amountNum.toLocaleString()} to ${recipientDisplay}`);
+        
+        // Refresh balance
+        await fetchVirtualAccount();
+        
+        // Clear form
+        setRecipient("");
+        setAmount("");
+        setSelectedBank("");
+        
+        // Redirect to dashboard after a short delay
+        setTimeout(() => {
+          router.push("/");
+        }, 1500);
       }
-      
-      // Redirect back to dashboard
-      router.push("/");
     } catch (err: any) {
       console.error("Error sending:", err);
       setError(err.message || "Failed to send. Please try again.");
@@ -231,6 +376,75 @@ export default function SendPage() {
       setSelectedToken(availableTokens[0][0]);
     }
   }, [selectedChain, availableTokens.length]);
+
+  // Verify bank account when account number and bank are both provided
+  useEffect(() => {
+    // Skip if already verified for this exact account number and bank
+    if (verifiedAccount && 
+        verifiedAccount.accountNumber === recipient && 
+        verifiedAccount.bankCode === selectedBank &&
+        recipient.length === 10 &&
+        selectedBank) {
+      return;
+    }
+
+    if (ngnRecipientType === "bank" && recipient.length === 10 && selectedBank && !verifyingAccount) {
+      const verifyAccount = async () => {
+        setVerifyingAccount(true);
+        setVerificationError(null);
+        
+        try {
+          const response = await fetch("/api/flutterwave/verify-account", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              accountNumber: recipient,
+              bankCode: selectedBank,
+            }),
+          });
+
+          const data = await response.json();
+
+          if (data.success && data.data && data.data.accountName) {
+            setVerifiedAccount({
+              accountName: data.data.accountName,
+              accountNumber: data.data.accountNumber || recipient,
+              bankCode: selectedBank,
+            });
+            setVerificationError(null);
+          } else {
+            // Show error message with helpful context
+            let errorMsg = data.error || "Failed to verify account. Please check the account number and bank.";
+            
+            // Add helpful context for test mode
+            if (data.isTestMode && selectedBank !== "044") {
+              errorMsg = "Account verification in test mode only supports Access Bank. Please switch to production mode or use Access Bank for testing.";
+            }
+            
+            setVerificationError(errorMsg);
+            setVerifiedAccount(null);
+            console.error("[Account Verification] Failed:", data);
+          }
+        } catch (error: any) {
+          console.error("Error verifying account:", error);
+          setVerificationError("Network error. Please try again.");
+          setVerifiedAccount(null);
+        } finally {
+          setVerifyingAccount(false);
+        }
+      };
+
+      // Debounce verification - wait 500ms after user stops typing
+      const timeoutId = setTimeout(verifyAccount, 500);
+      return () => clearTimeout(timeoutId);
+    } else if (ngnRecipientType === "bank" && (recipient.length !== 10 || !selectedBank)) {
+      // Reset verification if account number or bank changes
+      setVerifiedAccount(null);
+      setVerificationError(null);
+    }
+  }, [recipient, selectedBank, ngnRecipientType]);
 
   return (
     <div className="min-h-screen bg-background-light dark:bg-background-dark relative">
@@ -544,19 +758,239 @@ export default function SendPage() {
               </>
             ) : (
               <>
-                {/* Recipient account number */}
+                {/* Recipient Type Selector */}
                 <div className="mb-4">
                   <label className="block text-sm font-medium mb-2 text-background-dark dark:text-white/80">
-                    Recipient Account Number
+                    Send To
+                  </label>
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNgnRecipientType("user");
+                        setRecipient("");
+                        setSelectedBank("");
+                      }}
+                      className={`p-3 rounded-xl border-2 transition-all ${
+                        ngnRecipientType === "user"
+                          ? "bg-primary border-primary text-secondary dark:text-white shadow-md"
+                          : "bg-light-blue/50 dark:bg-secondary/30 border-primary/30 dark:border-white/20 text-background-dark dark:text-white/80"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 justify-center">
+                        <span className="material-icons-outlined text-sm">person</span>
+                        <span className="font-semibold text-sm">User</span>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNgnRecipientType("bank");
+                        setRecipient("");
+                        setSelectedBank("");
+                        setBankSearchQuery("");
+                        setVerifiedAccount(null);
+                        setVerificationError(null);
+                      }}
+                      className={`p-3 rounded-xl border-2 transition-all ${
+                        ngnRecipientType === "bank"
+                          ? "bg-primary border-primary text-secondary dark:text-white shadow-md"
+                          : "bg-light-blue/50 dark:bg-secondary/30 border-primary/30 dark:border-white/20 text-background-dark dark:text-white/80"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 justify-center">
+                        <span className="material-icons-outlined text-sm">account_balance</span>
+                        <span className="font-semibold text-sm">Bank</span>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                {ngnRecipientType === "bank" && (
+                  <>
+                    {/* Searchable Bank Input */}
+                    <div className="mb-4">
+                      <label className="block text-sm font-medium mb-2 text-background-dark dark:text-white/80">
+                        Search Bank
+                      </label>
+                      <div className="relative" ref={bankDropdownRef}>
+                        <input
+                          type="text"
+                          value={selectedBank ? (availableBanks.find(b => b.code === selectedBank)?.name || bankSearchQuery) : bankSearchQuery}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setBankSearchQuery(value);
+                            setSelectedBank(""); // Clear selection when user types
+                            setVerifiedAccount(null); // Reset verification
+                            setIsBankDropdownOpen(true);
+                            // Auto-select if exact match
+                            const exactMatch = availableBanks.find(
+                              b => b.name.toLowerCase() === value.toLowerCase()
+                            );
+                            if (exactMatch) {
+                              setSelectedBank(exactMatch.code);
+                              setBankSearchQuery(exactMatch.name);
+                              setIsBankDropdownOpen(false);
+                            }
+                          }}
+                          onFocus={() => {
+                            if (!selectedBank) {
+                              setIsBankDropdownOpen(true);
+                            }
+                          }}
+                          placeholder="Type to search banks (e.g., OPay, Palmpay, GTB, Moniepoint)"
+                          className="w-full p-3 border border-primary/30 dark:border-white/20 rounded-xl bg-white/60 dark:bg-secondary/30 backdrop-blur-sm text-background-dark dark:text-white font-medium placeholder:text-background-dark/50 dark:placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-primary/50"
+                        />
+                        {selectedBank && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedBank("");
+                              setBankSearchQuery("");
+                              setVerifiedAccount(null);
+                            }}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
+                          >
+                            <span className="material-icons-outlined text-sm text-background-dark dark:text-white">close</span>
+                          </button>
+                        )}
+
+                        {/* Search Results Dropdown */}
+                        {isBankDropdownOpen && (bankSearchQuery || !selectedBank) && (
+                          <div className="absolute z-50 w-full mt-2 bg-light-blue dark:bg-background-dark/95 backdrop-blur-md rounded-xl border border-primary/30 dark:border-primary/50 shadow-lg max-h-64 overflow-y-auto">
+                            {loadingBanks ? (
+                              <div className="p-4 text-center">
+                                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary mx-auto"></div>
+                                <p className="text-xs text-background-dark/70 dark:text-white/60 mt-2">Loading banks...</p>
+                              </div>
+                            ) : (
+                              <>
+                                {availableBanks
+                                  .filter(bank => 
+                                    !bankSearchQuery || bank.name.toLowerCase().includes(bankSearchQuery.toLowerCase())
+                                  )
+                                  .slice(0, 20) // Limit to 20 results
+                                  .map((bank) => (
+                                    <button
+                                      key={bank.code}
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedBank(bank.code);
+                                        setBankSearchQuery(bank.name);
+                                        setIsBankDropdownOpen(false);
+                                        setVerifiedAccount(null); // Reset verification when bank changes
+                                        setVerificationError(null);
+                                      }}
+                                      className={`w-full p-3 text-left transition-colors ${
+                                        selectedBank === bank.code 
+                                          ? "bg-primary/20 dark:bg-primary/30 hover:bg-primary/30 dark:hover:bg-primary/40" 
+                                          : "hover:bg-gray-100 dark:hover:bg-gray-700/50"
+                                      }`}
+                                    >
+                                      <span className="font-semibold text-background-dark dark:text-white">
+                                        {bank.name}
+                                      </span>
+                                      {selectedBank === bank.code && (
+                                        <span className="material-icons-outlined text-primary dark:text-primary ml-auto float-right text-sm">
+                                          check
+                                        </span>
+                                      )}
+                                    </button>
+                                  ))}
+                                {bankSearchQuery && availableBanks.filter(bank => 
+                                  bank.name.toLowerCase().includes(bankSearchQuery.toLowerCase())
+                                ).length === 0 && (
+                                  <div className="p-4 text-center">
+                                    <p className="text-sm text-background-dark/70 dark:text-white/60">No banks found matching "{bankSearchQuery}"</p>
+                                  </div>
+                                )}
+                              </>
+                            )}
+                          </div>
+                        )}
+
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {/* Recipient input */}
+                <div className="mb-4">
+                  <label className="block text-sm font-medium mb-2 text-background-dark dark:text-white/80">
+                    {ngnRecipientType === "user" 
+                      ? "Recipient Phone Number" 
+                      : "Recipient Account Number"}
                   </label>
                   <input
                     type="text"
                     value={recipient}
-                    onChange={(e) => setRecipient(e.target.value)}
-                    placeholder="Enter 10-digit account number"
-                    maxLength={10}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (ngnRecipientType === "bank") {
+                        // Only allow digits, max 10
+                        const cleaned = value.replace(/\D/g, "").slice(0, 10);
+                        setRecipient(cleaned);
+                        // Reset verification when account number changes
+                        if (cleaned !== recipient) {
+                          setVerifiedAccount(null);
+                          setVerificationError(null);
+                        }
+                      } else {
+                        setRecipient(value);
+                      }
+                    }}
+                    placeholder={ngnRecipientType === "user" 
+                      ? "Enter phone number (e.g., 07034494055)" 
+                      : "Enter 10-digit account number"}
+                    maxLength={ngnRecipientType === "bank" ? 10 : undefined}
                     className="w-full p-3 border border-primary/30 dark:border-white/20 rounded-xl bg-white/60 dark:bg-secondary/30 backdrop-blur-sm text-background-dark dark:text-white font-medium placeholder:text-background-dark/50 dark:placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-primary/50"
                   />
+                  {ngnRecipientType === "user" && (
+                    <p className="text-xs text-background-dark/70 dark:text-white/60 mt-1">
+                      Enter recipient's Nigerian mobile number
+                    </p>
+                  )}
+                  {ngnRecipientType === "bank" && (
+                    <>
+                      <p className="text-xs text-background-dark/70 dark:text-white/60 mt-1">
+                        Enter 10-digit bank account number
+                      </p>
+                      {/* Account Verification Status */}
+                      {verifyingAccount && (
+                        <div className="mt-2 p-2 bg-blue-100/80 dark:bg-blue-900/30 border border-blue-300 dark:border-blue-800 rounded-lg">
+                          <div className="flex items-center gap-2">
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                            <p className="text-xs text-blue-700 dark:text-blue-300">Verifying account...</p>
+                          </div>
+                        </div>
+                      )}
+                      {verifiedAccount && !verifyingAccount && (
+                        <div className="mt-2 p-3 bg-green-100/80 dark:bg-green-900/30 border border-green-300 dark:border-green-800 rounded-lg">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="material-icons-outlined text-sm text-green-600 dark:text-green-400">check_circle</span>
+                            <p className="text-xs font-semibold text-green-700 dark:text-green-300">Account Verified</p>
+                          </div>
+                          <p className="text-sm font-medium text-green-800 dark:text-green-200">
+                            {verifiedAccount.accountName}
+                          </p>
+                          <p className="text-xs text-green-700 dark:text-green-400 mt-1">
+                            Account: {verifiedAccount.accountNumber}
+                          </p>
+                        </div>
+                      )}
+                      {verificationError && !verifyingAccount && !verifiedAccount && (
+                        <div className="mt-2 p-3 bg-red-100/80 dark:bg-red-900/30 border border-red-300 dark:border-red-800 rounded-lg">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="material-icons-outlined text-sm text-red-600 dark:text-red-400">error</span>
+                            <p className="text-xs font-semibold text-red-700 dark:text-red-300">Verification Failed</p>
+                          </div>
+                          <p className="text-xs text-red-700 dark:text-red-400">
+                            {verificationError}
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
 
                 {/* Amount */}
@@ -601,7 +1035,9 @@ export default function SendPage() {
 
             <button
               onClick={handleSend}
-              disabled={loading || !recipient || !amount || authenticating || (sendType === "crypto" && (availableChains.length === 0 || !selectedTokenInfo))}
+              disabled={loading || !recipient || !amount || authenticating || 
+                       (sendType === "crypto" && (availableChains.length === 0 || !selectedTokenInfo)) ||
+                       (sendType === "ngn" && ngnRecipientType === "bank" && !selectedBank)}
               className="w-full bg-secondary hover:bg-secondary/90 text-background-dark dark:text-white font-semibold py-3 px-6 rounded-xl disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-lg transition-colors"
             >
               {loading ? (
@@ -621,5 +1057,17 @@ export default function SendPage() {
       </div>
       <BottomNavigation />
     </div>
+  );
+}
+
+export default function SendPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-background-light dark:bg-background-dark flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+      </div>
+    }>
+      <SendPageContent />
+    </Suspense>
   );
 }

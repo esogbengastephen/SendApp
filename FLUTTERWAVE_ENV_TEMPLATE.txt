@@ -1,0 +1,59 @@
+# ============================================
+# Flutterwave API Credentials
+# ============================================
+# Copy these lines to your .env.local file
+# Get these from: https://dashboard.flutterwave.com/settings/api
+# After logging in to your Flutterwave account
+
+# For TEST/SANDBOX mode (development - recommended first):
+FLUTTERWAVE_SECRET_KEY=FLWSECK_TEST_your_test_secret_key_here
+NEXT_PUBLIC_FLUTTERWAVE_PUBLIC_KEY=FLWPUBK_TEST_your_test_public_key_here
+
+# For PRODUCTION mode (live - use after testing):
+# FLUTTERWAVE_SECRET_KEY=FLWSECK_your_live_secret_key_here
+# NEXT_PUBLIC_FLUTTERWAVE_PUBLIC_KEY=FLWPUBK_your_live_public_key_here
+
+# Optional: Force test mode (set to "true" to always use sandbox)
+# FLUTTERWAVE_USE_TEST_MODE=true
+
+# ============================================
+# How to Get Your Keys:
+# ============================================
+# 1. Go to: https://dashboard.flutterwave.com
+# 2. Log in to your account
+# 3. Click "Settings" → "API" or "API Keys"
+# 4. Copy your Secret Key and Public Key
+# 5. Paste them above (replace the placeholder text)
+# 6. Save the file
+# 7. Restart your dev server: npm run dev
+# 8. Test: Visit http://localhost:3000/api/test/flutterwave-env
+# ============================================
+
+# ============================================
+# Key Format Examples:
+# ============================================
+# Test Secret Key: FLWSECK_TEST-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-X
+# Test Public Key: FLWPUBK_TEST-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-X
+# 
+# Live Secret Key: FLWSECK-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-X
+# Live Public Key: FLWPUBK-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-X
+# ============================================
+
+# ============================================
+# Troubleshooting:
+# ============================================
+# ❌ hasSecretKey: false
+#    → Check that FLUTTERWAVE_SECRET_KEY is in .env.local
+#    → Check for typos in variable name
+#    → Restart dev server after adding
+#
+# ❌ Authentication failed (401/403)
+#    → Check that keys are correct (copy-paste from dashboard)
+#    → Make sure test keys match test mode (or live keys match live mode)
+#    → Verify keys haven't expired or been regenerated
+#
+# ❌ Network Error
+#    → Check internet connection
+#    → Check firewall/proxy settings
+#    → Visit https://status.flutterwave.com to check API status
+# ============================================

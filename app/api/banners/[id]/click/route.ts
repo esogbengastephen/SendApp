@@ -6,10 +6,12 @@ import { supabaseAdmin } from "@/lib/supabase";
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> | { id: string } }
 ) {
   try {
-    const bannerId = params.id;
+    // Handle both Promise and direct params (Next.js 15+ uses Promise)
+    const resolvedParams = params instanceof Promise ? await params : params;
+    const bannerId = resolvedParams.id;
 
     // Increment click count
     const { error } = await supabaseAdmin.rpc("increment_banner_clicks", {

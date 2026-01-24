@@ -16,7 +16,7 @@ export default function PaymentPage() {
   }, [router]);
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col items-center justify-start pt-8 pb-24 px-4">
       <PaymentForm />
       <BottomNavigation />
     </div>

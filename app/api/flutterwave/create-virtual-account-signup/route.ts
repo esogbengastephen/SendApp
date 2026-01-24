@@ -98,24 +98,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create TEMPORARY Flutterwave virtual account (without BVN)
-    // Will be upgraded to permanent after BVN verification
-    console.log(`[Flutterwave Signup VA] Creating TEMPORARY Flutterwave virtual account for ${email} (${normalizedPhone})`);
+    // Create DYNAMIC Flutterwave virtual account (temporary, no BVN required)
+    // Will be upgraded to STATIC account after BVN verification
+    console.log(`[Flutterwave Signup VA] Creating DYNAMIC Flutterwave virtual account (temporary) for ${email} (${normalizedPhone})`);
     
     const vaResult = await createVirtualAccount({
       email,
       firstName: firstName || "User",
       lastName: lastName || "Account",
       phoneNumber: normalizedPhone,
-      isPermanent: false, // Temporary account until BVN is verified
+      isPermanent: false, // Dynamic account (temporary) - will upgrade to static with BVN
     });
 
     if (!vaResult.success) {
       console.error(`[Flutterwave Signup VA] Failed to create virtual account:`, vaResult.error);
+      // Convert error to string if it's not already
+      const errorMessage = typeof vaResult.error === 'string' 
+        ? vaResult.error 
+        : vaResult.error?.toString() || "Failed to create NGN account";
+      
       return NextResponse.json(
         { 
           success: false, 
-          error: vaResult.error || "Failed to create Flutterwave virtual account",
+          error: errorMessage,
           details: vaResult.details,
         },
         { status: 500 }
@@ -134,7 +139,7 @@ export async function POST(request: NextRequest) {
         flutterwave_virtual_account_bank: vaData.bank_name,
         flutterwave_virtual_account_name: vaData.account_name,
         flutterwave_virtual_account_created_at: new Date().toISOString(),
-        flutterwave_account_is_permanent: false, // Will be upgraded after BVN verification
+        flutterwave_account_is_permanent: false, // Dynamic account (temporary) - will upgrade to static with BVN
         flutterwave_kyc_tier: 1, // Start with Tier 1 (no BVN)
         updated_at: new Date().toISOString(),
       })
@@ -164,10 +169,22 @@ export async function POST(request: NextRequest) {
   } catch (error: any) {
     console.error("[Flutterwave Signup VA] Error:", error.response?.data || error.message);
     
+    // Safely extract error message
+    let errorMessage = "Failed to create NGN account";
+    if (error.response?.data?.message) {
+      errorMessage = typeof error.response.data.message === 'string' 
+        ? error.response.data.message 
+        : String(error.response.data.message);
+    } else if (error.message) {
+      errorMessage = typeof error.message === 'string' 
+        ? error.message 
+        : String(error.message);
+    }
+    
     return NextResponse.json(
       {
         success: false,
-        error: error.response?.data?.message || "Failed to create Flutterwave virtual account",
+        error: errorMessage,
         details: error.response?.data || error.message,
       },
       { status: 500 }

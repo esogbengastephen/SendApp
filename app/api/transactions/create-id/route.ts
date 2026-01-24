@@ -219,15 +219,53 @@ export async function POST(request: NextRequest) {
 
 /**
  * GET endpoint to check if transaction ID exists
+ * Also supports lookup by paymentReference (Flutterwave tx_ref)
  */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const transactionId = searchParams.get("transactionId");
+    const paymentReference = searchParams.get("paymentReference");
+
+    // Support lookup by payment_reference (for Flutterwave tx_ref)
+    if (paymentReference) {
+      const { supabaseAdmin } = await import("@/lib/supabase");
+      const { data: transaction, error } = await supabaseAdmin
+        .from("transactions")
+        .select("*")
+        .eq("payment_reference", paymentReference)
+        .maybeSingle();
+
+      if (error) {
+        console.error("[Create ID] Error looking up by payment_reference:", error);
+        return NextResponse.json(
+          { success: false, error: "Database error" },
+          { status: 500 }
+        );
+      }
+
+      if (transaction) {
+        return NextResponse.json({
+          success: true,
+          exists: true,
+          status: transaction.status,
+          txHash: transaction.tx_hash,
+          sendAmount: transaction.send_amount,
+          transactionId: transaction.transaction_id,
+          error_message: transaction.error_message,
+        });
+      } else {
+        return NextResponse.json({
+          success: true,
+          exists: false,
+          paymentReference,
+        });
+      }
+    }
 
     if (!transactionId) {
       return NextResponse.json(
-        { success: false, error: "Transaction ID is required" },
+        { success: false, error: "Transaction ID or paymentReference is required" },
         { status: 400 }
       );
     }
@@ -238,6 +276,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({
         success: true,
         exists: true,
+        status: transaction.status,
+        txHash: transaction.txHash,
+        sendAmount: transaction.sendAmount,
+        transactionId: transaction.transactionId,
+        error_message: transaction.errorMessage,
         transaction: {
           transactionId: transaction.transactionId,
           status: transaction.status,

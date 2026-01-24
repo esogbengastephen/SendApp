@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import { getUserFromStorage, clearUserSession } from "@/lib/session";
-import { getTokenLogo } from "@/lib/logos";
+import { getTokenLogo, getChainLogo } from "@/lib/logos";
+import { SUPPORTED_CHAINS } from "@/lib/chains";
 import { WalletCard } from "./WalletCard";
 import { ServiceButton } from "./ServiceButton";
 import BottomNavigation from "./BottomNavigation";
@@ -71,6 +72,11 @@ export default function UserDashboard() {
   const [showCryptoOptions, setShowCryptoOptions] = useState(false);
   const [showOfframpOptions, setShowOfframpOptions] = useState(false);
   const [isAnimating, setIsAnimating] = useState(false);
+  const [showAssetsModal, setShowAssetsModal] = useState(false);
+  const [selectedAsset, setSelectedAsset] = useState<{ chainId: string; tokenAddress: string; tokenInfo: any } | null>(null);
+  const [showAssetActions, setShowAssetActions] = useState(false);
+  const [allTransactions, setAllTransactions] = useState<any[]>([]);
+  const [loadingTransactions, setLoadingTransactions] = useState(false);
 
   // Helper functions for caching balance
   const saveCachedBalance = (userId: string, totalUSD: number) => {
@@ -145,6 +151,7 @@ export default function UserDashboard() {
       fetchWalletBalances(currentUser.id),
       fetchUserProfile(currentUser.id),
       fetchTokenPrices(),
+      fetchAllTransactions(currentUser.id),
     ]).catch((error) => {
       console.error("Error loading dashboard data:", error);
     });
@@ -209,6 +216,22 @@ export default function UserDashboard() {
       console.error("Error fetching dashboard data:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchAllTransactions = async (userId: string) => {
+    setLoadingTransactions(true);
+    try {
+      const response = await fetch(`/api/user/transactions?userId=${userId}&limit=10`);
+      const data = await response.json();
+
+      if (data.success) {
+        setAllTransactions(data.transactions || []);
+      }
+    } catch (error) {
+      console.error("Error fetching transactions:", error);
+    } finally {
+      setLoadingTransactions(false);
     }
   };
 
@@ -298,15 +321,24 @@ export default function UserDashboard() {
     if (option === "SEND") {
       router.push("/payment");
     } else if (option === "BASE") {
-      alert("BASE coming soon!");
+      // Navigate to offramp with base network
+      router.push("/offramp?network=base&type=base");
     } else if (option === "SOLANA") {
-      alert("SOLANA coming soon!");
+      // Navigate to offramp with solana network
+      router.push("/offramp?network=solana&type=solana");
     }
   };
 
   const handleOfframpOptionClick = (option: "SEND" | "BASE" | "SOLANA") => {
     setShowOfframpOptions(false);
-    alert(`${option} coming soon!`);
+    // Map SEND to base network but with type=send for display
+    if (option === "SEND") {
+      router.push("/offramp?network=base&type=send");
+    } else if (option === "BASE") {
+      router.push("/offramp?network=base&type=base");
+    } else if (option === "SOLANA") {
+      router.push("/offramp?network=solana&type=solana");
+    }
   };
 
   const copyAccountNumber = () => {
@@ -541,6 +573,7 @@ export default function UserDashboard() {
               }
               isHidden={!showCryptoBalance}
               onToggleVisibility={() => setShowCryptoBalance(!showCryptoBalance)}
+              onViewAssets={() => setShowAssetsModal(true)}
               icon="currency_bitcoin"
             />
           </div>
@@ -634,46 +667,74 @@ export default function UserDashboard() {
         <div className="mt-8 mb-8">
           <div className="flex justify-between items-center mb-4 px-1">
             <h3 className="text-[10px] font-bold text-background-dark dark:text-white uppercase tracking-wider">Transaction history</h3>
-            <button className="text-xs text-gray-600 dark:text-white/60 font-medium hover:text-primary transition-colors">View All</button>
+            <button 
+              onClick={() => router.push("/history")}
+              className="text-xs text-gray-600 dark:text-white/60 font-medium hover:text-primary transition-colors"
+            >
+              View All
+            </button>
           </div>
-          {dashboardData?.transactions && dashboardData.transactions.length > 0 ? (
+          {loadingTransactions ? (
+            <div className="bg-white dark:bg-card-dark rounded-3xl p-8 shadow-md min-h-[160px] flex items-center justify-center border border-gray-100 dark:border-white/5">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-2"></div>
+                <p className="text-sm text-gray-400 dark:text-gray-500 font-medium">Loading transactions...</p>
+              </div>
+            </div>
+          ) : allTransactions.length > 0 ? (
             <div className="bg-white dark:bg-card-dark rounded-3xl p-4 shadow-md border border-gray-100 dark:border-white/5">
               <div className="space-y-2">
-                {dashboardData.transactions.slice(0, 5).map((tx) => (
-                  <div
-                    key={tx.id}
-                    className="bg-white/60 dark:bg-white/5 rounded-xl p-3 flex items-center justify-between"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
-                        <span className="material-icons-outlined text-primary">receipt</span>
+                {allTransactions.slice(0, 5).map((tx) => {
+                  const getStatusColor = (status: string) => {
+                    if (status === "completed" || status === "paid") return "text-green-600 dark:text-green-400";
+                    if (status === "failed") return "text-red-600 dark:text-red-400";
+                    return "text-yellow-600 dark:text-yellow-400";
+                  };
+
+                  const getStatusBg = (status: string) => {
+                    if (status === "completed" || status === "paid") return "bg-green-100 dark:bg-green-900/30";
+                    if (status === "failed") return "bg-red-100 dark:bg-red-900/30";
+                    return "bg-yellow-100 dark:bg-yellow-900/30";
+                  };
+
+                  return (
+                    <div
+                      key={tx.id}
+                      onClick={() => router.push(`/history?tx=${tx.id}&type=${tx.type}`)}
+                      className="bg-white/60 dark:bg-white/5 rounded-xl p-3 flex items-center justify-between hover:bg-white/80 dark:hover:bg-white/10 transition-colors cursor-pointer active:scale-[0.98]"
+                    >
+                      <div className="flex items-center gap-3 flex-1 min-w-0">
+                        <div className={`w-10 h-10 rounded-full ${getStatusBg(tx.status)} flex items-center justify-center flex-shrink-0`}>
+                          <span className={`material-icons-outlined ${getStatusColor(tx.status)}`}>{tx.icon}</span>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                            {tx.title}
+                          </p>
+                          <p className="text-xs text-gray-600 dark:text-white/60 truncate">
+                            {tx.description}
+                          </p>
+                          <p className="text-xs text-gray-500 dark:text-white/50 mt-0.5">
+                            {new Date(tx.date).toLocaleDateString()} {new Date(tx.date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </p>
+                        </div>
                       </div>
-                      <div>
+                      <div className="text-right flex flex-col items-end gap-1 flex-shrink-0 ml-2">
                         <p className="text-sm font-semibold text-gray-900 dark:text-white">
-                          ₦{tx.amount.toLocaleString()}
+                          {tx.amountLabel}
                         </p>
-                        <p className="text-xs text-gray-600 dark:text-white/60">
-                          {new Date(tx.date).toLocaleDateString()}
-                        </p>
+                        {tx.secondaryAmountLabel && (
+                          <p className="text-xs font-medium text-primary">
+                            {tx.secondaryAmountLabel}
+                          </p>
+                        )}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${getStatusBg(tx.status)} ${getStatusColor(tx.status)} capitalize`}>
+                          {tx.status}
+                        </span>
                       </div>
                     </div>
-                    <div className="text-right flex items-center gap-1.5 justify-end">
-                      {getTokenLogo("SEND") && (
-                        <Image
-                          src={getTokenLogo("SEND")}
-                          alt="SEND"
-                          width={16}
-                          height={16}
-                          className="rounded-full"
-                          unoptimized
-                        />
-                      )}
-                      <p className="text-xs font-semibold text-primary">
-                        +{tx.sendAmount.toFixed(2)} SEND
-                      </p>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           ) : (
@@ -757,7 +818,7 @@ export default function UserDashboard() {
 
               <button
                 onClick={() => handleCryptoOptionClick("BASE")}
-                className="w-full p-4 rounded-xl bg-white/60 dark:bg-secondary/30 hover:bg-white/80 dark:hover:bg-secondary/40 border-2 border-secondary/20 hover:border-secondary/40 transition-all flex items-center justify-between group opacity-75"
+                className="w-full p-4 rounded-xl bg-primary/10 hover:bg-primary/20 border-2 border-primary/30 hover:border-primary/50 transition-all flex items-center justify-between group"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-secondary/20 flex items-center justify-center overflow-hidden">
@@ -779,10 +840,7 @@ export default function UserDashboard() {
                       }}
                     />
                   </div>
-                  <div className="flex flex-col items-start">
-                    <span className="text-lg font-semibold text-gray-900 dark:text-white">BASE</span>
-                    <span className="text-xs text-gray-600 dark:text-white/60">Coming soon</span>
-                  </div>
+                  <span className="text-lg font-semibold text-gray-900 dark:text-white">BASE</span>
                 </div>
                 <span className="material-icons-outlined text-gray-600 dark:text-white/40 group-hover:text-primary transition-colors">
                   arrow_forward
@@ -791,7 +849,7 @@ export default function UserDashboard() {
 
               <button
                 onClick={() => handleCryptoOptionClick("SOLANA")}
-                className="w-full p-4 rounded-xl bg-white/60 dark:bg-secondary/30 hover:bg-white/80 dark:hover:bg-secondary/40 border-2 border-secondary/20 hover:border-secondary/40 transition-all flex items-center justify-between group opacity-75"
+                className="w-full p-4 rounded-xl bg-primary/10 hover:bg-primary/20 border-2 border-primary/30 hover:border-primary/50 transition-all flex items-center justify-between group"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-secondary/20 flex items-center justify-center overflow-hidden">
@@ -812,10 +870,7 @@ export default function UserDashboard() {
                       }}
                     />
                   </div>
-                  <div className="flex flex-col items-start">
-                    <span className="text-lg font-semibold text-gray-900 dark:text-white">SOLANA</span>
-                    <span className="text-xs text-gray-600 dark:text-white/60">Coming soon</span>
-                  </div>
+                  <span className="text-lg font-semibold text-gray-900 dark:text-white">SOLANA</span>
                 </div>
                 <span className="material-icons-outlined text-gray-600 dark:text-white/40 group-hover:text-primary transition-colors">
                   arrow_forward
@@ -865,7 +920,7 @@ export default function UserDashboard() {
             <div className="space-y-3">
               <button
                 onClick={() => handleOfframpOptionClick("SEND")}
-                className="w-full p-4 rounded-xl bg-white/60 dark:bg-secondary/30 hover:bg-white/80 dark:hover:bg-secondary/40 border-2 border-secondary/20 hover:border-secondary/40 transition-all flex items-center justify-between group opacity-75"
+                className="w-full p-4 rounded-xl bg-primary/10 hover:bg-primary/20 border-2 border-primary/30 hover:border-primary/50 transition-all flex items-center justify-between group"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-secondary/20 flex items-center justify-center overflow-hidden relative">
@@ -887,10 +942,7 @@ export default function UserDashboard() {
                       }}
                     />
                   </div>
-                  <div className="flex flex-col items-start">
-                    <span className="text-lg font-semibold text-gray-900 dark:text-white">SEND</span>
-                    <span className="text-xs text-gray-600 dark:text-white/60">Coming soon</span>
-                  </div>
+                  <span className="text-lg font-semibold text-gray-900 dark:text-white">SEND</span>
                 </div>
                 <span className="material-icons-outlined text-gray-600 dark:text-white/40 group-hover:text-primary transition-colors">
                   arrow_forward
@@ -899,7 +951,7 @@ export default function UserDashboard() {
 
               <button
                 onClick={() => handleOfframpOptionClick("BASE")}
-                className="w-full p-4 rounded-xl bg-white/60 dark:bg-secondary/30 hover:bg-white/80 dark:hover:bg-secondary/40 border-2 border-secondary/20 hover:border-secondary/40 transition-all flex items-center justify-between group opacity-75"
+                className="w-full p-4 rounded-xl bg-primary/10 hover:bg-primary/20 border-2 border-primary/30 hover:border-primary/50 transition-all flex items-center justify-between group"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-secondary/20 flex items-center justify-center overflow-hidden">
@@ -921,10 +973,7 @@ export default function UserDashboard() {
                       }}
                     />
                   </div>
-                  <div className="flex flex-col items-start">
-                    <span className="text-lg font-semibold text-gray-900 dark:text-white">BASE</span>
-                    <span className="text-xs text-gray-600 dark:text-white/60">Coming soon</span>
-                  </div>
+                  <span className="text-lg font-semibold text-gray-900 dark:text-white">BASE</span>
                 </div>
                 <span className="material-icons-outlined text-gray-600 dark:text-white/40 group-hover:text-primary transition-colors">
                   arrow_forward
@@ -933,7 +982,7 @@ export default function UserDashboard() {
 
               <button
                 onClick={() => handleOfframpOptionClick("SOLANA")}
-                className="w-full p-4 rounded-xl bg-white/60 dark:bg-secondary/30 hover:bg-white/80 dark:hover:bg-secondary/40 border-2 border-secondary/20 hover:border-secondary/40 transition-all flex items-center justify-between group opacity-75"
+                className="w-full p-4 rounded-xl bg-primary/10 hover:bg-primary/20 border-2 border-primary/30 hover:border-primary/50 transition-all flex items-center justify-between group"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 rounded-lg bg-secondary/20 flex items-center justify-center overflow-hidden">
@@ -954,15 +1003,254 @@ export default function UserDashboard() {
                       }}
                     />
                   </div>
-                  <div className="flex flex-col items-start">
-                    <span className="text-lg font-semibold text-gray-900 dark:text-white">SOLANA</span>
-                    <span className="text-xs text-gray-600 dark:text-white/60">Coming soon</span>
-                  </div>
+                  <span className="text-lg font-semibold text-gray-900 dark:text-white">SOLANA</span>
                 </div>
                 <span className="material-icons-outlined text-gray-600 dark:text-white/40 group-hover:text-primary transition-colors">
                   arrow_forward
                 </span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Crypto Assets Modal */}
+      {showAssetsModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-slate-700">
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                <span className="material-icons-outlined">account_balance_wallet</span>
+                Crypto Assets
+              </h2>
+              <button
+                onClick={() => setShowAssetsModal(false)}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+              >
+                <span className="material-icons-outlined text-gray-600 dark:text-gray-400">close</span>
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-6">
+              {loadingBalances ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                  <span className="ml-3 text-gray-600 dark:text-gray-400">Loading assets...</span>
+                </div>
+              ) : Object.keys(walletBalances).length === 0 ? (
+                <div className="text-center py-12">
+                  <span className="material-icons-outlined text-6xl text-gray-400 dark:text-gray-600 mb-4">account_balance_wallet</span>
+                  <p className="text-gray-600 dark:text-gray-400">No crypto assets found</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-500 mt-2">Set up your wallet to start receiving crypto</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {(() => {
+                    // Sort chains: Base first, Solana second, then others
+                    const chainEntries = Object.entries(walletBalances);
+                    const sortedChains = chainEntries.sort(([chainIdA], [chainIdB]) => {
+                      if (chainIdA === 'base') return -1;
+                      if (chainIdB === 'base') return 1;
+                      if (chainIdA === 'solana') return -1;
+                      if (chainIdB === 'solana') return 1;
+                      return chainIdA.localeCompare(chainIdB);
+                    });
+                    
+                    return sortedChains.map(([chainId, chainBalances]: [string, any]) => {
+                      const chain = SUPPORTED_CHAINS[chainId];
+                      const chainTotalUSD = Object.values(chainBalances).reduce((sum: number, token: any) => sum + (token.usdValue || 0), 0);
+                      
+                      return (
+                      <div key={chainId} className="border border-gray-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                        {/* Chain Header */}
+                        <div className="bg-gray-50 dark:bg-slate-800 p-4 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            {getChainLogo(chainId) && (
+                              <Image
+                                src={getChainLogo(chainId)}
+                                alt={chain?.name || chainId}
+                                width={24}
+                                height={24}
+                                className="rounded-full"
+                                unoptimized
+                              />
+                            )}
+                            <div>
+                              <h3 className="font-semibold text-gray-900 dark:text-white">
+                                {chain?.name || chainId}
+                              </h3>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">
+                                {Object.keys(chainBalances).length} {Object.keys(chainBalances).length === 1 ? 'asset' : 'assets'}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                              ${chainTotalUSD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Tokens */}
+                        <div className="divide-y divide-gray-200 dark:divide-slate-700">
+                          {Object.entries(chainBalances).map(([tokenAddress, tokenInfo]: [string, any]) => (
+                            <div 
+                              key={tokenAddress} 
+                              onClick={() => {
+                                setSelectedAsset({ chainId, tokenAddress, tokenInfo });
+                                setShowAssetActions(true);
+                              }}
+                              className="p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer active:bg-gray-100 dark:active:bg-slate-800"
+                            >
+                              <div className="flex items-center gap-3 flex-1">
+                                {getTokenLogo(tokenInfo.symbol) && (
+                                  <Image
+                                    src={getTokenLogo(tokenInfo.symbol)}
+                                    alt={tokenInfo.symbol}
+                                    width={32}
+                                    height={32}
+                                    className="rounded-full"
+                                    unoptimized
+                                    onError={(e) => {
+                                      (e.target as HTMLImageElement).style.display = 'none';
+                                    }}
+                                  />
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-semibold text-gray-900 dark:text-white">
+                                    {tokenInfo.symbol}
+                                  </p>
+                                  <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
+                                    {tokenInfo.balance} {tokenInfo.symbol}
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="text-right flex items-center gap-2">
+                                <div>
+                                  <p className="font-semibold text-gray-900 dark:text-white">
+                                    ${(tokenInfo.usdValue || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </p>
+                                </div>
+                                <span className="material-icons-outlined text-gray-400 dark:text-gray-500 text-sm">
+                                  chevron_right
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })})()}
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="p-6 border-t border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Total Value</span>
+                <span className="text-xl font-bold text-gray-900 dark:text-white">
+                  ${(totalCryptoUSD || cachedTotalCryptoUSD || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Asset Actions Modal */}
+      {showAssetActions && selectedAsset && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-xl max-w-md w-full">
+            {/* Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-slate-700">
+              <div className="flex items-center gap-3">
+                {getTokenLogo(selectedAsset.tokenInfo.symbol) && (
+                  <Image
+                    src={getTokenLogo(selectedAsset.tokenInfo.symbol)}
+                    alt={selectedAsset.tokenInfo.symbol}
+                    width={40}
+                    height={40}
+                    className="rounded-full"
+                    unoptimized
+                  />
+                )}
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                    {selectedAsset.tokenInfo.symbol}
+                  </h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    {selectedAsset.tokenInfo.balance} {selectedAsset.tokenInfo.symbol}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowAssetActions(false);
+                  setSelectedAsset(null);
+                }}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+              >
+                <span className="material-icons-outlined text-gray-600 dark:text-gray-400">close</span>
+              </button>
+            </div>
+
+            {/* Actions */}
+            <div className="p-6 space-y-3">
+              <button
+                onClick={() => {
+                  setShowAssetActions(false);
+                  setShowAssetsModal(false);
+                  router.push(`/send?chain=${selectedAsset.chainId}&token=${selectedAsset.tokenAddress}&type=crypto`);
+                }}
+                className="w-full flex items-center gap-3 p-4 bg-primary hover:bg-primary/90 text-secondary rounded-xl transition-colors"
+              >
+                <span className="material-icons-outlined">send</span>
+                <span className="font-semibold">Send {selectedAsset.tokenInfo.symbol}</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowAssetActions(false);
+                  setShowAssetsModal(false);
+                  router.push(`/payment?chain=${selectedAsset.chainId}&token=${selectedAsset.tokenAddress}`);
+                }}
+                className="w-full flex items-center gap-3 p-4 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-900 dark:text-white rounded-xl transition-colors"
+              >
+                <span className="material-icons-outlined">payment</span>
+                <span className="font-semibold">Use for Payment</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowAssetActions(false);
+                  setShowAssetsModal(false);
+                  router.push(`/offramp?chain=${selectedAsset.chainId}&token=${selectedAsset.tokenAddress}`);
+                }}
+                className="w-full flex items-center gap-3 p-4 bg-gray-100 dark:bg-slate-800 hover:bg-gray-200 dark:hover:bg-slate-700 text-gray-900 dark:text-white rounded-xl transition-colors"
+              >
+                <span className="material-icons-outlined">currency_exchange</span>
+                <span className="font-semibold">Convert to Naira</span>
+              </button>
+
+              <div className="pt-4 border-t border-gray-200 dark:border-slate-700">
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <p className="text-gray-500 dark:text-gray-400 mb-1">Chain</p>
+                    <p className="font-semibold text-gray-900 dark:text-white">
+                      {SUPPORTED_CHAINS[selectedAsset.chainId]?.name || selectedAsset.chainId}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-gray-500 dark:text-gray-400 mb-1">Value</p>
+                    <p className="font-semibold text-gray-900 dark:text-white">
+                      ${(selectedAsset.tokenInfo.usdValue || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
