@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { KYC_TIERS, getKYCTierInfo } from "@/lib/kyc-tiers";
+import { KYC_TIERS, getKYCTierInfo, type KYCTier } from "@/lib/kyc-tiers";
 
 interface User {
   id: string;
@@ -282,7 +282,7 @@ export default function KYCManagementPage() {
                 </tr>
               ) : (
                 users.map((user) => {
-                  const tier = user.flutterwave_kyc_tier || 1;
+                  const tier = (user.flutterwave_kyc_tier || 1) as KYCTier;
                   const tierInfo = user.kycTierInfo || getKYCTierInfo(tier);
                   return (
                     <tr key={user.id} className="hover:bg-light-blue dark:hover:bg-background-dark transition-colors">
