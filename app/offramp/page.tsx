@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { isUserLoggedIn, getUserFromStorage } from "@/lib/session";
 import BottomNavigation from "@/components/BottomNavigation";
 import { QRCodeSVG } from "qrcode.react";
 
-export default function OffRampPage() {
+function OffRampPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [user, setUser] = useState<any>(null);
@@ -395,5 +395,19 @@ export default function OffRampPage() {
       </div>
       <BottomNavigation />
     </div>
+  );
+}
+
+export default function OffRampPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-background-light dark:bg-background-dark flex items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+        </div>
+      }
+    >
+      <OffRampPageContent />
+    </Suspense>
   );
 }
