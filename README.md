@@ -153,3 +153,4 @@ Comprehensive documentation is organized in the `docs/` folder:
 ## License
 
 ISC
+# Build trigger
