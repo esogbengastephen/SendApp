@@ -178,9 +178,10 @@ export async function POST(request: NextRequest) {
               try {
                 await sendTokenDistributionEmail(
                   userEmail,
-                  finalSendAmount,
-                  distributionResult.txHash || "",
-                  walletAddress
+                  amount,
+                  finalSendAmount.toString(),
+                  walletAddress,
+                  distributionResult.txHash || ""
                 );
               } catch (emailError) {
                 console.error(`[Flutterwave Webhook] Failed to send token distribution email:`, emailError);

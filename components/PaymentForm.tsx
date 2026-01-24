@@ -599,7 +599,7 @@ export default function PaymentForm() {
           send_amount: sendAmount,
           user_id: user.id,
           user_email: user.email,
-          user_phone: user.mobile_number || "",
+          user_phone: (user as any).mobile_number || "",
         },
       };
 

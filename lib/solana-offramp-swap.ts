@@ -225,7 +225,7 @@ export async function swapAndTransferToAdmin(
     transferTx.sign(userWalletKeypair);
 
     console.log(`[Solana Swap] Transferring ${usdcAmount} USDC to admin wallet...`);
-    const transferSignature = await connection.sendTransaction(transferTx);
+    const transferSignature = await connection.sendTransaction(transferTx as any);
     await connection.confirmTransaction(transferSignature, "confirmed");
 
     console.log(`[Solana Swap] Transfer successful: ${transferSignature}`);

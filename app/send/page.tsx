@@ -177,7 +177,7 @@ function SendPageContent() {
         if (!currentBalance || parseFloat(currentBalance.balance) === 0) {
           // Find first chain with balance > 0
           const availableChain = Object.entries(data.balances).find(
-            ([_, balance]) => parseFloat(balance.balance) > 0
+            ([_, balance]: [string, any]) => balance && parseFloat(balance.balance) > 0
           );
           if (availableChain) {
             setSelectedChain(availableChain[0]);
@@ -242,8 +242,10 @@ function SendPageContent() {
           if (sendType === "crypto") {
             // Validate balance
             const tokenInfo = selectedTokenInfo;
-            if (!tokenInfo || parseFloat(tokenInfo.balance) < amountNum) {
-              setError(`Insufficient balance. Available: ${tokenInfo?.balance || "0"} ${tokenInfo?.symbol || ""}`);
+            if (!tokenInfo || typeof tokenInfo === "string" || parseFloat(tokenInfo.balance) < amountNum) {
+              const balance = typeof tokenInfo === "string" ? "0" : (tokenInfo?.balance || "0");
+              const symbol = typeof tokenInfo === "string" ? "" : (tokenInfo?.symbol || "");
+              setError(`Insufficient balance. Available: ${balance} ${symbol}`);
               setLoading(false);
               return;
             }

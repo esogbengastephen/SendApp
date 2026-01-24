@@ -76,7 +76,7 @@ export async function GET(request: NextRequest) {
             !accountNumber && "Account number not set. Add phone number in Settings.",
             !lastUpdated && "Balance never updated. Check webhook configuration.",
             balance === 0 && transactions?.length === 0 && "No transactions found. Payment may not have been processed yet.",
-            balance === 0 && transactions?.length > 0 && "Transactions exist but balance is 0. Check webhook processing.",
+            balance === 0 && (transactions?.length ?? 0) > 0 && "Transactions exist but balance is 0. Check webhook processing.",
           ].filter(Boolean),
         },
       },

@@ -698,15 +698,13 @@ export default function UtilityForm({
                             <div className="relative w-6 h-6">
                               {(() => {
                                 let logoUrl = "";
+                                // Note: This block only renders when serviceId is NOT "electricity" (see line 617 condition)
                                 if (serviceId === "betting") {
                                   logoUrl = getBettingNetworkLogo(network);
                                 } else if (serviceId === "airtime" || serviceId === "data") {
                                   logoUrl = getTelecomNetworkLogo(network);
                                 } else if (serviceId === "tv") {
                                   logoUrl = getTVNetworkLogo(network);
-                                } else if (serviceId === "electricity") {
-                                  // Electricity discos - no logos for now, will show letter
-                                  logoUrl = "";
                                 } else if (serviceId === "gift-card-redeem") {
                                   // Use Reloadly product logo if available, otherwise fallback to local logo
                                   const product = productMap[network];

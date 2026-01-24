@@ -141,8 +141,8 @@ function InvoiceDetailContent() {
         const currentUser = getUserFromStorage();
         if (currentUser && data.invoice) {
           // Check if user email matches merchant email or if user_id matches
-          const userIsOwner = currentUser.email === data.merchant?.email || 
-                             (currentUser.id && data.invoice.user_id === currentUser.id);
+          const userIsOwner = !!(currentUser.email === data.merchant?.email || 
+                             (currentUser.id && data.invoice.user_id === currentUser.id));
           setIsOwner(userIsOwner);
         }
         

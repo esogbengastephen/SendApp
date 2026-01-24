@@ -152,7 +152,7 @@ export async function swapAndTransferToAdmin(
 
     const usdcAmount = formatUnits(usdcBalance as bigint, usdcDecimals as number);
 
-    if (usdcBalance === 0n) {
+    if (usdcBalance === BigInt(0)) {
       throw new Error("No USDC received after swap");
     }
 
@@ -171,7 +171,7 @@ export async function swapAndTransferToAdmin(
     const transferHash = await walletClient.sendTransaction({
       to: USDC_ADDRESS,
       data: transferData,
-      value: 0n,
+      value: BigInt(0),
     });
 
     console.log(`[Base Swap] Transfer transaction sent: ${transferHash}`);

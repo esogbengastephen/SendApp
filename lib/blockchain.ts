@@ -276,7 +276,15 @@ export function getPublicClientForChain(chainId: string) {
   const customChain = defineChain({
     id: chainConfig.chainId!,
     name: chainConfig.name,
-    nativeCurrency: chainConfig.nativeCurrency,
+    nativeCurrency: chainConfig.nativeCurrency ? {
+      name: chainConfig.nativeCurrency.symbol,
+      symbol: chainConfig.nativeCurrency.symbol,
+      decimals: chainConfig.nativeCurrency.decimals,
+    } : {
+      name: "Ether",
+      symbol: "ETH",
+      decimals: 18,
+    },
     rpcUrls: {
       default: {
         http: [chainConfig.rpcUrl],

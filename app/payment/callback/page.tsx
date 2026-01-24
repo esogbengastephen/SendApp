@@ -38,8 +38,8 @@ function PaymentCallbackContent() {
       try {
         // Extract transaction ID from Flutterwave tx_ref
         // Format: FLW-{transactionId}-{timestamp}-{random}
-        let transactionId = txRef;
-        if (txRef.startsWith("FLW-")) {
+        let transactionId = txRef || "";
+        if (txRef && txRef.startsWith("FLW-")) {
           // Extract our transaction ID from Flutterwave reference
           const parts = txRef.split("-");
           if (parts.length >= 2) {

@@ -73,6 +73,7 @@ export async function POST(request: NextRequest) {
     let accountBank: string;
     let accountNumber: string;
     let recipientInfo: any = null;
+    let recipient: any = null; // Declare recipient outside the if block
 
     if (recipientType === "user") {
       // Send to user - validate and lookup by phone number
@@ -223,12 +224,15 @@ export async function POST(request: NextRequest) {
 
     // Create transaction record for the transfer (pending status)
     const transactionId = `TRANSFER-${Date.now()}-${nanoid(8)}`;
+    const walletAddress = recipientType === "user" && recipient?.flutterwave_virtual_account_number
+      ? `ngn_transfer_${recipient.flutterwave_virtual_account_number}`
+      : `ngn_transfer_${accountNumber}`;
     const { error: txError } = await supabaseAdmin
       .from("transactions")
       .insert({
         transaction_id: transactionId,
         user_id: user.id,
-        wallet_address: `ngn_transfer_${recipient.flutterwave_virtual_account_number}`,
+        wallet_address: walletAddress,
         ngn_amount: amountNum,
         send_amount: "0",
         status: "pending", // Will be updated by webhook when transfer completes/fails
