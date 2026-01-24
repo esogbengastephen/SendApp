@@ -178,8 +178,8 @@ export default function OnrampTransactionsPage() {
                 setFilters({ ...filters, status: e.target.value });
                 setPagination({ ...pagination, page: 1 });
               }}
-              className="w-full px-4 py-2 rounded-lg border border-light-grey dark:border-medium-grey bg-white dark:bg-background-dark text-text-primary dark:text-text-primary-dark focus:outline-none focus:ring-2"
-              style={{ focusRingColor: COLORS.primary }}
+              className="w-full px-4 py-2 rounded-lg border border-light-grey dark:border-medium-grey bg-white dark:bg-background-dark text-text-primary dark:text-text-primary-dark focus:outline-none focus:ring-2 focus:ring-primary"
+              style={{ "--focus-ring-color": COLORS.primary } as React.CSSProperties}
               aria-label="Filter by transaction status"
             >
               <option value="">All Statuses</option>
