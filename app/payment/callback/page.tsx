@@ -4,6 +4,7 @@ import { useEffect, useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Modal from "@/components/Modal";
 import Link from "next/link";
+import { getUserFromStorage } from "@/lib/session";
 
 function PaymentCallbackContent() {
   const searchParams = useSearchParams();
@@ -59,36 +60,43 @@ function PaymentCallbackContent() {
           }
         }
 
-        // Strategy 1: Try to find transaction by payment_reference (Flutterwave tx_ref)
-        // This works after webhook has processed the payment
-        console.log(`[Payment Callback] Strategy 1: Searching by payment_reference: ${txRef}`);
-        let response = await fetch(`/api/transactions/create-id?paymentReference=${encodeURIComponent(txRef)}`);
-        let data = await response.json();
-        console.log(`[Payment Callback] Strategy 1 result:`, { success: data.success, exists: data.exists, status: data.status });
-
-        // Strategy 2: If not found by payment_reference, search by metadata.flutterwave_tx_ref
-        // This helps find transactions even before webhook processes them
-        if (!data.success || !data.exists) {
-          console.log(`[Payment Callback] Strategy 1 failed, trying Strategy 2: Searching by transactionId: ${transactionId}`);
-          
-          // Try to find by checking all pending transactions with matching metadata
-          // We'll need to add an API endpoint for this, or improve the existing one
-          response = await fetch(`/api/transactions/create-id?transactionId=${encodeURIComponent(transactionId)}`);
-          data = await response.json();
-          console.log(`[Payment Callback] Strategy 2 result:`, { success: data.success, exists: data.exists, status: data.status });
+        // Get user ID from session if available (helps narrow search)
+        let userId: string | null = null;
+        try {
+          const user = getUserFromStorage();
+          userId = user?.id || null;
+        } catch (e) {
+          console.warn(`[Payment Callback] Could not get user from storage:`, e);
         }
 
-        // Strategy 3: If still not found and we have a transactionId, try direct lookup
-        if ((!data.success || !data.exists) && transactionId && transactionId !== txRef) {
-          console.log(`[Payment Callback] Strategy 2 failed, trying Strategy 3: Direct lookup for: ${transactionId}`);
-          response = await fetch(`/api/transactions/create-id?transactionId=${encodeURIComponent(transactionId)}`);
-          data = await response.json();
-          console.log(`[Payment Callback] Strategy 3 result:`, { success: data.success, exists: data.exists, status: data.status });
+        // Use comprehensive search endpoint that tries multiple strategies
+        console.log(`[Payment Callback] Searching for transaction with txRef: ${txRef}, userId: ${userId || "not available"}`);
+        const searchUrl = `/api/transactions/find-by-txref?txRef=${encodeURIComponent(txRef)}${userId ? `&userId=${encodeURIComponent(userId)}` : ""}`;
+        let response = await fetch(searchUrl);
+        let data = await response.json();
+        
+        console.log(`[Payment Callback] Search result:`, { 
+          success: data.success, 
+          exists: data.exists, 
+          status: data.status,
+          foundBy: data.foundBy,
+          transactionId: data.transactionId 
+        });
+        
+        // If found, get full transaction details
+        if (data.success && data.exists && data.transactionId) {
+          // Fetch full transaction details
+          const detailResponse = await fetch(`/api/transactions/create-id?transactionId=${encodeURIComponent(data.transactionId)}`);
+          const detailData = await detailResponse.json();
+          if (detailData.success && detailData.exists) {
+            data = detailData;
+          }
         }
         
         // Log final result for debugging
         if (!data.success || !data.exists) {
-          console.error(`[Payment Callback] ❌ Transaction not found after all strategies. txRef: ${txRef}, transactionId: ${transactionId}`);
+          console.error(`[Payment Callback] ❌ Transaction not found. txRef: ${txRef}`);
+          console.error(`[Payment Callback] Search strategies tried:`, data.strategiesTried || []);
           console.error(`[Payment Callback] Response data:`, JSON.stringify(data, null, 2));
         }
 
