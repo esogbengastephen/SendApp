@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import Script from "next/script";
 import SplashScreen from "@/components/SplashScreen";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 
 // Optimize font loading with Next.js font optimization
 const inter = Inter({
@@ -144,10 +145,32 @@ export default function RootLayout({
             })();
           `}
         </Script>
+        <Script id="global-error-handler" strategy="afterInteractive">
+          {`
+            (function() {
+              // Global error handler for unhandled errors
+              if (typeof window !== 'undefined') {
+                window.addEventListener('error', function(event) {
+                  console.error('Global error caught:', event.error, event.message, event.filename, event.lineno);
+                  // Prevent default error handling to avoid showing default error page
+                  // The ErrorBoundary will handle it
+                });
+                
+                window.addEventListener('unhandledrejection', function(event) {
+                  console.error('Unhandled promise rejection:', event.reason);
+                  // Prevent default error handling
+                  event.preventDefault();
+                });
+              }
+            })();
+          `}
+        </Script>
       </head>
       <body className="bg-background-light dark:bg-background-dark font-display" style={{ fontFamily: 'var(--font-inter), sans-serif' }}>
-        <SplashScreen />
-        {children}
+        <ErrorBoundary>
+          <SplashScreen />
+          {children}
+        </ErrorBoundary>
       </body>
     </html>
   );
