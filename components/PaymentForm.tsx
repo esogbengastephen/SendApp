@@ -648,6 +648,31 @@ export default function PaymentForm() {
       console.log(`[Flutterwave Payment] Internal transaction ID: ${currentTransactionId}`);
       console.log(`[Flutterwave Payment] Amount: ${parseFloat(ngnAmount)} NGN`);
       
+      // Step 2.5: Update transaction with Flutterwave tx_ref in metadata
+      // This allows the callback to find the transaction even before webhook processes it
+      try {
+        const updateResponse = await fetch("/api/transactions/update-metadata", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            transactionId: currentTransactionId,
+            metadata: {
+              flutterwave_tx_ref: flutterwaveTxRef,
+              transaction_id: currentTransactionId,
+            },
+          }),
+        });
+        
+        if (updateResponse.ok) {
+          console.log(`[Flutterwave Payment] ✅ Updated transaction metadata with tx_ref: ${flutterwaveTxRef}`);
+        } else {
+          console.warn(`[Flutterwave Payment] ⚠️ Failed to update transaction metadata (non-critical)`);
+        }
+      } catch (updateError) {
+        console.warn(`[Flutterwave Payment] ⚠️ Error updating transaction metadata (non-critical):`, updateError);
+        // Non-critical - continue with payment initialization
+      }
+      
       const paymentRequest = {
         email: user.email.trim(), // User is guaranteed to exist and have email at this point
         amount: parseFloat(ngnAmount),

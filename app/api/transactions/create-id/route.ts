@@ -230,7 +230,9 @@ export async function GET(request: NextRequest) {
     // Support lookup by payment_reference (for Flutterwave tx_ref)
     if (paymentReference) {
       const { supabaseAdmin } = await import("@/lib/supabase");
-      const { data: transaction, error } = await supabaseAdmin
+      
+      // Strategy 1: Search by payment_reference column (set by webhook after processing)
+      let { data: transaction, error } = await supabaseAdmin
         .from("transactions")
         .select("*")
         .eq("payment_reference", paymentReference)
@@ -242,6 +244,24 @@ export async function GET(request: NextRequest) {
           { success: false, error: "Database error" },
           { status: 500 }
         );
+      }
+
+      // Strategy 2: If not found by payment_reference, search by metadata->>flutterwave_tx_ref
+      // This helps find transactions even before webhook processes them
+      if (!transaction) {
+        console.log(`[Create ID] Not found by payment_reference, searching metadata for: ${paymentReference}`);
+        const { data: metadataTransaction, error: metadataError } = await supabaseAdmin
+          .from("transactions")
+          .select("*")
+          .eq("metadata->>flutterwave_tx_ref", paymentReference)
+          .maybeSingle();
+
+        if (metadataError) {
+          console.error("[Create ID] Error looking up by metadata:", metadataError);
+        } else if (metadataTransaction) {
+          console.log(`[Create ID] Found transaction by metadata: ${metadataTransaction.transaction_id}`);
+          transaction = metadataTransaction;
+        }
       }
 
       if (transaction) {

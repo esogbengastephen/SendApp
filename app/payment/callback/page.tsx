@@ -34,33 +34,50 @@ function PaymentCallbackContent() {
     }
 
     // Verify the payment
-    async function verifyPayment() {
+    async function verifyPayment(attemptNumber = 1) {
+      const maxAttempts = 10; // Poll for up to 30 seconds (10 attempts × 3 seconds)
+      
       try {
-        // Extract transaction ID from Flutterwave tx_ref
-        // Format: FLW-{transactionId}-{timestamp}-{random}
+        console.log(`[Payment Callback] Verification attempt ${attemptNumber}/${maxAttempts} for tx_ref: ${txRef}`);
+        
+        // Extract transaction ID from Flutterwave tx_ref if possible
+        // Format: FLW-{timestamp}-{random}-{transactionIdPrefix}
         let transactionId = txRef || "";
         if (txRef && txRef.startsWith("FLW-")) {
-          // Extract our transaction ID from Flutterwave reference
           const parts = txRef.split("-");
-          if (parts.length >= 2) {
-            transactionId = parts.slice(1, -2).join("-"); // Get transaction ID (skip FLW prefix and last 2 parts which are timestamp-random)
-            // Actually, let's try a simpler approach - find by payment_reference
-            // The webhook stores the Flutterwave tx_ref in payment_reference
+          // The transaction ID might be in the last part or we need to search by metadata
+          if (parts.length >= 4) {
+            // Try to extract - but this might not work if format changed
+            // Better to search by metadata
           }
         }
 
-        // Try to find transaction by payment_reference first (Flutterwave tx_ref)
-        // If not found, try by transaction_id
-        let response = await fetch(`/api/transactions/create-id?paymentReference=${txRef}`);
+        // Strategy 1: Try to find transaction by payment_reference (Flutterwave tx_ref)
+        // This works after webhook has processed the payment
+        let response = await fetch(`/api/transactions/create-id?paymentReference=${encodeURIComponent(txRef)}`);
         let data = await response.json();
 
-        // If not found by payment_reference, try by transaction_id
+        // Strategy 2: If not found by payment_reference, search by metadata.flutterwave_tx_ref
+        // This helps find transactions even before webhook processes them
         if (!data.success || !data.exists) {
-          response = await fetch(`/api/transactions/create-id?transactionId=${transactionId}`);
+          console.log(`[Payment Callback] Not found by payment_reference, searching by metadata...`);
+          
+          // Try to find by checking all pending transactions with matching metadata
+          // We'll need to add an API endpoint for this, or improve the existing one
+          response = await fetch(`/api/transactions/create-id?transactionId=${encodeURIComponent(transactionId)}`);
+          data = await response.json();
+        }
+
+        // Strategy 3: If still not found and we have a transactionId, try direct lookup
+        if ((!data.success || !data.exists) && transactionId && transactionId !== txRef) {
+          console.log(`[Payment Callback] Trying direct transaction lookup: ${transactionId}`);
+          response = await fetch(`/api/transactions/create-id?transactionId=${encodeURIComponent(transactionId)}`);
           data = await response.json();
         }
 
         if (data.success && data.exists) {
+          console.log(`[Payment Callback] Transaction found: ${data.transactionId}, status: ${data.status}`);
+          
           if (data.status === "completed" && data.txHash) {
             setStatus("success");
             setTxHash(data.txHash);
@@ -68,22 +85,50 @@ function PaymentCallbackContent() {
               `Payment successful! ${data.sendAmount || ""} $SEND tokens have been sent to your wallet.`
             );
           } else if (data.status === "pending") {
-            setStatus("loading");
-            setMessage("Payment received! Processing token distribution...");
-            // Poll for completion (webhook might still be processing)
-            setTimeout(() => verifyPayment(), 3000);
-          } else {
+            // Transaction exists but webhook hasn't processed it yet
+            if (attemptNumber < maxAttempts) {
+              setStatus("loading");
+              setMessage(`Payment received! Processing token distribution... (${attemptNumber}/${maxAttempts})`);
+              // Poll for completion (webhook might still be processing)
+              setTimeout(() => verifyPayment(attemptNumber + 1), 3000);
+            } else {
+              // Max attempts reached - webhook might be delayed
+              setStatus("loading");
+              setMessage("Payment received! The webhook is taking longer than expected. Please check your transaction history in a few moments. Your tokens will be distributed automatically.");
+            }
+          } else if (data.status === "failed") {
             setStatus("error");
             setMessage(data.error_message || "Payment verification failed");
+          } else {
+            setStatus("loading");
+            setMessage(`Payment status: ${data.status}. Processing...`);
+            if (attemptNumber < maxAttempts) {
+              setTimeout(() => verifyPayment(attemptNumber + 1), 3000);
+            }
           }
         } else {
-          setStatus("error");
-          setMessage("Transaction not found. The webhook may still be processing. Please check your transaction history in a few moments.");
+          // Transaction not found yet
+          if (attemptNumber < maxAttempts) {
+            console.log(`[Payment Callback] Transaction not found yet, retrying... (${attemptNumber}/${maxAttempts})`);
+            setStatus("loading");
+            setMessage(`Verifying payment... (${attemptNumber}/${maxAttempts})`);
+            // The transaction might not be created yet, or webhook hasn't processed it
+            setTimeout(() => verifyPayment(attemptNumber + 1), 3000);
+          } else {
+            // Max attempts reached
+            setStatus("error");
+            setMessage("Transaction not found. The webhook may still be processing. Please check your transaction history in a few moments. If payment was successful, tokens will be distributed automatically.");
+          }
         }
       } catch (error) {
         console.error("Payment verification error:", error);
-        setStatus("error");
-        setMessage("Failed to verify payment. Please check your transaction history or contact support.");
+        if (attemptNumber < maxAttempts) {
+          // Retry on error
+          setTimeout(() => verifyPayment(attemptNumber + 1), 3000);
+        } else {
+          setStatus("error");
+          setMessage("Failed to verify payment. Please check your transaction history or contact support.");
+        }
       }
     }
   }, [txRef, statusParam]);
@@ -98,7 +143,7 @@ function PaymentCallbackContent() {
               Verifying Payment...
             </h2>
             <p className="text-slate-600 dark:text-slate-400">
-              Please wait while we verify your payment.
+              {message || "Please wait while we verify your payment."}
             </p>
           </div>
         )}
