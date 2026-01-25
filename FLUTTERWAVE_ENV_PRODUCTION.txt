@@ -1,0 +1,61 @@
+# ============================================
+# Flutterwave PRODUCTION/LIVE API Configuration
+# ============================================
+# ⚠️ WARNING: These are LIVE/PRODUCTION keys
+# Real money transactions will occur!
+# 
+# Flutterwave v4 uses OAuth2 authentication (Client ID + Client Secret)
+# v4 API is only available in production (not in test/sandbox)
+# ============================================
+
+# Flutterwave V4 Live API Credentials (OAuth2)
+# Get these from: https://dashboard.flutterwave.com/settings/api-keys
+# Switch to "V4 Live API keys" tab
+FLW_CLIENT_ID=089f5e0e-902f-4821-8660-54be34ad4fa5
+FLW_CLIENT_SECRET=A2AnyEc3FKFelRhrRGemWMYj0osfOhIH
+
+# Flutterwave Encryption Key (optional, for encryption features)
+FLW_ENCRYPTION_KEY=X65zrW7VKNK+DyfwFFsZiBVsiE/A7gq5AyefrFcJ/1g=
+
+# Flutterwave Webhook Secret Hash (for webhook signature verification)
+# ⚠️ IMPORTANT: This is different from the API credentials!
+# Configure this in Flutterwave Dashboard: Settings > Webhooks > Secret hash (Live webhooks section)
+# This value verifies that webhooks are actually from Flutterwave
+FLUTTERWAVE_WEBHOOK_SECRET_HASH=your_live_webhook_secret_hash_here
+
+# Force PRODUCTION mode (use LIVE API, not sandbox)
+# Set to "false" to use LIVE API with LIVE keys
+FLUTTERWAVE_USE_TEST_MODE=false
+
+# ============================================
+# SETUP INSTRUCTIONS:
+# ============================================
+# 1. Copy the lines above (without the # comments) to your .env.local file
+# 2. Make sure .env.local is in your project root (same folder as package.json)
+# 3. Add the same variables to Vercel: Settings > Environment Variables
+#    - Make sure to select "Production", "Preview", and "Development" environments
+# 4. Restart your dev server: npm run dev
+# 5. Test the connection: http://localhost:3000/api/test/flutterwave-env
+# 
+# ⚠️ SECURITY WARNINGS:
+# - Never commit .env.local to Git
+# - Never share these keys publicly
+# - These are LIVE keys - real transactions!
+# - Double-check all credentials before deploying
+# 
+# 📚 API Documentation:
+# - Getting Started: https://developer.flutterwave.com/docs/getting-started
+# - Environments: https://developer.flutterwave.com/docs/environments
+# - Authentication: https://developer.flutterwave.com/docs/authentication
+# - Webhooks: https://developer.flutterwave.com/docs/webhooks
+# - Best Practices: https://developer.flutterwave.com/docs/best-practices
+# ============================================
+
+# ============================================
+# NOTES:
+# ============================================
+# - V4 API uses OAuth2 (Client ID + Client Secret)
+# - V4 API is ONLY available in production (not in test/sandbox)
+# - The code automatically uses v4 if credentials are set and FLUTTERWAVE_USE_TEST_MODE=false
+# - If v4 credentials are not set, it falls back to v3 API
+# ============================================
