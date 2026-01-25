@@ -26,6 +26,8 @@ export default function AuthPage() {
   const [passkeyUser, setPasskeyUser] = useState<any>(null);
   const [authenticatingPasskey, setAuthenticatingPasskey] = useState(false);
   const [checkingPasskey, setCheckingPasskey] = useState(false);
+  const [recoveryMode, setRecoveryMode] = useState(false);
+  const [recoveryCodeSent, setRecoveryCodeSent] = useState(false);
 
   // Load last used email on mount
   useEffect(() => {
@@ -180,7 +182,9 @@ export default function AuthPage() {
     setResending(true);
 
     try {
-      const response = await fetch("/api/auth/send-code", {
+      // Use recovery endpoint if in recovery mode, otherwise use regular send-code
+      const endpoint = recoveryMode ? "/api/auth/recover-passkey" : "/api/auth/send-code";
+      const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email }),
@@ -193,7 +197,7 @@ export default function AuthPage() {
         return;
       }
 
-      setMessage("Confirmation code resent to your email");
+      setMessage(recoveryMode ? "Recovery code resent to your email" : "Confirmation code resent to your email");
       
       // Set 60 second cooldown
       setResendCooldown(60);
@@ -316,6 +320,67 @@ export default function AuthPage() {
     }
   };
 
+  const handleRecoverPasskey = async () => {
+    setError("");
+    setMessage("");
+    setLoading(true);
+
+    try {
+      const response = await fetch("/api/auth/recover-passkey", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        setError(data.error || "Failed to send recovery code");
+        return;
+      }
+
+      setMessage(data.message || "Recovery code sent to your email");
+      setRecoveryCodeSent(true);
+      setResendCooldown(60);
+    } catch (err: any) {
+      setError("Failed to send recovery code. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleVerifyRecoveryCode = async () => {
+    setError("");
+    setMessage("");
+    setLoading(true);
+
+    try {
+      const response = await fetch("/api/auth/recover-passkey", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, code }),
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        setError(data.error || "Invalid recovery code");
+        return;
+      }
+
+      // Store user and redirect to passkey setup with recovery flag
+      setMessage("Recovery verified! Redirecting to create new passkey...");
+      localStorage.setItem("user", JSON.stringify(data.user));
+      localStorage.setItem("last_email", email);
+      
+      setTimeout(() => router.push("/passkey-setup?recovery=true"), 1500);
+    } catch (err: any) {
+      setError("Verification failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="flex items-center justify-center min-h-screen bg-slate-50 dark:bg-slate-900 px-4 relative">
       {/* Header with Dark Mode Toggle */}
@@ -402,7 +467,7 @@ export default function AuthPage() {
               )}
 
               {/* Passkey Login Button (only for login mode when passkey detected) */}
-              {mode === "login" && hasPasskey && isPasskeySupported() && (
+              {mode === "login" && hasPasskey && isPasskeySupported() && !recoveryMode && (
                 <button
                   onClick={handlePasskeyLogin}
                   disabled={authenticatingPasskey || checkingPasskey}
@@ -422,10 +487,92 @@ export default function AuthPage() {
                 </button>
               )}
 
+              {/* Forgot Passkey Link - only show in login mode when passkey is detected */}
+              {mode === "login" && hasPasskey && !recoveryMode && (
+                <button
+                  onClick={() => {
+                    setRecoveryMode(true);
+                    setError("");
+                    setMessage("");
+                    setHasPasskey(false);
+                  }}
+                  className="w-full text-sm text-slate-600 dark:text-slate-400 hover:text-primary transition-colors underline mt-2"
+                >
+                  Forgot Passkey? Recover Account
+                </button>
+              )}
+
               {/* Show checking indicator when verifying passkey */}
-              {mode === "login" && checkingPasskey && email && (
+              {mode === "login" && checkingPasskey && email && !recoveryMode && (
                 <div className="text-xs text-slate-500 dark:text-slate-400 text-center">
                   Checking for passkey...
+                </div>
+              )}
+
+              {/* Recovery Mode UI */}
+              {recoveryMode && !recoveryCodeSent && (
+                <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <p className="text-sm text-blue-600 dark:text-blue-400">
+                    Enter your email to receive a recovery code. After verification, you can create a new passkey.
+                  </p>
+                </div>
+              )}
+
+              {recoveryMode && recoveryCodeSent && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                      Recovery Code
+                    </label>
+                    <input
+                      type="text"
+                      value={code}
+                      onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      placeholder="000000"
+                      maxLength={6}
+                      className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-3 text-center text-2xl tracking-widest focus:ring-2 focus:ring-primary focus:border-primary"
+                      disabled={loading}
+                    />
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 text-center">
+                      Enter the 6-digit code sent to {email}
+                    </p>
+                    <div className="mt-3 text-center">
+                      <button
+                        type="button"
+                        onClick={handleRecoverPasskey}
+                        disabled={resending || resendCooldown > 0 || loading}
+                        className="text-sm text-primary hover:opacity-80 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity underline"
+                      >
+                        {resending 
+                          ? "Resending..." 
+                          : resendCooldown > 0 
+                            ? `Resend code in ${resendCooldown}s` 
+                            : "Resend Code"}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleVerifyRecoveryCode}
+                    disabled={loading || code.length !== 6}
+                    className="w-full bg-primary text-slate-900 font-bold px-4 py-3 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {loading ? "Verifying..." : "Verify & Recover Account"}
+                  </button>
+
+                  <button
+                    onClick={() => {
+                      setRecoveryMode(false);
+                      setRecoveryCodeSent(false);
+                      setCode("");
+                      setError("");
+                      setMessage("");
+                      setResendCooldown(0);
+                    }}
+                    className="w-full text-sm text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100"
+                  >
+                    Cancel Recovery
+                  </button>
                 </div>
               )}
 
@@ -438,19 +585,31 @@ export default function AuthPage() {
                 </div>
               )}
 
-              <button
-                onClick={handleSendCode}
-                disabled={loading || !email || authenticatingPasskey}
-                className="w-full bg-primary text-slate-900 font-bold px-4 py-3 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {loading 
-                  ? "Processing..." 
-                  : mode === "login" 
-                    ? hasPasskey 
-                      ? "Continue with Email"
-                      : "Login"
-                    : "Send Confirmation Code"}
-              </button>
+              {!recoveryMode && !recoveryCodeSent && (
+                <button
+                  onClick={handleSendCode}
+                  disabled={loading || !email || authenticatingPasskey}
+                  className="w-full bg-primary text-slate-900 font-bold px-4 py-3 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading 
+                    ? "Processing..." 
+                    : mode === "login" 
+                      ? hasPasskey 
+                        ? "Continue with Email"
+                        : "Login"
+                      : "Send Confirmation Code"}
+                </button>
+              )}
+
+              {recoveryMode && !recoveryCodeSent && (
+                <button
+                  onClick={handleRecoverPasskey}
+                  disabled={loading || !email}
+                  className="w-full bg-primary text-slate-900 font-bold px-4 py-3 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? "Sending..." : "Send Recovery Code"}
+                </button>
+              )}
             </div>
           )}
 
