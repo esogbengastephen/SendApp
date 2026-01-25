@@ -89,9 +89,14 @@ export async function POST(request: NextRequest) {
       const flwRef = chargeData.flw_ref;
       const amount = parseFloat(chargeData.amount || "0");
       const status = chargeData.status;
-      const metadata = chargeData.meta || {};
-
+      
+      // Flutterwave may send metadata in different places - check all possibilities
+      const metadata = chargeData.meta || chargeData.metadata || chargeData.customer?.meta || {};
+      
       console.log(`[Flutterwave Webhook] Charge successful: ${txRef} - ₦${amount}`);
+      console.log(`[Flutterwave Webhook] Status: ${status}`);
+      console.log(`[Flutterwave Webhook] Metadata received:`, JSON.stringify(metadata, null, 2));
+      console.log(`[Flutterwave Webhook] Full chargeData keys:`, Object.keys(chargeData));
 
       // Only process if status is successful
       if (status !== "successful" && status !== "success") {
@@ -102,13 +107,44 @@ export async function POST(request: NextRequest) {
         });
       }
 
-      // Check if this is an on-ramp payment (has transaction_id in metadata)
-      if (metadata.transaction_id) {
-        const transactionId = metadata.transaction_id;
-        const walletAddress = metadata.wallet_address;
-        const userId = metadata.user_id;
+      // Try to get transaction_id from metadata (primary method)
+      let transactionId = metadata.transaction_id || metadata.transactionId;
+      let walletAddress = metadata.wallet_address || metadata.walletAddress;
+      let userId = metadata.user_id || metadata.userId;
 
+      // FALLBACK: If metadata is missing, try to find transaction by tx_ref
+      if (!transactionId && txRef) {
+        console.log(`[Flutterwave Webhook] ⚠️ No transaction_id in metadata. Looking up transaction by tx_ref: ${txRef}`);
+        
+        try {
+          // Try to find transaction by payment_reference (which might be the tx_ref)
+          const { data: transactionByRef, error: lookupError } = await supabaseAdmin
+            .from("transactions")
+            .select("transaction_id, wallet_address, user_id, status, ngn_amount, send_amount")
+            .eq("payment_reference", txRef)
+            .or(`metadata->>flutterwave_tx_ref.eq.${txRef},paystack_reference.eq.${txRef}`)
+            .eq("status", "pending")
+            .maybeSingle();
+          
+          if (transactionByRef && !lookupError) {
+            console.log(`[Flutterwave Webhook] ✅ Found transaction by tx_ref: ${transactionByRef.transaction_id}`);
+            transactionId = transactionByRef.transaction_id;
+            walletAddress = transactionByRef.wallet_address || walletAddress;
+            userId = transactionByRef.user_id || userId;
+          } else {
+            console.error(`[Flutterwave Webhook] ❌ Transaction not found by tx_ref: ${txRef}`);
+            console.error(`[Flutterwave Webhook] Lookup error:`, lookupError);
+          }
+        } catch (lookupError: any) {
+          console.error(`[Flutterwave Webhook] Error looking up transaction by tx_ref:`, lookupError);
+        }
+      }
+
+      // Check if this is an on-ramp payment (has transaction_id)
+      if (transactionId) {
         console.log(`[Flutterwave Webhook] On-ramp payment detected: transaction ${transactionId}`);
+        console.log(`[Flutterwave Webhook] Wallet address: ${walletAddress || "MISSING"}`);
+        console.log(`[Flutterwave Webhook] User ID: ${userId || "MISSING"}`);
 
         // Find existing transaction
         const transaction = await getTransaction(transactionId);
@@ -192,13 +228,44 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        // Validate wallet address before distributing tokens
+        if (!walletAddress || walletAddress.trim() === "") {
+          console.error(`[Flutterwave Webhook] ❌ Wallet address is missing! Cannot distribute tokens.`);
+          console.error(`[Flutterwave Webhook] Transaction ID: ${transactionId}`);
+          console.error(`[Flutterwave Webhook] Metadata:`, JSON.stringify(metadata, null, 2));
+          
+          // Try to get wallet address from transaction if missing
+          const transaction = await getTransaction(transactionId);
+          if (transaction?.walletAddress) {
+            walletAddress = transaction.walletAddress;
+            console.log(`[Flutterwave Webhook] ✅ Retrieved wallet address from transaction: ${walletAddress}`);
+          } else {
+            return NextResponse.json(
+              { 
+                success: false, 
+                error: "Wallet address is missing from metadata and transaction. Cannot distribute tokens.",
+                transactionId,
+                metadata: metadata,
+              },
+              { status: 400 }
+            );
+          }
+        }
+
         // Distribute tokens
         try {
+          console.log(`[Flutterwave Webhook] Starting token distribution...`);
+          console.log(`[Flutterwave Webhook] Transaction ID: ${transactionId}`);
+          console.log(`[Flutterwave Webhook] Wallet Address: ${walletAddress}`);
+          console.log(`[Flutterwave Webhook] Amount: ${finalSendAmount} SEND`);
+          
           const distributionResult = await distributeTokens(
             transactionId,
             walletAddress,
             finalSendAmount
           );
+
+          console.log(`[Flutterwave Webhook] Distribution result:`, JSON.stringify(distributionResult, null, 2));
 
           if (distributionResult.success) {
             console.log(`[Flutterwave Webhook] 🎉 Tokens distributed successfully! TX: ${distributionResult.txHash}`);
@@ -229,22 +296,42 @@ export async function POST(request: NextRequest) {
               },
             });
           } else {
-            console.error(`[Flutterwave Webhook] Token distribution failed: ${distributionResult.error}`);
+            console.error(`[Flutterwave Webhook] ❌ Token distribution failed: ${distributionResult.error}`);
+            console.error(`[Flutterwave Webhook] Distribution error details:`, distributionResult);
             return NextResponse.json(
-              { success: false, error: `Token distribution failed: ${distributionResult.error}` },
+              { 
+                success: false, 
+                error: `Token distribution failed: ${distributionResult.error}`,
+                details: distributionResult,
+              },
               { status: 500 }
             );
           }
         } catch (distError: any) {
-          console.error(`[Flutterwave Webhook] Token distribution error:`, distError);
+          console.error(`[Flutterwave Webhook] ❌ Token distribution exception:`, distError);
+          console.error(`[Flutterwave Webhook] Exception stack:`, distError.stack);
           return NextResponse.json(
-            { success: false, error: `Token distribution error: ${distError.message}` },
+            { 
+              success: false, 
+              error: `Token distribution error: ${distError.message}`,
+              stack: process.env.NODE_ENV === "development" ? distError.stack : undefined,
+            },
             { status: 500 }
           );
         }
       } else {
-        // Not an on-ramp payment, might be a regular payment
-        console.log(`[Flutterwave Webhook] Regular payment (not on-ramp), skipping token distribution`);
+        // Not an on-ramp payment - no transaction_id found
+        console.log(`[Flutterwave Webhook] ⚠️ No transaction_id found in metadata or by tx_ref lookup`);
+        console.log(`[Flutterwave Webhook] tx_ref: ${txRef}`);
+        console.log(`[Flutterwave Webhook] Metadata keys:`, Object.keys(metadata));
+        console.log(`[Flutterwave Webhook] Full metadata:`, JSON.stringify(metadata, null, 2));
+        console.log(`[Flutterwave Webhook] This might be a regular payment (not on-ramp), skipping token distribution`);
+        
+        return NextResponse.json({
+          success: true,
+          message: "Payment received but no transaction_id found. This might not be an on-ramp payment.",
+          note: "Enable 'Add meta to webhook' in Flutterwave dashboard to include metadata in webhooks.",
+        });
       }
     }
 
