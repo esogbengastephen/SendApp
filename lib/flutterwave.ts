@@ -41,6 +41,22 @@ if (USE_V4_API) {
 }
 
 /**
+ * Get authentication header for Flutterwave API requests
+ * v4 uses OAuth2 access token, v3 uses secret key
+ */
+async function getAuthHeader(): Promise<string> {
+  if (USE_V4_API) {
+    const accessToken = await getAccessToken();
+    return `Bearer ${accessToken}`;
+  } else {
+    if (!FLUTTERWAVE_SECRET_KEY) {
+      throw new Error("Flutterwave credentials not configured. For v4, set FLW_CLIENT_ID and FLW_CLIENT_SECRET. For v3, set FLUTTERWAVE_SECRET_KEY.");
+    }
+    return `Bearer ${FLUTTERWAVE_SECRET_KEY}`;
+  }
+}
+
+/**
  * Convert mobile number to virtual account format (for display purposes)
  * Mobile: 07034494055 → Display: 7034494055 (remove leading 0)
  * Note: Flutterwave generates account numbers, but we use this for UI display
