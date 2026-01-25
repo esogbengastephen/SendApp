@@ -37,6 +37,13 @@ function PaymentCallbackContent() {
     async function verifyPayment(attemptNumber = 1) {
       const maxAttempts = 10; // Poll for up to 30 seconds (10 attempts × 3 seconds)
       
+      // Early return if txRef is null (shouldn't happen due to check above, but TypeScript needs this)
+      if (!txRef) {
+        setStatus("error");
+        setMessage("No payment reference found");
+        return;
+      }
+      
       try {
         console.log(`[Payment Callback] Verification attempt ${attemptNumber}/${maxAttempts} for tx_ref: ${txRef}`);
         
