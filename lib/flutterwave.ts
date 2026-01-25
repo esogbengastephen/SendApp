@@ -17,8 +17,10 @@ const FLUTTERWAVE_USE_TEST_MODE = process.env.FLUTTERWAVE_USE_TEST_MODE !== unde
   ? process.env.FLUTTERWAVE_USE_TEST_MODE === "true"
   : process.env.NODE_ENV === "development";
 
-// Determine which API version to use (v4 if credentials are available, otherwise v3)
-const USE_V4_API = isV4Configured();
+// Determine which API version to use
+// v4 only in production (no v4 in test/sandbox)
+// v3 for test mode or if v4 credentials not available
+const USE_V4_API = isV4Configured() && !FLUTTERWAVE_USE_TEST_MODE;
 
 // API Base URLs
 // v4 API: https://f4bexperience.flutterwave.com/ (production) or https://developersandbox-api.flutterwave.com/ (test)

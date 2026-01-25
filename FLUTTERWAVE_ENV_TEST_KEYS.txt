@@ -1,0 +1,54 @@
+# ============================================
+# Flutterwave TEST API Credentials (V3)
+# ============================================
+# ⚠️ These are TEST/SANDBOX keys
+# No real money transactions will occur!
+# 
+# For localhost testing and development
+# ============================================
+
+# Flutterwave TEST Public Key (V3)
+NEXT_PUBLIC_FLUTTERWAVE_PUBLIC_KEY=FLWPUBK_TEST-65677c0087a776ccd9600533cbc0d2b0-X
+
+# Flutterwave TEST Secret Key (V3)
+FLUTTERWAVE_SECRET_KEY=FLWSECK_TEST-da03c1b378a36f4d8bb0b6987729b6cd-X
+
+# Flutterwave TEST Encryption Key (V3)
+FLW_ENCRYPTION_KEY=FLWSECK_TEST67f94bffb681
+
+# Flutterwave Webhook Secret Hash (for webhook signature verification)
+# ⚠️ IMPORTANT: This is different from the API secret key!
+# Configure this in Flutterwave Dashboard: Settings > Webhooks > Secret hash (Test webhooks section)
+# This value verifies that webhooks are actually from Flutterwave
+FLUTTERWAVE_WEBHOOK_SECRET_HASH=your_test_webhook_secret_hash_here
+
+# Force TEST mode (use SANDBOX API, not production)
+# Set to "true" to use TEST API with TEST keys
+FLUTTERWAVE_USE_TEST_MODE=true
+
+# ============================================
+# SETUP INSTRUCTIONS:
+# ============================================
+# 1. Copy the lines above (without the # comments) to your .env.local file
+# 2. Make sure .env.local is in your project root (same folder as package.json)
+# 3. Restart your dev server: npm run dev
+# 4. Test the connection: http://localhost:3000/api/test/flutterwave-env
+# 
+# ⚠️ SECURITY WARNINGS:
+# - Never commit .env.local to Git
+# - Never share these keys publicly
+# - These are TEST keys - safe for development
+# 
+# 📚 API Documentation:
+# - Getting Started: https://developer.flutterwave.com/docs/getting-started
+# - Environments: https://developer.flutterwave.com/docs/environments
+# - Testing: https://developer.flutterwave.com/docs/testing
+# ============================================
+
+# ============================================
+# NOTES:
+# ============================================
+# - V3 API uses Public Key + Secret Key (not OAuth2)
+# - No v4 API available in test/sandbox environment
+# - For production, use v4 API with Client ID + Client Secret
+# ============================================
