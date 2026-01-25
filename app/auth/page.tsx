@@ -281,13 +281,31 @@ export default function AuthPage() {
       const authResult = await authenticateWithPasskey(passkeyUserId);
 
       if (!authResult.success) {
-        setError(authResult.error || "Passkey authentication failed");
+        // Check if passkey needs to be recreated (domain mismatch)
+        if ((authResult as any).requiresRecreate) {
+          setError(
+            authResult.error || 
+            "Your passkey was created on a different domain. Please recreate it on flippay.app by going to Settings → Security."
+          );
+          // Optionally redirect to passkey setup
+          setTimeout(() => {
+            if (confirm("Would you like to recreate your passkey now?")) {
+              router.push("/passkey-setup");
+            }
+          }, 2000);
+        } else {
+          setError(authResult.error || "Passkey authentication failed");
+        }
         return;
       }
 
       // Authentication successful
       setMessage("Passkey authentication successful! Redirecting...");
       localStorage.setItem("user", JSON.stringify(passkeyUser));
+      // Store email for next time
+      if (passkeyUser?.email) {
+        localStorage.setItem("last_email", passkeyUser.email);
+      }
       
       setTimeout(() => router.push("/"), 1500);
     } catch (err: any) {
