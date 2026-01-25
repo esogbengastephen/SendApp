@@ -84,12 +84,17 @@ export async function POST(request: NextRequest) {
     // Parse the webhook payload
     const event = JSON.parse(body);
 
-    console.log(`[Flutterwave Webhook] Event received:`, event.event);
+    // According to Flutterwave v4 docs, event type is "charge.completed" (not "charge.success")
+    // But we support both for backward compatibility
+    const eventType = event.event || event.type; // Support both 'event' and 'type' fields
+    console.log(`[Flutterwave Webhook] Event received:`, eventType);
+    console.log(`[Flutterwave Webhook] Event ID:`, event.id);
+    console.log(`[Flutterwave Webhook] Timestamp:`, event.timestamp);
     console.log(`[Flutterwave Webhook] Full event data:`, JSON.stringify(event, null, 2));
 
-    // Handle charge.success and charge.completed (payment link/checkout payments - ON-RAMP)
-    // According to Flutterwave docs, event type can be "charge.completed" or "charge.success"
-    if (event.event === "charge.success" || event.event === "charge.completed") {
+    // Handle charge.completed (v4) and charge.success (v3) - payment link/checkout payments (ON-RAMP)
+    // According to Flutterwave v4 docs, the event type is "charge.completed"
+    if (eventType === "charge.completed" || eventType === "charge.success") {
       const chargeData = event.data;
       const txRef = chargeData.tx_ref || chargeData.reference; // Flutterwave uses 'reference' in some payloads
       const flwRef = chargeData.flw_ref;

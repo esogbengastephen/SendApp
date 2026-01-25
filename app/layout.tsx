@@ -210,17 +210,30 @@ export default function RootLayout({
                     error: event.error
                   });
                   
-                  // Don't prevent default for critical errors - let ErrorBoundary handle them
-                  // Only prevent for non-critical errors
+                  // Handle WebSocket security errors gracefully
                   if (event.error && event.error.message) {
                     const errorMsg = event.error.message.toLowerCase();
-                    // Ignore known non-critical errors
+                    
+                    // WebSocket security errors - these are non-critical, app can work without realtime
+                    if (errorMsg.includes('websocket') && 
+                        (errorMsg.includes('insecure') || 
+                         errorMsg.includes('not available') ||
+                         errorMsg.includes('operation is insecure'))) {
+                      console.warn('WebSocket not available, app will use polling fallback');
+                      event.preventDefault(); // Prevent error from crashing the app
+                      return;
+                    }
+                    
+                    // Ignore other known non-critical errors
                     if (errorMsg.includes('script error') || 
                         errorMsg.includes('non-error promise rejection') ||
                         errorMsg.includes('resizeobserver')) {
                       event.preventDefault();
+                      return;
                     }
                   }
+                  
+                  // Don't prevent default for critical errors - let ErrorBoundary handle them
                 }, true); // Use capture phase
                 
                 // Handle unhandled promise rejections
@@ -230,15 +243,27 @@ export default function RootLayout({
                     promise: event.promise
                   });
                   
-                  // Only prevent default for non-critical rejections
-                  // Critical ones should bubble up to ErrorBoundary
+                  // Handle WebSocket promise rejections
                   if (event.reason && typeof event.reason === 'object') {
                     const reasonMsg = (event.reason.message || String(event.reason)).toLowerCase();
+                    
+                    // WebSocket errors - non-critical, prevent from crashing
+                    if (reasonMsg.includes('websocket') && 
+                        (reasonMsg.includes('insecure') || 
+                         reasonMsg.includes('not available') ||
+                         reasonMsg.includes('operation is insecure'))) {
+                      console.warn('WebSocket promise rejection, app will use polling fallback');
+                      event.preventDefault();
+                      return;
+                    }
+                    
+                    // Network errors that are handled by the app
                     if (reasonMsg.includes('network') || 
                         reasonMsg.includes('fetch') ||
                         reasonMsg.includes('timeout')) {
                       // These are handled by the app, don't show default error
                       event.preventDefault();
+                      return;
                     }
                   }
                 });

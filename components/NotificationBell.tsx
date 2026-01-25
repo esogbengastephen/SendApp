@@ -109,7 +109,7 @@ export default function NotificationBell() {
     }
   };
 
-  // Set up real-time subscription
+  // Set up real-time subscription with WebSocket error handling
   useEffect(() => {
     fetchNotifications();
 
@@ -120,48 +120,120 @@ export default function NotificationBell() {
       return () => clearInterval(interval);
     }
 
-    const channel = supabase
-      .channel("notifications")
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "notifications",
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload) => {
-          // New notification received
-          fetchNotifications();
-          
-          // Play sound
-          if (audioRef.current) {
-            audioRef.current.play().catch(() => {
-              // Auto-play blocked
-            });
-          }
-        }
-      )
-      .on(
-        "postgres_changes",
-        {
-          event: "UPDATE",
-          schema: "public",
-          table: "notifications",
-          filter: `user_id=eq.${user.id}`,
-        },
-        () => {
-          fetchNotifications();
-        }
-      )
-      .subscribe();
+    let channel: any = null;
+    let interval: NodeJS.Timeout | null = null;
+    let realtimeEnabled = false;
 
-    // Poll for updates every 30 seconds as fallback
-    const interval = setInterval(fetchNotifications, 30000);
+    // Check if WebSocket is available and secure
+    const isWebSocketAvailable = () => {
+      try {
+        if (typeof window === "undefined") return false;
+        if (typeof WebSocket === "undefined") return false;
+        
+        // Check if we're on HTTPS or localhost (secure contexts)
+        const isSecure = window.location.protocol === "https:" || 
+                        window.location.hostname === "localhost" ||
+                        window.location.hostname === "127.0.0.1";
+        
+        return isSecure;
+      } catch (e) {
+        console.warn("WebSocket availability check failed:", e);
+        return false;
+      }
+    };
+
+    // Try to set up realtime subscription
+    const setupRealtimeSubscription = () => {
+      try {
+        if (!isWebSocketAvailable()) {
+          console.log("[Notifications] WebSocket not available, using polling fallback");
+          return false;
+        }
+
+        channel = supabase
+          .channel(`notifications-${user.id}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "INSERT",
+              schema: "public",
+              table: "notifications",
+              filter: `user_id=eq.${user.id}`,
+            },
+            (payload) => {
+              // New notification received
+              fetchNotifications();
+              
+              // Play sound
+              if (audioRef.current) {
+                audioRef.current.play().catch(() => {
+                  // Auto-play blocked
+                });
+              }
+            }
+          )
+          .on(
+            "postgres_changes",
+            {
+              event: "UPDATE",
+              schema: "public",
+              table: "notifications",
+              filter: `user_id=eq.${user.id}`,
+            },
+            () => {
+              fetchNotifications();
+            }
+          )
+          .subscribe((status) => {
+            if (status === "SUBSCRIBED") {
+              console.log("[Notifications] Realtime subscription active");
+              realtimeEnabled = true;
+            } else if (status === "CHANNEL_ERROR") {
+              console.warn("[Notifications] Realtime subscription error, falling back to polling");
+              realtimeEnabled = false;
+            } else if (status === "TIMED_OUT") {
+              console.warn("[Notifications] Realtime subscription timed out, falling back to polling");
+              realtimeEnabled = false;
+            } else if (status === "CLOSED") {
+              console.warn("[Notifications] Realtime subscription closed, falling back to polling");
+              realtimeEnabled = false;
+            }
+          });
+
+        return true;
+      } catch (error: any) {
+        console.error("[Notifications] Error setting up realtime subscription:", error);
+        
+        // Check if it's a WebSocket security error
+        if (error?.message?.includes("insecure") || 
+            error?.message?.includes("WebSocket") ||
+            error?.name === "SecurityError") {
+          console.warn("[Notifications] WebSocket security error, using polling fallback");
+        }
+        
+        return false;
+      }
+    };
+
+    // Try to set up realtime, fall back to polling if it fails
+    const subscriptionSuccess = setupRealtimeSubscription();
+    
+    // Always set up polling as fallback (or primary if realtime fails)
+    // Use shorter interval if realtime is not available
+    const pollInterval = subscriptionSuccess && realtimeEnabled ? 60000 : 30000; // 60s if realtime works, 30s if not
+    interval = setInterval(fetchNotifications, pollInterval);
     
     return () => {
-      supabase.removeChannel(channel);
-      clearInterval(interval);
+      if (channel) {
+        try {
+          supabase.removeChannel(channel);
+        } catch (e) {
+          console.warn("Error removing channel:", e);
+        }
+      }
+      if (interval) {
+        clearInterval(interval);
+      }
     };
   }, []);
 

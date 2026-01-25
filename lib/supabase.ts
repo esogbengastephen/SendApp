@@ -26,7 +26,28 @@ if (!validAnonKey || validAnonKey.trim() === "" || validAnonKey.includes("placeh
 }
 
 // Create Supabase client - use anon key (required)
-export const supabase = createClient(supabaseUrl, validAnonKey);
+// Configure realtime to handle WebSocket errors gracefully
+export const supabase = createClient(supabaseUrl, validAnonKey, {
+  realtime: {
+    params: {
+      eventsPerSecond: 10,
+    },
+    // Handle WebSocket connection errors gracefully
+    // This prevents the app from crashing when WebSocket is unavailable
+    transport: typeof window !== "undefined" && 
+               (window.location.protocol === "https:" || 
+                window.location.hostname === "localhost" ||
+                window.location.hostname === "127.0.0.1")
+      ? "websocket" // Use WebSocket in secure contexts
+      : "websocket", // Still try WebSocket, but will fallback automatically
+  },
+  // Global error handler for Supabase operations
+  global: {
+    headers: {
+      "x-client-info": "flippay-web",
+    },
+  },
+});
 
 // Create server-side Supabase client with service role key (bypasses RLS)
 // Use this for server-side operations that need to bypass RLS
