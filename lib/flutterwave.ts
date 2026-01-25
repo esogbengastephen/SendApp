@@ -1,28 +1,44 @@
 import axios from "axios";
+import { getAccessToken, isV4Configured } from "./flutterwave-v4-token";
 
+// Flutterwave v4 API credentials (OAuth2)
+const FLW_CLIENT_ID = process.env.FLW_CLIENT_ID || process.env.FLUTTERWAVE_CLIENT_ID;
+const FLW_CLIENT_SECRET = process.env.FLW_CLIENT_SECRET || process.env.FLUTTERWAVE_CLIENT_SECRET;
+
+// Flutterwave v3 API credentials (legacy - for backward compatibility)
 const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY;
 const FLUTTERWAVE_PUBLIC_KEY = process.env.NEXT_PUBLIC_FLUTTERWAVE_PUBLIC_KEY;
+
 const FLUTTERWAVE_WEBHOOK_SECRET_HASH = process.env.FLUTTERWAVE_WEBHOOK_SECRET_HASH;
+
 // If FLUTTERWAVE_USE_TEST_MODE is explicitly set, use that value
 // Otherwise, default to test mode in development, production mode otherwise
 const FLUTTERWAVE_USE_TEST_MODE = process.env.FLUTTERWAVE_USE_TEST_MODE !== undefined
   ? process.env.FLUTTERWAVE_USE_TEST_MODE === "true"
   : process.env.NODE_ENV === "development";
 
-if (!FLUTTERWAVE_SECRET_KEY) {
-  console.warn("FLUTTERWAVE_SECRET_KEY is not set in environment variables");
+// Determine which API version to use (v4 if credentials are available, otherwise v3)
+const USE_V4_API = isV4Configured();
+
+// API Base URLs
+// v4 API: https://f4bexperience.flutterwave.com/ (production) or https://developersandbox-api.flutterwave.com/ (test)
+// v3 API: https://api.flutterwave.com/v3 (production) or https://developersandbox-api.flutterwave.com/v3 (test)
+const FLUTTERWAVE_API_BASE = USE_V4_API
+  ? (FLUTTERWAVE_USE_TEST_MODE 
+      ? "https://developersandbox-api.flutterwave.com"
+      : "https://f4bexperience.flutterwave.com")
+  : (FLUTTERWAVE_USE_TEST_MODE 
+      ? "https://developersandbox-api.flutterwave.com/v3"
+      : "https://api.flutterwave.com/v3");
+
+if (USE_V4_API) {
+  console.log(`[Flutterwave] Using v4 API (OAuth2) - ${FLUTTERWAVE_USE_TEST_MODE ? 'TEST' : 'PRODUCTION'}: ${FLUTTERWAVE_API_BASE}`);
+} else {
+  if (!FLUTTERWAVE_SECRET_KEY) {
+    console.warn("FLUTTERWAVE_SECRET_KEY is not set. Using v4 API requires FLW_CLIENT_ID and FLW_CLIENT_SECRET.");
+  }
+  console.log(`[Flutterwave] Using v3 API (Bearer Token) - ${FLUTTERWAVE_USE_TEST_MODE ? 'TEST/SANDBOX' : 'PRODUCTION'}: ${FLUTTERWAVE_API_BASE}`);
 }
-
-if (!FLUTTERWAVE_PUBLIC_KEY) {
-  console.warn("NEXT_PUBLIC_FLUTTERWAVE_PUBLIC_KEY is not set in environment variables");
-}
-
-// Use sandbox URL for test mode, production URL for live mode
-const FLUTTERWAVE_API_BASE = FLUTTERWAVE_USE_TEST_MODE 
-  ? "https://developersandbox-api.flutterwave.com/v3"
-  : "https://api.flutterwave.com/v3";
-
-console.log(`[Flutterwave] Using ${FLUTTERWAVE_USE_TEST_MODE ? 'TEST/SANDBOX' : 'PRODUCTION'} API: ${FLUTTERWAVE_API_BASE}`);
 
 /**
  * Convert mobile number to virtual account format (for display purposes)
@@ -136,13 +152,7 @@ export async function createVirtualAccount(
   params: CreateVirtualAccountParams
 ) {
   try {
-    if (!FLUTTERWAVE_SECRET_KEY) {
-      return {
-        success: false,
-        error: "Flutterwave secret key not configured",
-      };
-    }
-
+    const authHeader = await getAuthHeader();
     const normalizedPhone = normalizeMobileNumber(params.phoneNumber);
 
     // Flutterwave requires BVN/NIN for static accounts
@@ -172,12 +182,17 @@ export async function createVirtualAccount(
       requestBody.amount = 1; // Minimum amount for dynamic accounts
     }
 
+    // v4 API uses different endpoint
+    const endpoint = USE_V4_API 
+      ? `${FLUTTERWAVE_API_BASE}/virtual-account-numbers`
+      : `${FLUTTERWAVE_API_BASE}/virtual-account-numbers`;
+
     const response = await axios.post(
-      `${FLUTTERWAVE_API_BASE}/virtual-account-numbers`,
+      endpoint,
       requestBody,
       {
         headers: {
-          Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
+          Authorization: authHeader,
           "Content-Type": "application/json",
         },
       }
@@ -232,15 +247,15 @@ export interface TransferParams {
  */
 export async function createTransfer(params: TransferParams) {
   try {
-    if (!FLUTTERWAVE_SECRET_KEY) {
-      return {
-        success: false,
-        error: "Flutterwave secret key not configured",
-      };
-    }
+    const authHeader = await getAuthHeader();
+
+    // v4 API uses different endpoint and structure
+    const endpoint = USE_V4_API 
+      ? `${FLUTTERWAVE_API_BASE}/transfers`
+      : `${FLUTTERWAVE_API_BASE}/transfers`;
 
     const response = await axios.post(
-      `${FLUTTERWAVE_API_BASE}/transfers`,
+      endpoint,
       {
         account_bank: params.accountBank,
         account_number: params.accountNumber,
@@ -252,7 +267,7 @@ export async function createTransfer(params: TransferParams) {
       },
       {
         headers: {
-          Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
+          Authorization: authHeader,
           "Content-Type": "application/json",
         },
       }
@@ -336,26 +351,27 @@ export function verifyWebhookSignature(
  */
 export async function verifyBankAccount(accountNumber: string, bankCode: string) {
   try {
-    if (!FLUTTERWAVE_SECRET_KEY) {
-      return {
-        success: false,
-        error: "Flutterwave secret key not configured",
-      };
-    }
+    const authHeader = await getAuthHeader();
 
     console.log(`[Flutterwave Verify Account] Verifying account ${accountNumber} with bank ${bankCode}`);
     console.log(`[Flutterwave Verify Account] API Base: ${FLUTTERWAVE_API_BASE}`);
+    console.log(`[Flutterwave Verify Account] API Version: ${USE_V4_API ? 'v4' : 'v3'}`);
     console.log(`[Flutterwave Verify Account] Test Mode: ${FLUTTERWAVE_USE_TEST_MODE}`);
 
+    // v4 API uses different endpoint structure
+    const endpoint = USE_V4_API 
+      ? `${FLUTTERWAVE_API_BASE}/accounts/resolve`
+      : `${FLUTTERWAVE_API_BASE}/accounts/resolve`;
+
     const response = await axios.post(
-      `${FLUTTERWAVE_API_BASE}/accounts/resolve`,
+      endpoint,
       {
         account_number: accountNumber,
         account_bank: bankCode,
       },
       {
         headers: {
-          Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
+          Authorization: authHeader,
           "Content-Type": "application/json",
         },
       }
@@ -439,18 +455,18 @@ export async function verifyBankAccount(accountNumber: string, bankCode: string)
  */
 export async function getAccountBalance() {
   try {
-    if (!FLUTTERWAVE_SECRET_KEY) {
-      return {
-        success: false,
-        error: "Flutterwave secret key not configured",
-      };
-    }
+    const authHeader = await getAuthHeader();
+
+    // v4 API uses different endpoint
+    const endpoint = USE_V4_API 
+      ? `${FLUTTERWAVE_API_BASE}/balances/NGN`
+      : `${FLUTTERWAVE_API_BASE}/balances/NGN`;
 
     const response = await axios.get(
-      `${FLUTTERWAVE_API_BASE}/balances/NGN`,
+      endpoint,
       {
         headers: {
-          Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
+          Authorization: authHeader,
         },
       }
     );
@@ -507,11 +523,19 @@ export async function initializePayment(
   params: InitializePaymentParams
 ): Promise<{ success: boolean; data?: PaymentLinkResponse["data"]; error?: string }> {
   try {
-    if (!FLUTTERWAVE_SECRET_KEY) {
-      return {
-        success: false,
-        error: "Flutterwave secret key not configured",
-      };
+    // Get authentication header (v4 uses OAuth2 token, v3 uses secret key)
+    let authHeader: string;
+    if (USE_V4_API) {
+      const accessToken = await getAccessToken();
+      authHeader = `Bearer ${accessToken}`;
+    } else {
+      if (!FLUTTERWAVE_SECRET_KEY) {
+        return {
+          success: false,
+          error: "Flutterwave credentials not configured",
+        };
+      }
+      authHeader = `Bearer ${FLUTTERWAVE_SECRET_KEY}`;
     }
 
     const requestBody: any = {
@@ -538,13 +562,19 @@ export async function initializePayment(
     }
 
     console.log(`[Flutterwave Payment] Initializing payment: ${params.amount} NGN, txRef: ${params.txRef}`);
+    console.log(`[Flutterwave Payment] Using API: ${USE_V4_API ? 'v4' : 'v3'}`);
+
+    // v4 API uses different endpoint structure
+    const endpoint = USE_V4_API 
+      ? `${FLUTTERWAVE_API_BASE}/charges`
+      : `${FLUTTERWAVE_API_BASE}/payments`;
 
     const response = await axios.post(
-      `${FLUTTERWAVE_API_BASE}/payments`,
+      endpoint,
       requestBody,
       {
         headers: {
-          Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
+          Authorization: authHeader,
           "Content-Type": "application/json",
         },
       }
@@ -552,14 +582,29 @@ export async function initializePayment(
 
     console.log(`[Flutterwave Payment] Response:`, response.data);
 
-    if (response.data.status === "success") {
-      return {
-        success: true,
-        data: {
-          link: response.data.data.link,
-          status: response.data.status,
-        },
-      };
+    // v4 API might have different response structure
+    // Check for both v3 and v4 response formats
+    const responseData = response.data;
+    const isSuccess = responseData.status === "success" || 
+                     responseData.status === "succeeded" ||
+                     (responseData.data && (responseData.data.link || responseData.data.authorization_url));
+
+    if (isSuccess) {
+      // v4 API response structure might be different
+      const link = responseData.data?.link || 
+                   responseData.data?.authorization_url || 
+                   responseData.link ||
+                   responseData.authorization_url;
+      
+      if (link) {
+        return {
+          success: true,
+          data: {
+            link: link,
+            status: responseData.status || "success",
+          },
+        };
+      }
     }
 
     return {
@@ -587,32 +632,51 @@ export async function initializePayment(
  */
 export async function verifyPayment(txRef: string) {
   try {
-    if (!FLUTTERWAVE_SECRET_KEY) {
-      return {
-        success: false,
-        error: "Flutterwave secret key not configured",
-      };
+    // Get authentication header (v4 uses OAuth2 token, v3 uses secret key)
+    let authHeader: string;
+    if (USE_V4_API) {
+      const accessToken = await getAccessToken();
+      authHeader = `Bearer ${accessToken}`;
+    } else {
+      if (!FLUTTERWAVE_SECRET_KEY) {
+        return {
+          success: false,
+          error: "Flutterwave credentials not configured",
+        };
+      }
+      authHeader = `Bearer ${FLUTTERWAVE_SECRET_KEY}`;
     }
 
+    // v4 API uses different endpoint structure
+    const endpoint = USE_V4_API 
+      ? `${FLUTTERWAVE_API_BASE}/charges/${txRef}`
+      : `${FLUTTERWAVE_API_BASE}/transactions/${txRef}/verify`;
+
     const response = await axios.get(
-      `${FLUTTERWAVE_API_BASE}/transactions/${txRef}/verify`,
+      endpoint,
       {
         headers: {
-          Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
+          Authorization: authHeader,
         },
       }
     );
 
-    if (response.data.status === "success") {
+    // v4 API might have different response structure
+    const responseData = response.data;
+    const isSuccess = responseData.status === "success" || 
+                     responseData.status === "succeeded" ||
+                     (responseData.data && responseData.data.status === "successful");
+
+    if (isSuccess) {
       return {
         success: true,
-        data: response.data.data,
+        data: responseData.data || responseData,
       };
     }
 
     return {
       success: false,
-      error: response.data.message || "Failed to verify payment",
+      error: responseData.message || responseData.error || "Failed to verify payment",
     };
   } catch (error: any) {
     console.error("[Flutterwave Payment] Verification error:", error);

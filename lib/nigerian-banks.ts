@@ -4,18 +4,35 @@
  */
 
 import axios from "axios";
+import { getAccessToken, isV4Configured } from "./flutterwave-v4-token";
 
 export interface NigerianBank {
   code: string;
   name: string;
 }
 
+// Flutterwave v4 API credentials (OAuth2)
+const FLW_CLIENT_ID = process.env.FLW_CLIENT_ID || process.env.FLUTTERWAVE_CLIENT_ID;
+const FLW_CLIENT_SECRET = process.env.FLW_CLIENT_SECRET || process.env.FLUTTERWAVE_CLIENT_SECRET;
+
+// Flutterwave v3 API credentials (legacy)
 const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY;
-const FLUTTERWAVE_USE_TEST_MODE = process.env.FLUTTERWAVE_USE_TEST_MODE === "true" || 
-                                   process.env.NODE_ENV === "development";
-const FLUTTERWAVE_API_BASE = FLUTTERWAVE_USE_TEST_MODE 
-  ? "https://developersandbox-api.flutterwave.com/v3"
-  : "https://api.flutterwave.com/v3";
+
+const FLUTTERWAVE_USE_TEST_MODE = process.env.FLUTTERWAVE_USE_TEST_MODE !== undefined
+  ? process.env.FLUTTERWAVE_USE_TEST_MODE === "true"
+  : process.env.NODE_ENV === "development";
+
+// Determine which API version to use
+const USE_V4_API = isV4Configured();
+
+// API Base URLs
+const FLUTTERWAVE_API_BASE = USE_V4_API
+  ? (FLUTTERWAVE_USE_TEST_MODE 
+      ? "https://developersandbox-api.flutterwave.com"
+      : "https://f4bexperience.flutterwave.com")
+  : (FLUTTERWAVE_USE_TEST_MODE 
+      ? "https://developersandbox-api.flutterwave.com/v3"
+      : "https://api.flutterwave.com/v3");
 
 export const NIGERIAN_BANKS: NigerianBank[] = [
   // Traditional Commercial Banks
@@ -89,16 +106,24 @@ export const NIGERIAN_BANKS: NigerianBank[] = [
  */
 export async function fetchBanksFromFlutterwave(): Promise<NigerianBank[]> {
   try {
-    if (!FLUTTERWAVE_SECRET_KEY) {
-      console.warn("[Nigerian Banks] Flutterwave secret key not configured, using static list");
-      return NIGERIAN_BANKS;
+    // Get authentication header (v4 uses OAuth2 token, v3 uses secret key)
+    let authHeader: string;
+    if (USE_V4_API) {
+      const accessToken = await getAccessToken();
+      authHeader = `Bearer ${accessToken}`;
+    } else {
+      if (!FLUTTERWAVE_SECRET_KEY) {
+        console.warn("[Nigerian Banks] Flutterwave credentials not configured, using static list");
+        return NIGERIAN_BANKS;
+      }
+      authHeader = `Bearer ${FLUTTERWAVE_SECRET_KEY}`;
     }
 
     const response = await axios.get(
       `${FLUTTERWAVE_API_BASE}/banks/NG`,
       {
         headers: {
-          Authorization: `Bearer ${FLUTTERWAVE_SECRET_KEY}`,
+          Authorization: authHeader,
         },
       }
     );
