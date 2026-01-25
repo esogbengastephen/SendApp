@@ -22,6 +22,36 @@ import { updateReferralCountOnTransaction } from "@/lib/supabase";
  * Processes incoming payments to virtual accounts
  * Updates user balance and creates transaction records
  */
+
+/**
+ * GET handler - For testing/verification that the endpoint exists
+ * Returns a simple message indicating this is a webhook endpoint
+ */
+export async function GET(request: NextRequest) {
+  return NextResponse.json(
+    {
+      success: true,
+      message: "Flutterwave webhook endpoint is active",
+      endpoint: "/api/flutterwave/webhook",
+      method: "POST",
+      note: "This endpoint only accepts POST requests from Flutterwave. Webhooks are sent automatically when payments occur.",
+      events: [
+        "charge.success",
+        "charge.failed",
+        "virtualaccountpayment",
+        "transfer.completed",
+        "transfer.failed",
+        "refund.completed",
+      ],
+    },
+    { status: 200 }
+  );
+}
+
+/**
+ * POST handler - Main webhook handler
+ * Processes incoming webhook events from Flutterwave
+ */
 export async function POST(request: NextRequest) {
   try {
     // Get the raw body for signature verification
