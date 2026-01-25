@@ -34,12 +34,8 @@ export const supabase = createClient(supabaseUrl, validAnonKey, {
     },
     // Handle WebSocket connection errors gracefully
     // This prevents the app from crashing when WebSocket is unavailable
-    transport: typeof window !== "undefined" && 
-               (window.location.protocol === "https:" || 
-                window.location.hostname === "localhost" ||
-                window.location.hostname === "127.0.0.1")
-      ? "websocket" // Use WebSocket in secure contexts
-      : "websocket", // Still try WebSocket, but will fallback automatically
+    // Use WebSocket transport (Supabase will automatically fallback if unavailable)
+    transport: "websocket" as const,
   },
   // Global error handler for Supabase operations
   global: {
