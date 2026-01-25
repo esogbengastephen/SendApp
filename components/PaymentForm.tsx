@@ -9,6 +9,35 @@ import PoweredBySEND from "./PoweredBySEND";
 import { calculateSendAmount } from "@/lib/transactions";
 import { getUserFromStorage } from "@/lib/session";
 
+// Helper function to safely access localStorage (for mobile browser compatibility)
+const safeLocalStorage = {
+  getItem: (key: string): string | null => {
+    try {
+      if (typeof window === "undefined" || typeof localStorage === "undefined") return null;
+      return localStorage.getItem(key);
+    } catch (e) {
+      console.warn(`Error getting localStorage item ${key}:`, e);
+      return null;
+    }
+  },
+  setItem: (key: string, value: string): void => {
+    try {
+      if (typeof window === "undefined" || typeof localStorage === "undefined") return;
+      localStorage.setItem(key, value);
+    } catch (e) {
+      console.warn(`Error setting localStorage item ${key}:`, e);
+    }
+  },
+  removeItem: (key: string): void => {
+    try {
+      if (typeof window === "undefined" || typeof localStorage === "undefined") return;
+      localStorage.removeItem(key);
+    } catch (e) {
+      console.warn(`Error removing localStorage item ${key}:`, e);
+    }
+  },
+};
+
 interface VirtualAccount {
   accountNumber: string;
   bankName: string;
@@ -55,12 +84,12 @@ export default function PaymentForm() {
   useEffect(() => {
     const checkForPendingTransactions = async () => {
       // Get stored transaction ID from localStorage
-      const storedTxId = localStorage.getItem("transactionId");
+      const storedTxId = safeLocalStorage.getItem("transactionId");
       if (!storedTxId) return;
       
       // Get stored wallet address and amount if available
-      const storedWallet = localStorage.getItem("walletAddress");
-      const storedAmount = localStorage.getItem("ngnAmount");
+      const storedWallet = safeLocalStorage.getItem("walletAddress");
+      const storedAmount = safeLocalStorage.getItem("ngnAmount");
       
       if (!storedWallet || !storedAmount) return;
       
@@ -83,9 +112,9 @@ export default function PaymentForm() {
           setShowModal(true);
           
           // Clear stored transaction ID
-          localStorage.removeItem("transactionId");
-          localStorage.removeItem("walletAddress");
-          localStorage.removeItem("ngnAmount");
+          safeLocalStorage.removeItem("transactionId");
+          safeLocalStorage.removeItem("walletAddress");
+          safeLocalStorage.removeItem("ngnAmount");
           
           // Refresh page after 3 seconds
           setTimeout(() => {
@@ -99,7 +128,8 @@ export default function PaymentForm() {
     };
     
     // Only check if we have a stored transaction ID and form is not being used
-    if (localStorage.getItem("transactionId") && !ngnAmount && !walletAddress) {
+    const storedId = safeLocalStorage.getItem("transactionId");
+    if (storedId && !ngnAmount && !walletAddress) {
       checkForPendingTransactions();
     }
   }, []); // Run once on mount
@@ -107,7 +137,7 @@ export default function PaymentForm() {
   // Check for existing transaction ID in localStorage on mount
   useEffect(() => {
     if (typeof window !== "undefined") {
-      const storedId = localStorage.getItem("transactionId");
+      const storedId = safeLocalStorage.getItem("transactionId");
       if (storedId) {
         // Check if transaction ID exists in database
         fetch(`/api/transactions/create-id?transactionId=${storedId}`)
@@ -147,7 +177,7 @@ export default function PaymentForm() {
         const id = data.transactionId;
         setTransactionId(id);
         if (typeof window !== "undefined") {
-          localStorage.setItem("transactionId", id);
+          safeLocalStorage.setItem("transactionId", id);
         }
         console.log("[PaymentForm] Generated new transaction ID:", id);
       }
@@ -236,25 +266,55 @@ export default function PaymentForm() {
 
     // Refresh when page becomes visible (user switches back to tab)
     const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        console.log("[PaymentForm] Page visible, refreshing exchange rate");
-        fetchExchangeRate();
+      try {
+        if (typeof document !== "undefined" && !document.hidden) {
+          console.log("[PaymentForm] Page visible, refreshing exchange rate");
+          fetchExchangeRate();
+        }
+      } catch (e) {
+        console.warn("Error in visibility change handler:", e);
       }
     };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
+    
+    try {
+      if (typeof document !== "undefined") {
+        document.addEventListener("visibilitychange", handleVisibilityChange);
+      }
+    } catch (e) {
+      console.warn("Error adding visibility change listener:", e);
+    }
 
     // Listen for exchange rate updates from admin dashboard (cross-tab communication)
     const handleRateUpdate = (event: CustomEvent) => {
-      console.log("[PaymentForm] Exchange rate updated event received:", event.detail);
-      fetchExchangeRate();
+      try {
+        console.log("[PaymentForm] Exchange rate updated event received:", event.detail);
+        fetchExchangeRate();
+      } catch (e) {
+        console.warn("Error in rate update handler:", e);
+      }
     };
-    window.addEventListener("exchangeRateUpdated" as any, handleRateUpdate as EventListener);
+    
+    try {
+      if (typeof window !== "undefined") {
+        window.addEventListener("exchangeRateUpdated" as any, handleRateUpdate as EventListener);
+      }
+    } catch (e) {
+      console.warn("Error adding rate update listener:", e);
+    }
 
     return () => {
-      clearInterval(interval);
-      window.removeEventListener("focus", handleFocus);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("exchangeRateUpdated" as any, handleRateUpdate as EventListener);
+      try {
+        clearInterval(interval);
+        if (typeof window !== "undefined") {
+          window.removeEventListener("focus", handleFocus);
+          window.removeEventListener("exchangeRateUpdated" as any, handleRateUpdate as EventListener);
+        }
+        if (typeof document !== "undefined") {
+          document.removeEventListener("visibilitychange", handleVisibilityChange);
+        }
+      } catch (e) {
+        console.warn("Error cleaning up event listeners:", e);
+      }
     };
   }, []);
 
@@ -266,7 +326,7 @@ export default function PaymentForm() {
 
       // Always ensure transaction ID exists when amount is entered
       // Check both state and localStorage
-      const storedId = localStorage.getItem("transactionId");
+      const storedId = safeLocalStorage.getItem("transactionId");
       const currentId = transactionId || storedId;
       
       if (!currentId || currentId.trim() === "") {
@@ -316,12 +376,12 @@ export default function PaymentForm() {
   useEffect(() => {
     const checkForPendingTransactions = async () => {
       // Get stored transaction ID from localStorage
-      const storedTxId = localStorage.getItem("transactionId");
+      const storedTxId = safeLocalStorage.getItem("transactionId");
       if (!storedTxId) return;
       
       // Get stored wallet address and amount if available
-      const storedWallet = localStorage.getItem("walletAddress");
-      const storedAmount = localStorage.getItem("ngnAmount");
+      const storedWallet = safeLocalStorage.getItem("walletAddress");
+      const storedAmount = safeLocalStorage.getItem("ngnAmount");
       
       if (!storedWallet || !storedAmount) return;
       
@@ -344,9 +404,9 @@ export default function PaymentForm() {
           setShowModal(true);
           
           // Clear stored transaction ID
-          localStorage.removeItem("transactionId");
-          localStorage.removeItem("walletAddress");
-          localStorage.removeItem("ngnAmount");
+          safeLocalStorage.removeItem("transactionId");
+          safeLocalStorage.removeItem("walletAddress");
+          safeLocalStorage.removeItem("ngnAmount");
           
           // Refresh page after 3 seconds
           setTimeout(() => {
@@ -360,7 +420,8 @@ export default function PaymentForm() {
     };
     
     // Only check if we have a stored transaction ID and form is not being used
-    if (localStorage.getItem("transactionId") && !ngnAmount && !walletAddress) {
+    const storedId = safeLocalStorage.getItem("transactionId");
+    if (storedId && !ngnAmount && !walletAddress) {
       checkForPendingTransactions();
     }
   }, []); // Run once on mount
@@ -415,7 +476,7 @@ export default function PaymentForm() {
     }
 
     // Ensure transaction ID exists before proceeding
-    const currentTxId = transactionId || localStorage.getItem("transactionId");
+    const currentTxId = transactionId || safeLocalStorage.getItem("transactionId");
     if (!currentTxId || currentTxId.trim() === "") {
       console.log(`[PaymentForm] Transaction ID missing at submit, generating...`);
       // Generate transaction ID before proceeding
@@ -494,7 +555,7 @@ export default function PaymentForm() {
 
       // Generate a NEW transaction ID for this payment attempt
       // This ensures each payment attempt is unique and avoids Flutterwave duplicate reference errors
-      let currentTransactionId = transactionId || localStorage.getItem("transactionId") || "";
+      let currentTransactionId = transactionId || safeLocalStorage.getItem("transactionId") || "";
       
       // If we have an existing transaction ID, check if it's already completed
       // If completed, generate a new one for this payment attempt
@@ -547,9 +608,9 @@ export default function PaymentForm() {
       }
 
       // Store transaction details in localStorage for auto-claim
-      localStorage.setItem("transactionId", currentTransactionId);
-      localStorage.setItem("walletAddress", finalWalletAddress);
-      localStorage.setItem("ngnAmount", ngnAmount);
+      safeLocalStorage.setItem("transactionId", currentTransactionId);
+      safeLocalStorage.setItem("walletAddress", finalWalletAddress);
+      safeLocalStorage.setItem("ngnAmount", ngnAmount);
 
       // Create pending transaction first
       console.log(`[Flutterwave Payment] Creating transaction: ${currentTransactionId} for wallet ${finalWalletAddress}, amount: ${ngnAmount} NGN`);
