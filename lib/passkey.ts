@@ -135,7 +135,7 @@ export async function createPasskey(
  */
 export async function authenticateWithPasskey(
   userId: string
-): Promise<{ success: boolean; credentialId?: string; error?: string }> {
+): Promise<{ success: boolean; credentialId?: string; error?: string; requiresRecreate?: boolean }> {
   try {
     // Get challenge from server
     console.log("[Passkey] Requesting challenge for userId:", userId);
@@ -242,14 +242,19 @@ export async function authenticateWithPasskey(
       console.error("[Passkey] Verify API error:", verifyResponse.status, errorData);
       return { 
         success: false, 
-        error: errorData.error || `Verification failed (${verifyResponse.status})` 
+        error: errorData.error || `Verification failed (${verifyResponse.status})`,
+        requiresRecreate: errorData.requiresRecreate || false,
       };
     }
 
     const verifyData = await verifyResponse.json();
     if (!verifyData.success) {
       console.error("[Passkey] Verification failed:", verifyData);
-      return { success: false, error: verifyData.error || "Verification failed" };
+      return { 
+        success: false, 
+        error: verifyData.error || "Verification failed",
+        requiresRecreate: verifyData.requiresRecreate || false,
+      };
     }
     
     console.log("[Passkey] Verification successful");
