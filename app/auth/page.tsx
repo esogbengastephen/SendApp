@@ -25,6 +25,65 @@ export default function AuthPage() {
   const [passkeyUserId, setPasskeyUserId] = useState<string | null>(null);
   const [passkeyUser, setPasskeyUser] = useState<any>(null);
   const [authenticatingPasskey, setAuthenticatingPasskey] = useState(false);
+  const [checkingPasskey, setCheckingPasskey] = useState(false);
+
+  // Load last used email on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const lastEmail = localStorage.getItem("last_email");
+      if (lastEmail && mode === "login") {
+        setEmail(lastEmail);
+        // Auto-check for passkey if email exists
+        checkPasskeyForEmail(lastEmail);
+      }
+    }
+  }, [mode]);
+
+  // Check for passkey when email changes (debounced)
+  useEffect(() => {
+    if (!email || mode !== "login") return;
+
+    const timeoutId = setTimeout(() => {
+      if (email.includes("@")) {
+        checkPasskeyForEmail(email);
+      }
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(timeoutId);
+  }, [email, mode]);
+
+  // Function to check if user has passkey
+  const checkPasskeyForEmail = async (emailToCheck: string) => {
+    if (!emailToCheck || !emailToCheck.includes("@")) return;
+
+    setCheckingPasskey(true);
+    try {
+      const passkeyCheckResponse = await fetch("/api/auth/passkey-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: emailToCheck }),
+      });
+
+      const passkeyData = await passkeyCheckResponse.json();
+
+      if (passkeyData.success && passkeyData.hasPasskey) {
+        setHasPasskey(true);
+        setPasskeyUserId(passkeyData.userId);
+        setPasskeyUser(passkeyData.user);
+      } else {
+        setHasPasskey(false);
+        setPasskeyUserId(null);
+        setPasskeyUser(null);
+      }
+    } catch (err) {
+      // Silently fail - user can still login with email
+      setHasPasskey(false);
+      setPasskeyUserId(null);
+      setPasskeyUser(null);
+    } finally {
+      setCheckingPasskey(false);
+    }
+  };
 
   const handleSendCode = async () => {
     setError("");
@@ -72,6 +131,8 @@ export default function AuthPage() {
         // User exists - store session and redirect to passkey setup
         setMessage("Login successful! Redirecting...");
         localStorage.setItem("user", JSON.stringify(data.user));
+        // Store email for next time
+        localStorage.setItem("last_email", email);
         setTimeout(() => router.push("/passkey-setup"), 1500);
       } else {
         // For signup: send confirmation code
@@ -194,6 +255,8 @@ export default function AuthPage() {
       setMessage("Account created successfully! Redirecting...");
       // Store user in localStorage
       localStorage.setItem("user", JSON.stringify(data.user));
+      // Store email for next time
+      localStorage.setItem("last_email", email);
       
       // New users must set up passkey before accessing dashboard
       setTimeout(() => router.push("/passkey-setup"), 1500);
@@ -295,10 +358,7 @@ export default function AuthPage() {
                   value={email}
                   onChange={(e) => {
                     setEmail(e.target.value);
-                    // Reset passkey state when email changes
-                    setHasPasskey(false);
-                    setPasskeyUserId(null);
-                    setPasskeyUser(null);
+                    // Don't reset passkey state immediately - let debounced check handle it
                   }}
                   placeholder="you@example.com"
                   className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-3 focus:ring-2 focus:ring-primary focus:border-primary"
@@ -327,7 +387,7 @@ export default function AuthPage() {
               {mode === "login" && hasPasskey && isPasskeySupported() && (
                 <button
                   onClick={handlePasskeyLogin}
-                  disabled={authenticatingPasskey}
+                  disabled={authenticatingPasskey || checkingPasskey}
                   className="w-full bg-secondary text-primary font-bold px-4 py-3 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 border-2 border-primary"
                 >
                   {authenticatingPasskey ? (
@@ -342,6 +402,13 @@ export default function AuthPage() {
                     </>
                   )}
                 </button>
+              )}
+
+              {/* Show checking indicator when verifying passkey */}
+              {mode === "login" && checkingPasskey && email && (
+                <div className="text-xs text-slate-500 dark:text-slate-400 text-center">
+                  Checking for passkey...
+                </div>
               )}
 
               {/* Divider */}
