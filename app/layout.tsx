@@ -52,14 +52,16 @@ export default function RootLayout({
         <link rel="dns-prefetch" href="https://assets.coingecko.com" />
         <link rel="dns-prefetch" href="https://api.coingecko.com" />
         
-        {/* Load Material Icons - split into separate links for proper loading */}
+        {/* Load Material Icons - critical for icon rendering */}
         <link
           rel="stylesheet"
           href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined"
+          crossOrigin="anonymous"
         />
         <link
           rel="stylesheet"
           href="https://fonts.googleapis.com/icon?family=Material+Icons+Round"
+          crossOrigin="anonymous"
         />
         
         <link rel="manifest" href="/manifest.json" />

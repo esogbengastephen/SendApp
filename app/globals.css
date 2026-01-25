@@ -155,6 +155,10 @@ body {
   direction: ltr;
   -webkit-font-feature-settings: 'liga';
   -webkit-font-smoothing: antialiased;
+  font-display: swap;
+  /* Hide text if font fails to load */
+  speak: none;
+  text-rendering: optimizeLegibility;
 }
 
 .material-icons-round {
@@ -171,5 +175,9 @@ body {
   direction: ltr;
   -webkit-font-feature-settings: 'liga';
   -webkit-font-smoothing: antialiased;
+  font-display: swap;
+  /* Hide text if font fails to load */
+  speak: none;
+  text-rendering: optimizeLegibility;
 }
 
