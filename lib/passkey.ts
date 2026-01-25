@@ -85,7 +85,10 @@ export async function createPasskey(
         challenge,
         rp: {
           name: "SendApp",
-          id: window.location.hostname,
+          // Use current hostname (works for both localhost and production)
+          // For production, this will be 'flippay.app' or 'www.flippay.app'
+          // For localhost, this will be 'localhost'
+          id: typeof window !== "undefined" ? window.location.hostname : "flippay.app",
         },
         user: {
           id: base64UrlToArrayBuffer(userId),
@@ -279,7 +282,14 @@ export async function authenticateWithPasskey(
     } else if (error.name === "SecurityError") {
       return {
         success: false,
-        error: "Security error. Please ensure you're using HTTPS or localhost.",
+        error: "Security error. If you created your passkey on localhost, you need to recreate it on the production domain (flippay.app).",
+        requiresRecreate: true,
+      };
+    } else if (error.name === "NotAllowedError" && error.message?.includes("origin")) {
+      return {
+        success: false,
+        error: "Domain mismatch. Your passkey was created on a different domain. Please recreate your passkey on flippay.app.",
+        requiresRecreate: true,
       };
     }
     
