@@ -222,12 +222,18 @@ export async function GET(request: NextRequest) {
   // Test 3: Virtual Account API Endpoint (without creating account)
   if (result.allSet) {
     try {
+      // Trim secret key to remove any whitespace
+      const secretKey = flutterwaveSecretKey?.trim() || "";
+      if (!secretKey) {
+        throw new Error("Secret key is empty after trimming");
+      }
+      
       // Just test if the endpoint is reachable (we'll get auth error if credentials are wrong)
       const testResponse = await axios.get(
         `${FLUTTERWAVE_API_BASE}/virtual-account-numbers`,
         {
           headers: {
-            Authorization: `Bearer ${flutterwaveSecretKey}`,
+            Authorization: `Bearer ${secretKey}`,
             "Content-Type": "application/json",
           },
           validateStatus: () => true, // Don't throw on any status
@@ -272,11 +278,17 @@ export async function GET(request: NextRequest) {
   // Test 4: Transfer API Endpoint (without creating transfer)
   if (result.allSet) {
     try {
+      // Trim secret key to remove any whitespace
+      const secretKey = flutterwaveSecretKey?.trim() || "";
+      if (!secretKey) {
+        throw new Error("Secret key is empty after trimming");
+      }
+      
       const testResponse = await axios.get(
         `${FLUTTERWAVE_API_BASE}/transfers`,
         {
           headers: {
-            Authorization: `Bearer ${flutterwaveSecretKey}`,
+            Authorization: `Bearer ${secretKey}`,
             "Content-Type": "application/json",
           },
           validateStatus: () => true,

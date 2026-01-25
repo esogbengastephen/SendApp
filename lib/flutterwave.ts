@@ -62,7 +62,12 @@ async function getAuthHeader(): Promise<string> {
     if (!FLUTTERWAVE_SECRET_KEY) {
       throw new Error("Flutterwave credentials not configured. For v4, set FLW_CLIENT_ID and FLW_CLIENT_SECRET. For v3, set FLUTTERWAVE_SECRET_KEY.");
     }
-    return `Bearer ${FLUTTERWAVE_SECRET_KEY}`;
+    // Trim secret key to remove any whitespace
+    const secretKey = FLUTTERWAVE_SECRET_KEY.trim();
+    if (!secretKey) {
+      throw new Error("Flutterwave secret key is empty after trimming. Check for whitespace issues.");
+    }
+    return `Bearer ${secretKey}`;
   }
 }
 
