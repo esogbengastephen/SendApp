@@ -631,8 +631,15 @@ export default function PaymentForm() {
       
       const txData = await txResponse.json();
       if (!txResponse.ok || !txData.success) {
+        console.error(`[Flutterwave Payment] ❌ Transaction creation failed:`, txData);
         throw new Error(txData.error || "Failed to create transaction");
       }
+      
+      console.log(`[Flutterwave Payment] ✅ Transaction created successfully:`, {
+        transactionId: txData.transactionId,
+        exists: txData.exists,
+        status: txData.transaction?.status,
+      });
       
       // Step 2: Initialize Flutterwave payment
       // Generate unique Flutterwave transaction reference

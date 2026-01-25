@@ -98,6 +98,15 @@ function PaymentCallbackContent() {
           console.error(`[Payment Callback] ❌ Transaction not found. txRef: ${txRef}`);
           console.error(`[Payment Callback] Search strategies tried:`, data.strategiesTried || []);
           console.error(`[Payment Callback] Response data:`, JSON.stringify(data, null, 2));
+          
+          // Try debug endpoint to see what's actually in the database
+          try {
+            const debugResponse = await fetch(`/api/debug/transactions-by-txref?txRef=${encodeURIComponent(txRef)}`);
+            const debugData = await debugResponse.json();
+            console.error(`[Payment Callback] 🔍 Debug info:`, JSON.stringify(debugData, null, 2));
+          } catch (debugError) {
+            console.error(`[Payment Callback] Debug endpoint error:`, debugError);
+          }
         }
 
         if (data.success && data.exists) {
