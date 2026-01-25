@@ -43,6 +43,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Check if user has existing wallet before overwriting
+    const { data: existingUser, error: fetchError } = await supabaseAdmin
+      .from("users")
+      .select("wallet_addresses, wallet_seed_encrypted, wallet_created_at")
+      .eq("id", userId)
+      .single();
+
+    const existingAddresses = (existingUser?.wallet_addresses as Record<string, string>) || {};
+    const hasExistingWallet = !!(existingUser?.wallet_seed_encrypted && Object.keys(existingAddresses).length > 0);
+    const originalWalletCreatedAt = existingUser?.wallet_created_at;
+
+    // IMPORTANT: If user has existing wallet, we preserve the addresses
+    // However, the seed phrase cannot be preserved because it's encrypted with the old passkey
+    // This means the user will lose access to the old wallet's private keys
+    // But we preserve the addresses for reference/display purposes
+    const finalAddresses = hasExistingWallet 
+      ? { ...existingAddresses, ...addresses } // Merge: preserve old addresses, add new ones
+      : addresses;
+
+    // Log warning if overwriting existing wallet
+    if (hasExistingWallet) {
+      console.warn(`[Passkey Create] ⚠️ User ${userId} has existing wallet. Old seed will be lost, but addresses preserved.`);
+    }
+
     // Update user with passkey and wallet info
     // Only storing encrypted seed, never plaintext
     const { error } = await supabaseAdmin
@@ -50,9 +74,9 @@ export async function POST(request: NextRequest) {
       .update({
         passkey_credential_id: credentialId,
         passkey_public_key: publicKey,
-        wallet_seed_encrypted: encryptedSeed, // Encrypted only!
-        wallet_addresses: addresses, // JSONB column - automatically supports any chain
-        wallet_created_at: new Date().toISOString(),
+        wallet_seed_encrypted: encryptedSeed, // New encrypted seed (old one cannot be decrypted without old passkey)
+        wallet_addresses: finalAddresses, // Preserved addresses merged with new ones
+        wallet_created_at: originalWalletCreatedAt || new Date().toISOString(), // Preserve original creation date if exists
         passkey_created_at: new Date().toISOString(),
       })
       .eq("id", userId);
@@ -67,8 +91,12 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: "Passkey and multi-chain wallet created successfully",
-      addresses,
+      message: hasExistingWallet 
+        ? "New passkey created. Note: You now have a new wallet. Old wallet addresses are preserved for reference, but the old seed phrase cannot be recovered."
+        : "Passkey and multi-chain wallet created successfully",
+      addresses: finalAddresses,
+      hadExistingWallet: hasExistingWallet,
+      preservedAddressCount: hasExistingWallet ? Object.keys(existingAddresses).length : 0,
     });
   } catch (error: any) {
     console.error("Error creating passkey:", error);

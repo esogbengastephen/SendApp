@@ -14,10 +14,21 @@ export default function PasskeySetupPage() {
   const [error, setError] = useState("");
   const [passkeySupported, setPasskeySupported] = useState(false);
   const [step, setStep] = useState<"intro" | "creating" | "success">("intro");
+  const [hasExistingWallet, setHasExistingWallet] = useState(false);
+  const [showWarning, setShowWarning] = useState(false);
+  const [isRecoveryMode, setIsRecoveryMode] = useState(false);
 
   useEffect(() => {
     checkAuth();
     checkPasskeySupport();
+    
+    // Check for recovery mode in URL
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get("recovery") === "true") {
+        setIsRecoveryMode(true);
+      }
+    }
   }, []);
 
   const checkAuth = () => {
@@ -51,6 +62,16 @@ export default function PasskeySetupPage() {
         router.push("/");
         return;
       }
+
+      // Check if user has existing wallet (for recovery scenarios)
+      if (data.success && data.hasWallet) {
+        setHasExistingWallet(true);
+        // Check if this is recovery mode (user came from recovery flow)
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.get("recovery") === "true") {
+          setIsRecoveryMode(true);
+        }
+      }
     } catch (error) {
       console.error("Error checking passkey:", error);
     }
@@ -70,6 +91,22 @@ export default function PasskeySetupPage() {
 
   const handleSetupPasskey = async () => {
     if (!user) return;
+
+    // Show warning if user has existing wallet and not in recovery mode
+    if (hasExistingWallet && !isRecoveryMode && !showWarning) {
+      setShowWarning(true);
+      setError("⚠️ WARNING: You already have a wallet. Creating a new passkey will generate a NEW wallet with NEW addresses. You will LOSE ACCESS to your old wallet and any funds in it. This action cannot be undone. Are you sure you want to continue?");
+      return;
+    }
+
+    // If user confirmed the warning, clear it and proceed
+    if (showWarning) {
+      setShowWarning(false);
+      setError("");
+    }
+
+    // If warning was shown and user clicked "Yes, Continue", proceed
+    // (This check happens when showWarning is already true and user confirms)
 
     setSettingUp(true);
     setError("");
@@ -190,8 +227,48 @@ export default function PasskeySetupPage() {
             </div>
 
             {error && (
-              <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+              <div className={`mb-6 p-4 border rounded-lg ${
+                error.includes("WARNING") 
+                  ? "bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800"
+                  : "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800"
+              }`}>
+                <p className={`text-sm ${
+                  error.includes("WARNING")
+                    ? "text-yellow-800 dark:text-yellow-300"
+                    : "text-red-600 dark:text-red-400"
+                }`}>{error}</p>
+                {error.includes("WARNING") && (
+                  <div className="mt-4 flex gap-2">
+                    <button
+                      onClick={async () => {
+                        setError("");
+                        setShowWarning(true);
+                        // Proceed with setup after user confirms
+                        await handleSetupPasskey();
+                      }}
+                      className="flex-1 bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+                    >
+                      Yes, Continue (I understand the risk)
+                    </button>
+                    <button
+                      onClick={() => {
+                        setError("");
+                        setShowWarning(false);
+                      }}
+                      className="flex-1 bg-slate-200 dark:bg-slate-700 hover:bg-slate-300 dark:hover:bg-slate-600 text-slate-900 dark:text-white font-semibold py-2 px-4 rounded-lg transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {isRecoveryMode && hasExistingWallet && (
+              <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                <p className="text-sm text-blue-800 dark:text-blue-300">
+                  ℹ️ <strong>Recovery Mode:</strong> You're recovering your account. Your existing wallet addresses will be preserved for reference, but you'll get a new wallet with new addresses. The old seed phrase cannot be recovered without the old passkey.
+                </p>
               </div>
             )}
 
