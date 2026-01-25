@@ -648,6 +648,35 @@ export default function AuthPage() {
                 </div>
               </div>
 
+              {/* Phone Number Input - Only for Signup */}
+              {mode === "signup" && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                    Phone Number <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="tel"
+                    value={phoneNumber}
+                    onChange={(e) => {
+                      const value = e.target.value.replace(/\D/g, "").slice(0, 11);
+                      setPhoneNumber(value);
+                    }}
+                    placeholder="08012345678"
+                    maxLength={11}
+                    className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-3 focus:ring-2 focus:ring-primary focus:border-primary"
+                    disabled={loading}
+                  />
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-2">
+                    Enter your 11-digit Nigerian phone number (e.g., 08012345678)
+                  </p>
+                  {phoneNumber && phoneNumber.length < 11 && (
+                    <p className="text-xs text-red-500 dark:text-red-400 mt-1">
+                      Phone number must be 11 digits
+                    </p>
+                  )}
+                </div>
+              )}
+
               <button
                 onClick={handleVerifyCode}
                 disabled={loading || code.length !== 6 || (mode === "signup" && (!phoneNumber || phoneNumber.length < 11))}
