@@ -18,9 +18,10 @@ const FLUTTERWAVE_USE_TEST_MODE = process.env.FLUTTERWAVE_USE_TEST_MODE !== unde
   : process.env.NODE_ENV === "development";
 
 // Determine which API version to use
-// v4 only in production (no v4 in test/sandbox)
-// v3 for test mode or if v4 credentials not available
-const USE_V4_API = isV4Configured() && !FLUTTERWAVE_USE_TEST_MODE;
+// IMPORTANT: v4 API is NOT available in test/sandbox environment
+// - Test mode: Always use v3 API (even if v4 credentials are set)
+// - Production mode: Use v4 if credentials available, otherwise v3
+const USE_V4_API = !FLUTTERWAVE_USE_TEST_MODE && isV4Configured();
 
 // API Base URLs
 // v4 API: https://f4bexperience.flutterwave.com/ (production) or https://developersandbox-api.flutterwave.com/ (test)
@@ -34,12 +35,19 @@ const FLUTTERWAVE_API_BASE = USE_V4_API
       : "https://api.flutterwave.com/v3");
 
 if (USE_V4_API) {
-  console.log(`[Flutterwave] Using v4 API (OAuth2) - ${FLUTTERWAVE_USE_TEST_MODE ? 'TEST' : 'PRODUCTION'}: ${FLUTTERWAVE_API_BASE}`);
+  console.log(`[Flutterwave] Using v4 API (OAuth2) - PRODUCTION: ${FLUTTERWAVE_API_BASE}`);
 } else {
-  if (!FLUTTERWAVE_SECRET_KEY) {
-    console.warn("FLUTTERWAVE_SECRET_KEY is not set. Using v4 API requires FLW_CLIENT_ID and FLW_CLIENT_SECRET.");
+  if (FLUTTERWAVE_USE_TEST_MODE) {
+    console.log(`[Flutterwave] Using v3 API (Bearer Token) - TEST/SANDBOX: ${FLUTTERWAVE_API_BASE}`);
+    if (isV4Configured()) {
+      console.log(`[Flutterwave] Note: v4 credentials detected but v4 API is not available in test mode. Using v3 API with test keys.`);
+    }
+  } else {
+    if (!FLUTTERWAVE_SECRET_KEY && !isV4Configured()) {
+      console.warn("FLUTTERWAVE_SECRET_KEY is not set. For v3 API, set FLUTTERWAVE_SECRET_KEY. For v4 API, set FLW_CLIENT_ID and FLW_CLIENT_SECRET.");
+    }
+    console.log(`[Flutterwave] Using v3 API (Bearer Token) - PRODUCTION: ${FLUTTERWAVE_API_BASE}`);
   }
-  console.log(`[Flutterwave] Using v3 API (Bearer Token) - ${FLUTTERWAVE_USE_TEST_MODE ? 'TEST/SANDBOX' : 'PRODUCTION'}: ${FLUTTERWAVE_API_BASE}`);
 }
 
 /**

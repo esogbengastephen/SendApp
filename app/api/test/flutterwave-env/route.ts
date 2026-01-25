@@ -22,7 +22,8 @@ export async function GET(request: NextRequest) {
   // Flutterwave v4 credentials
   const flwClientId = process.env.FLW_CLIENT_ID || process.env.FLUTTERWAVE_CLIENT_ID;
   const flwClientSecret = process.env.FLW_CLIENT_SECRET || process.env.FLUTTERWAVE_CLIENT_SECRET;
-  const useV4 = isV4Configured();
+  // v4 API is NOT available in test mode - always use v3 in test
+  const useV4 = !useTestMode && isV4Configured();
   // If FLUTTERWAVE_USE_TEST_MODE is explicitly set, use that value
   // Otherwise, default to test mode in development, production mode otherwise
   const useTestMode = process.env.FLUTTERWAVE_USE_TEST_MODE !== undefined
