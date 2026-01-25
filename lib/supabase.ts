@@ -27,15 +27,14 @@ if (!validAnonKey || validAnonKey.trim() === "" || validAnonKey.includes("placeh
 
 // Create Supabase client - use anon key (required)
 // Configure realtime to handle WebSocket errors gracefully
+// Supabase automatically handles WebSocket connections and fallback
 export const supabase = createClient(supabaseUrl, validAnonKey, {
   realtime: {
     params: {
       eventsPerSecond: 10,
     },
-    // Handle WebSocket connection errors gracefully
-    // This prevents the app from crashing when WebSocket is unavailable
-    // Use WebSocket transport (Supabase will automatically fallback if unavailable)
-    transport: "websocket" as const,
+    // Note: transport property removed - Supabase handles WebSocket automatically
+    // If you need custom transport, use: transport: typeof window !== "undefined" ? WebSocket : undefined
   },
   // Global error handler for Supabase operations
   global: {
