@@ -51,16 +51,33 @@ export default function UtilityForm({
 
   // Close dropdown when clicking outside
   useEffect(() => {
+    if (typeof document === "undefined") return;
+    
     const handleClickOutside = (event: MouseEvent) => {
-      if (networkDropdownRef.current && !networkDropdownRef.current.contains(event.target as Node)) {
-        setIsNetworkDropdownOpen(false);
+      try {
+        if (networkDropdownRef.current && !networkDropdownRef.current.contains(event.target as Node)) {
+          setIsNetworkDropdownOpen(false);
+        }
+      } catch (e) {
+        console.warn("Error in click outside handler:", e);
       }
     };
 
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-    };
+    try {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => {
+        try {
+          if (typeof document !== "undefined") {
+            document.removeEventListener("mousedown", handleClickOutside);
+          }
+        } catch (e) {
+          console.warn("Error removing click outside listener:", e);
+        }
+      };
+    } catch (e) {
+      console.warn("Error adding click outside listener:", e);
+      return () => {}; // Return empty cleanup function
+    }
   }, []);
 
   useEffect(() => {
