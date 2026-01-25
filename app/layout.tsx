@@ -72,44 +72,74 @@ export default function RootLayout({
         <Script id="favicon-switcher" strategy="lazyOnload">
           {`
             (function() {
-              const updateFavicon = () => {
-                const isDark = document.documentElement.classList.contains('dark');
-                const link = document.querySelector("link[rel*='icon']") || document.createElement('link');
-                link.type = 'image/png';
-                link.rel = 'shortcut icon';
-                link.href = isDark ? '/favicon.png' : '/whitefavicon.png';
-                document.getElementsByTagName('head')[0].appendChild(link);
-              };
-              
-              // Check on load
-              const darkMode = localStorage.getItem("darkMode") === "true";
-              if (darkMode) {
-                document.documentElement.classList.add("dark");
+              try {
+                // Guard against mobile browser issues
+                if (typeof window === 'undefined' || typeof document === 'undefined') return;
+                
+                const updateFavicon = () => {
+                  try {
+                    const isDark = document.documentElement.classList.contains('dark');
+                    const link = document.querySelector("link[rel*='icon']") || document.createElement('link');
+                    link.type = 'image/png';
+                    link.rel = 'shortcut icon';
+                    link.href = isDark ? '/favicon.png' : '/whitefavicon.png';
+                    const head = document.getElementsByTagName('head')[0];
+                    if (head) {
+                      head.appendChild(link);
+                    }
+                  } catch (e) {
+                    console.warn('Error updating favicon:', e);
+                  }
+                };
+                
+                // Check on load - safely access localStorage
+                try {
+                  if (typeof localStorage !== 'undefined') {
+                    const darkMode = localStorage.getItem("darkMode") === "true";
+                    if (darkMode) {
+                      document.documentElement.classList.add("dark");
+                    }
+                  }
+                } catch (e) {
+                  console.warn('Error accessing localStorage:', e);
+                }
+                
+                updateFavicon();
+                
+                // Watch for changes
+                if (typeof MutationObserver !== 'undefined') {
+                  const observer = new MutationObserver(updateFavicon);
+                  observer.observe(document.documentElement, {
+                    attributes: true,
+                    attributeFilter: ['class']
+                  });
+                }
+              } catch (e) {
+                console.warn('Error in favicon switcher:', e);
               }
-              updateFavicon();
-              
-              // Watch for changes
-              const observer = new MutationObserver(updateFavicon);
-              observer.observe(document.documentElement, {
-                attributes: true,
-                attributeFilter: ['class']
-              });
             })();
           `}
         </Script>
         <Script id="disable-right-click" strategy="lazyOnload">
           {`
             (function() {
-              // Check if we're on an admin page
-              const isAdminPage = window.location.pathname.startsWith('/admin');
-              
-              // Only disable right-click if NOT on admin page
-              if (!isAdminPage) {
-                // Disable right-click context menu
-                document.addEventListener('contextmenu', function(e) {
-                  e.preventDefault();
-                  return false;
-                });
+              try {
+                // Guard against mobile browser issues
+                if (typeof window === 'undefined' || typeof document === 'undefined') return;
+                
+                // Check if we're on an admin page
+                const isAdminPage = window.location.pathname.startsWith('/admin');
+                
+                // Only disable right-click if NOT on admin page
+                if (!isAdminPage) {
+                  // Disable right-click context menu
+                  document.addEventListener('contextmenu', function(e) {
+                    e.preventDefault();
+                    return false;
+                  });
+                }
+              } catch (e) {
+                console.warn('Error in right-click handler:', e);
               }
             })();
           `}

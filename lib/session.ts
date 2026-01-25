@@ -16,8 +16,13 @@ export function generateSessionToken(): string {
 export function setUserSession(user: AuthUser, token: string) {
   // Store in localStorage for quick access
   if (typeof window !== "undefined") {
-    localStorage.setItem("user", JSON.stringify(user));
-    localStorage.setItem("session_token", token);
+    try {
+      localStorage.setItem("user", JSON.stringify(user));
+      localStorage.setItem("session_token", token);
+    } catch (e) {
+      // Handle localStorage errors (e.g., quota exceeded, private browsing)
+      console.warn("Error storing session in localStorage:", e);
+    }
   }
 }
 
@@ -41,8 +46,13 @@ export function getUserFromStorage(): AuthUser | null {
  */
 export function clearUserSession() {
   if (typeof window !== "undefined") {
-    localStorage.removeItem("user");
-    localStorage.removeItem("session_token");
+    try {
+      localStorage.removeItem("user");
+      localStorage.removeItem("session_token");
+    } catch (e) {
+      // Handle localStorage errors (e.g., private browsing)
+      console.warn("Error clearing session from localStorage:", e);
+    }
   }
 }
 

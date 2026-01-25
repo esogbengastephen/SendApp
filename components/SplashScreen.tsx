@@ -8,28 +8,51 @@ export default function SplashScreen() {
   const [isFading, setIsFading] = useState(false);
 
   useEffect(() => {
+    // Guard against mobile browser issues
+    if (typeof window === "undefined" || typeof document === "undefined") {
+      setIsVisible(false);
+      return;
+    }
+
     // Show splash screen for minimum 500ms (reduced for faster load)
     const minDisplayTime = 500;
     const startTime = Date.now();
 
     const hideSplash = () => {
-      const elapsed = Date.now() - startTime;
-      const remaining = Math.max(0, minDisplayTime - elapsed);
+      try {
+        const elapsed = Date.now() - startTime;
+        const remaining = Math.max(0, minDisplayTime - elapsed);
 
-      setTimeout(() => {
-        setIsFading(true);
         setTimeout(() => {
-          setIsVisible(false);
-        }, 300); // Fade out duration
-      }, remaining);
+          setIsFading(true);
+          setTimeout(() => {
+            setIsVisible(false);
+          }, 300); // Fade out duration
+        }, remaining);
+      } catch (e) {
+        console.warn("Error hiding splash screen:", e);
+        setIsVisible(false);
+      }
     };
 
     // Hide splash when page is fully loaded
-    if (document.readyState === "complete") {
-      hideSplash();
-    } else {
-      window.addEventListener("load", hideSplash);
-      return () => window.removeEventListener("load", hideSplash);
+    try {
+      if (document.readyState === "complete") {
+        hideSplash();
+      } else {
+        window.addEventListener("load", hideSplash);
+        return () => {
+          try {
+            window.removeEventListener("load", hideSplash);
+          } catch (e) {
+            console.warn("Error removing load listener:", e);
+          }
+        };
+      }
+    } catch (e) {
+      console.warn("Error setting up splash screen:", e);
+      // Fallback: hide splash after a delay
+      setTimeout(() => setIsVisible(false), 1000);
     }
   }, []);
 
