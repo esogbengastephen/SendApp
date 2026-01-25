@@ -206,9 +206,16 @@ export async function authenticateWithPasskey(
           ],
           timeout: 60000,
           userVerification: "preferred", // Changed from "required" to "preferred" for better compatibility
+          rpId: typeof window !== "undefined" ? window.location.hostname : "flippay.app", // Explicitly set RP ID
         },
       }) as PublicKeyCredential;
     } catch (authError: any) {
+      // Don't log expected user cancellation errors to console.error
+      // These are normal when users dismiss the prompt
+      if (authError.name === "NotAllowedError") {
+        console.log("[Passkey] User cancelled or operation not allowed");
+        throw authError; // Re-throw to be caught by outer catch with proper handling
+      }
       console.error("[Passkey] Browser authentication error:", authError);
       throw authError; // Re-throw to be caught by outer catch
     }
@@ -264,39 +271,49 @@ export async function authenticateWithPasskey(
       credentialId: arrayBufferToBase64Url(credentialId),
     };
   } catch (error: any) {
-    console.error("[Passkey] Authentication error:", error);
-    console.error("[Passkey] Error name:", error.name);
-    console.error("[Passkey] Error message:", error.message);
+    // Handle specific error types with user-friendly messages
+    // Only log unexpected errors to avoid console noise
     
-    // Provide more specific error messages
     if (error.name === "NotAllowedError") {
+      // This is a common, expected error when user cancels or dismisses the prompt
+      // Don't log as error - it's normal user behavior
+      console.log("[Passkey] Authentication cancelled or not allowed by user");
       return {
         success: false,
-        error: "Authentication was cancelled or not allowed. Please try again and complete the passkey prompt.",
+        error: "Authentication was cancelled. Please try again and complete the passkey prompt when it appears.",
       };
     } else if (error.name === "InvalidStateError") {
+      console.warn("[Passkey] InvalidStateError:", error.message);
       return {
         success: false,
         error: "Passkey is not available or has been removed. Please set up a new passkey.",
       };
     } else if (error.name === "NotSupportedError") {
+      console.warn("[Passkey] NotSupportedError:", error.message);
       return {
         success: false,
         error: "Passkey authentication is not supported on this device or browser.",
       };
     } else if (error.name === "SecurityError") {
+      console.warn("[Passkey] SecurityError:", error.message);
       return {
         success: false,
         error: "Security error. If you created your passkey on localhost, you need to recreate it on the production domain (flippay.app).",
         requiresRecreate: true,
       };
     } else if (error.name === "NotAllowedError" && error.message?.includes("origin")) {
+      console.warn("[Passkey] Origin mismatch:", error.message);
       return {
         success: false,
         error: "Domain mismatch. Your passkey was created on a different domain. Please recreate your passkey on flippay.app.",
         requiresRecreate: true,
       };
     }
+    
+    // Log unexpected errors
+    console.error("[Passkey] Unexpected authentication error:", error);
+    console.error("[Passkey] Error name:", error.name);
+    console.error("[Passkey] Error message:", error.message);
     
     return {
       success: false,
