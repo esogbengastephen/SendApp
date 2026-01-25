@@ -78,6 +78,26 @@ export default function UserDashboard() {
   const [allTransactions, setAllTransactions] = useState<any[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
 
+  // Helper function to extract first name from email
+  const getFirstNameFromEmail = (email: string | undefined | null): string => {
+    if (!email) return "User";
+    
+    try {
+      // Extract the part before @
+      const localPart = email.split("@")[0];
+      if (!localPart) return "User";
+      
+      // Split by common separators and take the first part
+      const firstName = localPart.split(/[._-]/)[0];
+      if (!firstName) return "User";
+      
+      // Capitalize first letter
+      return firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();
+    } catch {
+      return "User";
+    }
+  };
+
   // Helper functions for caching balance
   const saveCachedBalance = (userId: string, totalUSD: number) => {
     try {
@@ -122,56 +142,87 @@ export default function UserDashboard() {
   }, [pathname]);
 
   useEffect(() => {
-    const currentUser = getUserFromStorage();
-    if (!currentUser) {
-      router.push("/auth");
-      return;
-    }
-    setUser(currentUser);
-    
-    // Initialize theme immediately (synchronous)
-    const darkMode = localStorage.getItem("darkMode") === "true";
-    setIsDarkMode(darkMode);
-    if (darkMode) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-    
-    // Load cached balance immediately
-    const cachedBalance = loadCachedBalance(currentUser.id);
-    if (cachedBalance !== null) {
-      setCachedTotalCryptoUSD(cachedBalance);
-      setTotalCryptoUSD(cachedBalance);
-    }
-    
-    // Parallelize API calls for faster loading
-    Promise.all([
-      fetchDashboardData(currentUser.id),
-      fetchWalletBalances(currentUser.id),
-      fetchUserProfile(currentUser.id),
-      fetchTokenPrices(),
-      fetchAllTransactions(currentUser.id),
-    ]).catch((error) => {
-      console.error("Error loading dashboard data:", error);
-    });
-    
-    // Refresh prices every 30 seconds
-    const priceInterval = setInterval(() => {
-      fetchTokenPrices();
-    }, 30000);
-    
-    // Refresh wallet balances every 60 seconds
-    const balanceInterval = setInterval(() => {
-      if (currentUser) {
-        fetchWalletBalances(currentUser.id);
+    try {
+      const currentUser = getUserFromStorage();
+      if (!currentUser) {
+        router.push("/auth");
+        return;
       }
-    }, 60000);
+      setUser(currentUser);
+      
+      // Initialize theme immediately (synchronous) - with error handling for mobile
+      try {
+        if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+          const darkMode = localStorage.getItem("darkMode") === "true";
+          setIsDarkMode(darkMode);
+          if (typeof document !== "undefined") {
+            if (darkMode) {
+              document.documentElement.classList.add("dark");
+            } else {
+              document.documentElement.classList.remove("dark");
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Error initializing theme:", e);
+        // Continue without theme initialization
+      }
+      
+      // Load cached balance immediately
+      try {
+        const cachedBalance = loadCachedBalance(currentUser.id);
+        if (cachedBalance !== null) {
+          setCachedTotalCryptoUSD(cachedBalance);
+          setTotalCryptoUSD(cachedBalance);
+        }
+      } catch (e) {
+        console.warn("Error loading cached balance:", e);
+        // Continue without cached balance
+      }
     
-    return () => {
-      clearInterval(priceInterval);
-      clearInterval(balanceInterval);
-    };
+      // Parallelize API calls for faster loading
+      Promise.all([
+        fetchDashboardData(currentUser.id),
+        fetchWalletBalances(currentUser.id),
+        fetchUserProfile(currentUser.id),
+        fetchTokenPrices(),
+        fetchAllTransactions(currentUser.id),
+      ]).catch((error) => {
+        console.error("Error loading dashboard data:", error);
+      });
+      
+      // Refresh prices every 30 seconds
+      const priceInterval = setInterval(() => {
+        try {
+          fetchTokenPrices();
+        } catch (e) {
+          console.warn("Error in price refresh interval:", e);
+        }
+      }, 30000);
+      
+      // Refresh wallet balances every 60 seconds
+      const balanceInterval = setInterval(() => {
+        try {
+          if (currentUser) {
+            fetchWalletBalances(currentUser.id);
+          }
+        } catch (e) {
+          console.warn("Error in balance refresh interval:", e);
+        }
+      }, 60000);
+      
+      return () => {
+        try {
+          clearInterval(priceInterval);
+          clearInterval(balanceInterval);
+        } catch (e) {
+          console.warn("Error clearing intervals:", e);
+        }
+      };
+    } catch (error) {
+      console.error("Error in UserDashboard useEffect:", error);
+      // Don't crash the app - just log the error
+    }
   }, [router]);
 
   const fetchTokenPrices = async () => {
@@ -415,7 +466,7 @@ export default function UserDashboard() {
             <div>
               <p className="text-xs font-semibold opacity-70 text-secondary/70">Welcome back,</p>
               <h1 className="text-xl font-bold leading-tight text-secondary group-hover:underline">
-                {userProfile?.displayName || user?.displayName || "LightBlock"}
+                {userProfile?.displayName || user?.displayName || getFirstNameFromEmail(userProfile?.email || user?.email)}
               </h1>
             </div>
           </button>

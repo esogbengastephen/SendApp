@@ -10,25 +10,43 @@ export default function DarkModeToggle({ fixed = true }: DarkModeToggleProps) {
   const [isDark, setIsDark] = useState(false);
 
   useEffect(() => {
-    // Check initial theme
-    const darkMode = localStorage.getItem("darkMode") === "true";
-    setIsDark(darkMode);
-    if (darkMode) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
+    try {
+      // Check initial theme - with error handling for mobile
+      if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+        const darkMode = localStorage.getItem("darkMode") === "true";
+        setIsDark(darkMode);
+        
+        if (typeof document !== "undefined") {
+          if (darkMode) {
+            document.documentElement.classList.add("dark");
+          } else {
+            document.documentElement.classList.remove("dark");
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Error initializing dark mode:", e);
     }
   }, []);
 
   const toggleDarkMode = () => {
-    const newDarkMode = !isDark;
-    setIsDark(newDarkMode);
-    localStorage.setItem("darkMode", String(newDarkMode));
-    
-    if (newDarkMode) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
+    try {
+      const newDarkMode = !isDark;
+      setIsDark(newDarkMode);
+      
+      if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+        localStorage.setItem("darkMode", String(newDarkMode));
+      }
+      
+      if (typeof document !== "undefined") {
+        if (newDarkMode) {
+          document.documentElement.classList.add("dark");
+        } else {
+          document.documentElement.classList.remove("dark");
+        }
+      }
+    } catch (e) {
+      console.warn("Error toggling dark mode:", e);
     }
   };
 

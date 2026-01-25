@@ -8,27 +8,44 @@ export default function ThemeToggle() {
 
   useEffect(() => {
     setMounted(true);
-    // Check localStorage or system preference
-    const darkMode = localStorage.getItem("darkMode") === "true";
-    setIsDark(darkMode);
-    
-    // Apply theme immediately
-    if (darkMode) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
+    try {
+      // Check localStorage or system preference - with error handling for mobile
+      if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+        const darkMode = localStorage.getItem("darkMode") === "true";
+        setIsDark(darkMode);
+        
+        // Apply theme immediately
+        if (typeof document !== "undefined") {
+          if (darkMode) {
+            document.documentElement.classList.add("dark");
+          } else {
+            document.documentElement.classList.remove("dark");
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Error initializing theme:", e);
     }
   }, []);
 
   const toggleTheme = () => {
-    const newTheme = !isDark;
-    setIsDark(newTheme);
-    localStorage.setItem("darkMode", newTheme.toString());
-    
-    if (newTheme) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
+    try {
+      const newTheme = !isDark;
+      setIsDark(newTheme);
+      
+      if (typeof window !== "undefined" && typeof localStorage !== "undefined") {
+        localStorage.setItem("darkMode", newTheme.toString());
+      }
+      
+      if (typeof document !== "undefined") {
+        if (newTheme) {
+          document.documentElement.classList.add("dark");
+        } else {
+          document.documentElement.classList.remove("dark");
+        }
+      }
+    } catch (e) {
+      console.warn("Error toggling theme:", e);
     }
   };
 
