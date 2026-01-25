@@ -54,6 +54,7 @@ export default function RootLayout({
         <link rel="dns-prefetch" href="https://api.coingecko.com" />
         
         {/* Load Material Icons - critical for icon rendering */}
+        {/* Add fallback handling for Material Icons loading failures */}
         <link
           rel="stylesheet"
           href="https://fonts.googleapis.com/icon?family=Material+Icons+Outlined"
@@ -64,6 +65,55 @@ export default function RootLayout({
           href="https://fonts.googleapis.com/icon?family=Material+Icons+Round"
           crossOrigin="anonymous"
         />
+        {/* Fallback script to detect Material Icons loading failures */}
+        <Script id="material-icons-fallback" strategy="afterInteractive">
+          {`
+            (function() {
+              try {
+                if (typeof document === 'undefined') return;
+                
+                // Check if Material Icons loaded after a delay
+                setTimeout(function() {
+                  try {
+                    const testEl = document.createElement('span');
+                    testEl.className = 'material-icons-outlined';
+                    testEl.textContent = 'check';
+                    testEl.style.position = 'absolute';
+                    testEl.style.visibility = 'hidden';
+                    document.body.appendChild(testEl);
+                    
+                    const computedStyle = window.getComputedStyle(testEl);
+                    const fontFamily = computedStyle.fontFamily;
+                    
+                    // If font didn't load, add fallback CSS
+                    if (!fontFamily.includes('Material Icons')) {
+                      console.warn('Material Icons failed to load, using fallback');
+                      const style = document.createElement('style');
+                      style.textContent = \`
+                        .material-icons-outlined,
+                        .material-icons-round {
+                          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+                        }
+                        .material-icons-outlined::before,
+                        .material-icons-round::before {
+                          content: attr(data-icon);
+                          font-weight: bold;
+                        }
+                      \`;
+                      document.head.appendChild(style);
+                    }
+                    
+                    document.body.removeChild(testEl);
+                  } catch (e) {
+                    console.warn('Error checking Material Icons:', e);
+                  }
+                }, 2000);
+              } catch (e) {
+                console.warn('Error in Material Icons fallback check:', e);
+              }
+            })();
+          `}
+        </Script>
         
         <link rel="manifest" href="/manifest.json" />
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
@@ -150,17 +200,61 @@ export default function RootLayout({
             (function() {
               // Global error handler for unhandled errors
               if (typeof window !== 'undefined') {
+                // Handle synchronous errors
                 window.addEventListener('error', function(event) {
-                  console.error('Global error caught:', event.error, event.message, event.filename, event.lineno);
-                  // Prevent default error handling to avoid showing default error page
-                  // The ErrorBoundary will handle it
+                  console.error('Global error caught:', {
+                    message: event.message,
+                    filename: event.filename,
+                    lineno: event.lineno,
+                    colno: event.colno,
+                    error: event.error
+                  });
+                  
+                  // Don't prevent default for critical errors - let ErrorBoundary handle them
+                  // Only prevent for non-critical errors
+                  if (event.error && event.error.message) {
+                    const errorMsg = event.error.message.toLowerCase();
+                    // Ignore known non-critical errors
+                    if (errorMsg.includes('script error') || 
+                        errorMsg.includes('non-error promise rejection') ||
+                        errorMsg.includes('resizeobserver')) {
+                      event.preventDefault();
+                    }
+                  }
+                }, true); // Use capture phase
+                
+                // Handle unhandled promise rejections
+                window.addEventListener('unhandledrejection', function(event) {
+                  console.error('Unhandled promise rejection:', {
+                    reason: event.reason,
+                    promise: event.promise
+                  });
+                  
+                  // Only prevent default for non-critical rejections
+                  // Critical ones should bubble up to ErrorBoundary
+                  if (event.reason && typeof event.reason === 'object') {
+                    const reasonMsg = (event.reason.message || String(event.reason)).toLowerCase();
+                    if (reasonMsg.includes('network') || 
+                        reasonMsg.includes('fetch') ||
+                        reasonMsg.includes('timeout')) {
+                      // These are handled by the app, don't show default error
+                      event.preventDefault();
+                    }
+                  }
                 });
                 
-                window.addEventListener('unhandledrejection', function(event) {
-                  console.error('Unhandled promise rejection:', event.reason);
-                  // Prevent default error handling
-                  event.preventDefault();
-                });
+                // Handle React errors that escape ErrorBoundary
+                const originalConsoleError = console.error;
+                console.error = function(...args) {
+                  // Log original error
+                  originalConsoleError.apply(console, args);
+                  
+                  // Check if it's a React error
+                  const errorStr = args.join(' ');
+                  if (errorStr.includes('Error:') && errorStr.includes('React')) {
+                    console.warn('React error detected, ErrorBoundary should handle it');
+                  }
+                };
               }
             })();
           `}

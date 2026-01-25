@@ -250,17 +250,65 @@ export async function GET(request: NextRequest) {
       // This helps find transactions even before webhook processes them
       if (!transaction) {
         console.log(`[Create ID] Not found by payment_reference, searching metadata for: ${paymentReference}`);
-        const { data: metadataTransaction, error: metadataError } = await supabaseAdmin
+        
+        // Try multiple metadata query formats
+        let metadataTransaction = null;
+        let metadataError = null;
+        
+        // Format 1: Direct key access
+        const { data: metadataTx1, error: error1 } = await supabaseAdmin
           .from("transactions")
           .select("*")
           .eq("metadata->>flutterwave_tx_ref", paymentReference)
           .maybeSingle();
+        
+        if (!error1 && metadataTx1) {
+          metadataTransaction = metadataTx1;
+          console.log(`[Create ID] Found transaction by metadata (format 1): ${metadataTx1.transaction_id}`);
+        } else {
+          // Format 2: Using JSONB contains operator
+          const { data: metadataTx2, error: error2 } = await supabaseAdmin
+            .from("transactions")
+            .select("*")
+            .contains("metadata", { flutterwave_tx_ref: paymentReference })
+            .maybeSingle();
+          
+          if (!error2 && metadataTx2) {
+            metadataTransaction = metadataTx2;
+            console.log(`[Create ID] Found transaction by metadata (format 2): ${metadataTx2.transaction_id}`);
+          } else {
+            metadataError = error2 || error1;
+          }
+        }
 
         if (metadataError) {
           console.error("[Create ID] Error looking up by metadata:", metadataError);
         } else if (metadataTransaction) {
-          console.log(`[Create ID] Found transaction by metadata: ${metadataTransaction.transaction_id}`);
           transaction = metadataTransaction;
+        } else {
+          // Strategy 3: Search recent pending transactions (last 5 minutes) as fallback
+          // This helps if metadata wasn't stored correctly
+          console.log(`[Create ID] Not found in metadata, searching recent pending transactions...`);
+          const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+          const { data: recentTransactions, error: recentError } = await supabaseAdmin
+            .from("transactions")
+            .select("*")
+            .eq("status", "pending")
+            .gte("created_at", fiveMinutesAgo)
+            .order("created_at", { ascending: false })
+            .limit(10);
+          
+          if (!recentError && recentTransactions && recentTransactions.length > 0) {
+            // Check if any of these transactions have the tx_ref in metadata
+            for (const tx of recentTransactions) {
+              const txMetadata = tx.metadata as any;
+              if (txMetadata?.flutterwave_tx_ref === paymentReference) {
+                console.log(`[Create ID] Found transaction in recent pending: ${tx.transaction_id}`);
+                transaction = tx;
+                break;
+              }
+            }
+          }
         }
       }
 

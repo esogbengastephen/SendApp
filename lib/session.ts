@@ -4,10 +4,37 @@ const SESSION_COOKIE_NAME = "auth_session";
 const SESSION_MAX_AGE = 30 * 24 * 60 * 60; // 30 days
 
 /**
+ * Polyfill for crypto.randomUUID() for older mobile browsers
+ */
+function getRandomUUID(): string {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    try {
+      return crypto.randomUUID();
+    } catch (e) {
+      console.warn("crypto.randomUUID() failed, using fallback:", e);
+    }
+  }
+  
+  // Fallback for browsers that don't support crypto.randomUUID()
+  // Generate a UUID v4 compliant string
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function(c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+/**
  * Generate a secure session token
  */
 export function generateSessionToken(): string {
-  return crypto.randomUUID() + "-" + Date.now();
+  try {
+    return getRandomUUID() + "-" + Date.now();
+  } catch (e) {
+    console.error("Error generating session token:", e);
+    // Ultimate fallback
+    return Math.random().toString(36).substring(2) + Date.now().toString(36);
+  }
 }
 
 /**

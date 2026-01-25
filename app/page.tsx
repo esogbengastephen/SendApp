@@ -36,19 +36,48 @@ export default function Home() {
       try {
         // Check if user is logged in
         if (!isUserLoggedIn()) {
-          router.push("/auth");
+          try {
+            router.push("/auth");
+          } catch (e) {
+            console.error("Error navigating to auth:", e);
+            // Fallback navigation
+            if (typeof window !== "undefined") {
+              window.location.href = "/auth";
+            }
+          }
           return;
         }
 
         // Verify session is still valid
-        const currentUser = getUserFromStorage();
+        let currentUser;
+        try {
+          currentUser = getUserFromStorage();
+        } catch (e) {
+          console.error("Error getting user from storage:", e);
+          setIsChecking(false);
+          try {
+            router.push("/auth");
+          } catch (navError) {
+            if (typeof window !== "undefined") {
+              window.location.href = "/auth";
+            }
+          }
+          return;
+        }
+
         if (!currentUser) {
           try {
             clearUserSession();
           } catch (e) {
             console.warn("Error clearing session:", e);
           }
-          router.push("/auth");
+          try {
+            router.push("/auth");
+          } catch (e) {
+            if (typeof window !== "undefined") {
+              window.location.href = "/auth";
+            }
+          }
           return;
         }
 
@@ -60,6 +89,10 @@ export default function Home() {
             body: JSON.stringify({ email: currentUser.email }),
           });
 
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
           const data = await response.json();
 
           if (!data.success || !data.exists) {
@@ -70,23 +103,38 @@ export default function Home() {
             } catch (e) {
               console.warn("Error clearing session:", e);
             }
-            router.push("/auth");
+            try {
+              router.push("/auth");
+            } catch (e) {
+              if (typeof window !== "undefined") {
+                window.location.href = "/auth";
+              }
+            }
             return;
           }
 
           // Check if user has passkey - redirect to setup if not
           try {
             const passkeyResponse = await fetch(`/api/user/check-passkey?userId=${currentUser.id}`);
-            const passkeyData = await passkeyResponse.json();
+            
+            if (passkeyResponse.ok) {
+              const passkeyData = await passkeyResponse.json();
 
-            if (passkeyData.success && passkeyData.needsPasskeySetup) {
-              // User doesn't have passkey - redirect to setup
-              router.push("/passkey-setup");
-              return;
+              if (passkeyData.success && passkeyData.needsPasskeySetup) {
+                // User doesn't have passkey - redirect to setup
+                try {
+                  router.push("/passkey-setup");
+                } catch (e) {
+                  if (typeof window !== "undefined") {
+                    window.location.href = "/passkey-setup";
+                  }
+                }
+                return;
+              }
             }
           } catch (error) {
             console.error("Error checking passkey:", error);
-            // Continue to dashboard if check fails
+            // Continue to dashboard if check fails - don't block user
           }
 
           // User exists in database and has passkey - allow access
@@ -100,16 +148,32 @@ export default function Home() {
           } catch (e) {
             console.warn("Error clearing session:", e);
           }
-          router.push("/auth");
+          try {
+            router.push("/auth");
+          } catch (e) {
+            if (typeof window !== "undefined") {
+              window.location.href = "/auth";
+            }
+          }
         }
       } catch (outerError) {
         // Catch any unexpected errors (e.g., router.push failures, localStorage errors)
         console.error("Error in verifyUser:", outerError);
         setIsChecking(false);
+        // Don't throw - let ErrorBoundary handle it if needed
       }
     };
 
-    verifyUser();
+    // Add a small delay to ensure window is available on mobile
+    if (typeof window !== "undefined") {
+      verifyUser();
+    } else {
+      // Wait for window to be available
+      const timer = setTimeout(() => {
+        verifyUser();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
   }, [router]);
 
   if (isChecking) {

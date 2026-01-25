@@ -61,25 +61,35 @@ function PaymentCallbackContent() {
 
         // Strategy 1: Try to find transaction by payment_reference (Flutterwave tx_ref)
         // This works after webhook has processed the payment
+        console.log(`[Payment Callback] Strategy 1: Searching by payment_reference: ${txRef}`);
         let response = await fetch(`/api/transactions/create-id?paymentReference=${encodeURIComponent(txRef)}`);
         let data = await response.json();
+        console.log(`[Payment Callback] Strategy 1 result:`, { success: data.success, exists: data.exists, status: data.status });
 
         // Strategy 2: If not found by payment_reference, search by metadata.flutterwave_tx_ref
         // This helps find transactions even before webhook processes them
         if (!data.success || !data.exists) {
-          console.log(`[Payment Callback] Not found by payment_reference, searching by metadata...`);
+          console.log(`[Payment Callback] Strategy 1 failed, trying Strategy 2: Searching by transactionId: ${transactionId}`);
           
           // Try to find by checking all pending transactions with matching metadata
           // We'll need to add an API endpoint for this, or improve the existing one
           response = await fetch(`/api/transactions/create-id?transactionId=${encodeURIComponent(transactionId)}`);
           data = await response.json();
+          console.log(`[Payment Callback] Strategy 2 result:`, { success: data.success, exists: data.exists, status: data.status });
         }
 
         // Strategy 3: If still not found and we have a transactionId, try direct lookup
         if ((!data.success || !data.exists) && transactionId && transactionId !== txRef) {
-          console.log(`[Payment Callback] Trying direct transaction lookup: ${transactionId}`);
+          console.log(`[Payment Callback] Strategy 2 failed, trying Strategy 3: Direct lookup for: ${transactionId}`);
           response = await fetch(`/api/transactions/create-id?transactionId=${encodeURIComponent(transactionId)}`);
           data = await response.json();
+          console.log(`[Payment Callback] Strategy 3 result:`, { success: data.success, exists: data.exists, status: data.status });
+        }
+        
+        // Log final result for debugging
+        if (!data.success || !data.exists) {
+          console.error(`[Payment Callback] ❌ Transaction not found after all strategies. txRef: ${txRef}, transactionId: ${transactionId}`);
+          console.error(`[Payment Callback] Response data:`, JSON.stringify(data, null, 2));
         }
 
         if (data.success && data.exists) {

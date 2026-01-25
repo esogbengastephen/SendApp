@@ -664,13 +664,19 @@ export default function PaymentForm() {
         });
         
         if (updateResponse.ok) {
-          console.log(`[Flutterwave Payment] ✅ Updated transaction metadata with tx_ref: ${flutterwaveTxRef}`);
+          const updateData = await updateResponse.json();
+          if (updateData.success) {
+            console.log(`[Flutterwave Payment] ✅ Updated transaction metadata with tx_ref: ${flutterwaveTxRef}`);
+          } else {
+            console.error(`[Flutterwave Payment] ❌ Metadata update failed:`, updateData.error);
+          }
         } else {
-          console.warn(`[Flutterwave Payment] ⚠️ Failed to update transaction metadata (non-critical)`);
+          const errorText = await updateResponse.text();
+          console.error(`[Flutterwave Payment] ❌ Metadata update HTTP error (${updateResponse.status}):`, errorText);
         }
-      } catch (updateError) {
-        console.warn(`[Flutterwave Payment] ⚠️ Error updating transaction metadata (non-critical):`, updateError);
-        // Non-critical - continue with payment initialization
+      } catch (updateError: any) {
+        console.error(`[Flutterwave Payment] ❌ Error updating transaction metadata:`, updateError?.message || updateError);
+        // Non-critical - continue with payment initialization, but log the error
       }
       
       const paymentRequest = {
