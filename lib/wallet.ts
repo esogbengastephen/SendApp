@@ -76,27 +76,25 @@ function deriveBitcoinAddress(seed: Buffer): { address: string; privateKey: stri
  */
 function deriveEVMAddress(seedPhrase: string): { address: string; privateKey: string } {
   try {
-    console.log("[Wallet] Creating mnemonic from phrase...");
+    console.log("[Wallet] Creating EVM wallet from seed phrase...");
     
-    // Use ethers v6 API: Create mnemonic and derive wallet
-    const mnemonic = ethers.Mnemonic.fromPhrase(seedPhrase);
-    console.log("[Wallet] Mnemonic created successfully");
-    
-    // In ethers v6, HDNodeWallet.fromMnemonic() creates a wallet at the root
-    // We need to derive the full path from the root
-    // The issue is that we can't use "m/" prefix if the node is already at depth > 0
-    // Solution: Create from mnemonic and derive with full path in one step, or use relative path
-    
-    // Create HDNodeWallet from mnemonic and derive path
-    const evmHdNode = ethers.HDNodeWallet.fromMnemonic(mnemonic);
-    console.log("[Wallet] HDNodeWallet created, depth:", evmHdNode.depth);
-    
-    // Derive the standard Ethereum path: m/44'/60'/0'/0/0
+    // In ethers v6, use fromPhrase() with the derivation path directly
+    // This creates the wallet at the specified path in one step
+    // The standard Ethereum path is: m/44'/60'/0'/0/0
     const derivationPath = "m/44'/60'/0'/0/0";
     console.log("[Wallet] Using derivation path:", derivationPath);
     
-    const evmWallet = evmHdNode.derivePath(derivationPath);
-    console.log("[Wallet] Path derived successfully");
+    // Use fromPhrase() with path - this is the correct ethers v6 API
+    // It creates the wallet at the specified path directly
+    const evmWallet = ethers.HDNodeWallet.fromPhrase(seedPhrase, derivationPath);
+    console.log("[Wallet] ✅ EVM wallet created successfully");
+    console.log("[Wallet] Wallet address:", evmWallet.address);
+    console.log("[Wallet] Wallet path:", evmWallet.path);
+    console.log("[Wallet] Wallet depth:", evmWallet.depth);
+    
+    if (!evmWallet || !evmWallet.address) {
+      throw new Error("Failed to generate EVM wallet address");
+    }
     
     return {
       address: evmWallet.address,
@@ -107,6 +105,7 @@ function deriveEVMAddress(seedPhrase: string): { address: string; privateKey: st
     console.error("[Wallet] Error name:", error?.name);
     console.error("[Wallet] Error message:", error?.message);
     console.error("[Wallet] Error code:", error?.code);
+    console.error("[Wallet] Error stack:", error?.stack);
     throw error;
   }
 }
