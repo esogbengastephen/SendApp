@@ -27,6 +27,11 @@ FLUTTERWAVE_WEBHOOK_SECRET_HASH=your_live_webhook_secret_hash_here
 # Set to "false" to use LIVE API with LIVE keys
 FLUTTERWAVE_USE_TEST_MODE=false
 
+# Force v3 API in production (if v4 credentials are invalid or you prefer v3)
+# Set to "true" to force v3 API even if v4 credentials are set
+# Set to "false" or omit to use v4 API if credentials are available
+FLUTTERWAVE_FORCE_V3=true
+
 # ============================================
 # SETUP INSTRUCTIONS:
 # ============================================

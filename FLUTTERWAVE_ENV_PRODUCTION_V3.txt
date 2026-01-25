@@ -1,0 +1,45 @@
+# ============================================
+# Flutterwave PRODUCTION/LIVE API Configuration (V3)
+# ============================================
+# ⚠️ WARNING: These are LIVE/PRODUCTION keys
+# Real money transactions will occur!
+# 
+# Using V3 API with live credentials (not v4 OAuth2)
+# ============================================
+
+# Flutterwave LIVE Public Key (V3)
+NEXT_PUBLIC_FLUTTERWAVE_PUBLIC_KEY=FLWPUBK-b2e3e0c15403769810d628759060f295-X
+
+# Flutterwave LIVE Secret Key (V3)
+FLUTTERWAVE_SECRET_KEY=FLWSECK-eec53179016e3dda8741fc3298654d55-19beb4cfe0avt-X
+
+# Flutterwave Webhook Secret Hash (for webhook signature verification)
+# ⚠️ IMPORTANT: This is different from the API secret key!
+# Configure this in Flutterwave Dashboard: Settings > Webhooks > Secret hash (Live webhooks section)
+FLUTTERWAVE_WEBHOOK_SECRET_HASH=eec53179016eef6f10dc7c97
+
+# Force PRODUCTION mode (use LIVE API, not sandbox)
+FLUTTERWAVE_USE_TEST_MODE=false
+
+# Force v3 API in production (ignore v4 credentials if set)
+FLUTTERWAVE_FORCE_V3=true
+
+# ============================================
+# SETUP INSTRUCTIONS:
+# ============================================
+# 1. Copy the lines above (without the # comments) to your .env.local file
+# 2. Make sure .env.local is in your project root (same folder as package.json)
+# 3. Add the same variables to Vercel: Settings > Environment Variables
+#    - Make sure to select "Production", "Preview", and "Development" environments
+# 4. Restart your dev server: npm run dev
+# 5. Test the connection: http://localhost:3000/api/test/flutterwave-env
+# 
+# ⚠️ SECURITY WARNINGS:
+# - Never commit .env.local to Git
+# - Never share these keys publicly
+# - These are LIVE keys - real transactions!
+# 
+# 📚 API Documentation:
+# - Getting Started: https://developer.flutterwave.com/docs/getting-started
+# - Environments: https://developer.flutterwave.com/docs/environments
+# ============================================

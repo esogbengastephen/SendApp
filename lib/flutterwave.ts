@@ -20,8 +20,10 @@ const FLUTTERWAVE_USE_TEST_MODE = process.env.FLUTTERWAVE_USE_TEST_MODE !== unde
 // Determine which API version to use
 // IMPORTANT: v4 API is NOT available in test/sandbox environment
 // - Test mode: Always use v3 API (even if v4 credentials are set)
-// - Production mode: Use v4 if credentials available, otherwise v3
-const USE_V4_API = !FLUTTERWAVE_USE_TEST_MODE && isV4Configured();
+// - Production mode: Use v4 if credentials available AND not forced to v3, otherwise v3
+// Force v3 by setting FLUTTERWAVE_FORCE_V3=true (useful if v4 credentials are invalid)
+const FORCE_V3 = process.env.FLUTTERWAVE_FORCE_V3 === "true";
+const USE_V4_API = !FLUTTERWAVE_USE_TEST_MODE && isV4Configured() && !FORCE_V3;
 
 // API Base URLs
 // v4 API: https://f4bexperience.flutterwave.com/ (production) or https://developersandbox-api.flutterwave.com/ (test)
@@ -43,10 +45,17 @@ if (USE_V4_API) {
       console.log(`[Flutterwave] Note: v4 credentials detected but v4 API is not available in test mode. Using v3 API with test keys.`);
     }
   } else {
-    if (!FLUTTERWAVE_SECRET_KEY && !isV4Configured()) {
-      console.warn("FLUTTERWAVE_SECRET_KEY is not set. For v3 API, set FLUTTERWAVE_SECRET_KEY. For v4 API, set FLW_CLIENT_ID and FLW_CLIENT_SECRET.");
+    if (FORCE_V3) {
+      console.log(`[Flutterwave] Using v3 API (Bearer Token) - PRODUCTION (forced): ${FLUTTERWAVE_API_BASE}`);
+      if (isV4Configured()) {
+        console.log(`[Flutterwave] Note: v4 credentials detected but FLUTTERWAVE_FORCE_V3=true. Using v3 API with live keys.`);
+      }
+    } else {
+      if (!FLUTTERWAVE_SECRET_KEY && !isV4Configured()) {
+        console.warn("FLUTTERWAVE_SECRET_KEY is not set. For v3 API, set FLUTTERWAVE_SECRET_KEY. For v4 API, set FLW_CLIENT_ID and FLW_CLIENT_SECRET.");
+      }
+      console.log(`[Flutterwave] Using v3 API (Bearer Token) - PRODUCTION: ${FLUTTERWAVE_API_BASE}`);
     }
-    console.log(`[Flutterwave] Using v3 API (Bearer Token) - PRODUCTION: ${FLUTTERWAVE_API_BASE}`);
   }
 }
 
