@@ -30,18 +30,29 @@ export async function getAccessToken(): Promise<string> {
     return tokenCache.accessToken;
   }
 
+  // Validate credentials are set
   if (!FLW_CLIENT_ID || !FLW_CLIENT_SECRET) {
     throw new Error("Flutterwave v4 credentials not configured. Set FLW_CLIENT_ID and FLW_CLIENT_SECRET.");
   }
 
+  // Trim credentials to remove any whitespace
+  const clientId = FLW_CLIENT_ID.trim();
+  const clientSecret = FLW_CLIENT_SECRET.trim();
+
+  // Validate credentials are not empty after trimming
+  if (!clientId || !clientSecret) {
+    throw new Error("Flutterwave v4 credentials are empty after trimming. Check for whitespace issues.");
+  }
+
   try {
     console.log(`[Flutterwave v4] Requesting access token (${FLUTTERWAVE_USE_TEST_MODE ? 'TEST' : 'PRODUCTION'})`);
+    console.log(`[Flutterwave v4] Client ID: ${clientId.substring(0, 20)}... (length: ${clientId.length})`);
 
     const response = await axios.post(
       "https://idp.flutterwave.com/realms/flutterwave/protocol/openid-connect/token",
       new URLSearchParams({
-        client_id: FLW_CLIENT_ID,
-        client_secret: FLW_CLIENT_SECRET,
+        client_id: clientId,
+        client_secret: clientSecret,
         grant_type: "client_credentials",
       }),
       {
