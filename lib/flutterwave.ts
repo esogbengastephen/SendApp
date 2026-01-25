@@ -298,17 +298,36 @@ export function verifyWebhookSignature(
   
   if (!secretHash) {
     console.warn("[Flutterwave] No webhook secret hash configured. Using API secret key as fallback.");
+    // Still try to verify, but log warning
   }
   
-  // Flutterwave sends the hash in the verif-hash header
-  // We compute the hash using HMAC SHA256 of the payload with the secret hash
-  const computedHash = crypto
+  // According to Flutterwave docs, signature is computed using HMAC-SHA256 and returned as base64
+  // But v3 API might use hex format. Try both formats.
+  
+  // Format 1: Base64 (as per Flutterwave v4 documentation)
+  const computedHashBase64 = crypto
+    .createHmac("sha256", secretHash)
+    .update(payload)
+    .digest("base64");
+  
+  // Format 2: Hex (v3 API format)
+  const computedHashHex = crypto
     .createHmac("sha256", secretHash)
     .update(payload)
     .digest("hex");
 
-  // Compare the received signature with our computed hash
-  return computedHash === signature;
+  // Compare the received signature with both computed hashes
+  // Flutterwave might send it in either format depending on API version
+  const isValidBase64 = computedHashBase64 === signature;
+  const isValidHex = computedHashHex === signature;
+  
+  if (isValidBase64 || isValidHex) {
+    console.log(`[Flutterwave] Signature verification successful (format: ${isValidBase64 ? 'base64' : 'hex'})`);
+    return true;
+  }
+  
+  console.error(`[Flutterwave] Signature mismatch. Expected (base64): ${computedHashBase64.substring(0, 20)}..., Expected (hex): ${computedHashHex.substring(0, 20)}..., Received: ${signature.substring(0, 20)}...`);
+  return false;
 }
 
 /**
