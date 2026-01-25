@@ -64,8 +64,27 @@ export async function getAccessToken(): Promise<string> {
 
     throw new Error("No access token in response");
   } catch (error: any) {
-    console.error("[Flutterwave v4] Token request error:", error.response?.data || error.message);
-    throw new Error(`Failed to get Flutterwave v4 access token: ${error.response?.data?.error_description || error.message}`);
+    const errorDetails = error.response?.data || {};
+    const errorMessage = errorDetails.error_description || errorDetails.error || error.message;
+    
+    console.error("[Flutterwave v4] Token request error:", {
+      status: error.response?.status,
+      statusText: error.response?.statusText,
+      error: errorDetails.error,
+      errorDescription: errorDetails.error_description,
+      hasClientId: !!FLW_CLIENT_ID,
+      clientIdLength: FLW_CLIENT_ID?.length || 0,
+      hasClientSecret: !!FLW_CLIENT_SECRET,
+      clientSecretLength: FLW_CLIENT_SECRET?.length || 0,
+      testMode: FLUTTERWAVE_USE_TEST_MODE,
+    });
+    
+    // Provide more helpful error messages
+    if (error.response?.status === 401) {
+      throw new Error(`Flutterwave v4 authentication failed: Invalid client credentials. Please verify FLW_CLIENT_ID and FLW_CLIENT_SECRET are correct and match (both Live or both Test).`);
+    }
+    
+    throw new Error(`Failed to get Flutterwave v4 access token: ${errorMessage}`);
   }
 }
 

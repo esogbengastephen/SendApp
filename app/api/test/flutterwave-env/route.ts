@@ -5,6 +5,7 @@ import {
   isValidNigerianMobile,
   verifyWebhookSignature 
 } from "@/lib/flutterwave";
+import { getAccessToken, isV4Configured, clearTokenCache } from "@/lib/flutterwave-v4-token";
 import axios from "axios";
 
 /**
@@ -17,6 +18,11 @@ export async function GET(request: NextRequest) {
   const flutterwaveSecretKey = process.env.FLUTTERWAVE_SECRET_KEY;
   const flutterwavePublicKey = process.env.NEXT_PUBLIC_FLUTTERWAVE_PUBLIC_KEY;
   const flutterwaveWebhookSecretHash = process.env.FLUTTERWAVE_WEBHOOK_SECRET_HASH;
+  
+  // Flutterwave v4 credentials
+  const flwClientId = process.env.FLW_CLIENT_ID || process.env.FLUTTERWAVE_CLIENT_ID;
+  const flwClientSecret = process.env.FLW_CLIENT_SECRET || process.env.FLUTTERWAVE_CLIENT_SECRET;
+  const useV4 = isV4Configured();
   // If FLUTTERWAVE_USE_TEST_MODE is explicitly set, use that value
   // Otherwise, default to test mode in development, production mode otherwise
   const useTestMode = process.env.FLUTTERWAVE_USE_TEST_MODE !== undefined
@@ -38,17 +44,31 @@ export async function GET(request: NextRequest) {
   
   const result: any = {
     timestamp: new Date().toISOString(),
+    apiVersion: useV4 ? "v4 (OAuth2)" : "v3 (Bearer Token)",
     credentials: {
-      hasSecretKey: !!flutterwaveSecretKey,
-      hasPublicKey: !!flutterwavePublicKey,
+      // v4 credentials
+      v4: {
+        hasClientId: !!flwClientId,
+        hasClientSecret: !!flwClientSecret,
+        clientIdPrefix: flwClientId ? `${flwClientId.substring(0, 20)}...` : "NOT SET",
+        clientIdLength: flwClientId?.length || 0,
+        clientSecretLength: flwClientSecret?.length || 0,
+        configured: useV4,
+      },
+      // v3 credentials (legacy)
+      v3: {
+        hasSecretKey: !!flutterwaveSecretKey,
+        hasPublicKey: !!flutterwavePublicKey,
+        secretKeyPrefix: flutterwaveSecretKey ? `${flutterwaveSecretKey.substring(0, 15)}...` : "NOT SET",
+        publicKeyPrefix: flutterwavePublicKey ? `${flutterwavePublicKey.substring(0, 15)}...` : "NOT SET",
+        secretKeyLength: flutterwaveSecretKey?.length || 0,
+        publicKeyLength: flutterwavePublicKey?.length || 0,
+        appearsToBeTestKey: isTestKey,
+      },
+      // Common
       hasWebhookSecretHash: !!flutterwaveWebhookSecretHash,
-      secretKeyPrefix: flutterwaveSecretKey ? `${flutterwaveSecretKey.substring(0, 15)}...` : "NOT SET",
-      publicKeyPrefix: flutterwavePublicKey ? `${flutterwavePublicKey.substring(0, 15)}...` : "NOT SET",
       webhookSecretHashPrefix: flutterwaveWebhookSecretHash ? `${flutterwaveWebhookSecretHash.substring(0, 10)}...` : "NOT SET",
-      secretKeyLength: flutterwaveSecretKey?.length || 0,
-      publicKeyLength: flutterwavePublicKey?.length || 0,
       webhookSecretHashLength: flutterwaveWebhookSecretHash?.length || 0,
-      appearsToBeTestKey: isTestKey,
       useTestMode: useTestMode,
       apiBaseUrl: FLUTTERWAVE_API_BASE,
       keyModeMismatch: keyModeMismatch,
@@ -59,9 +79,45 @@ export async function GET(request: NextRequest) {
         ? "⚠️ TEST keys detected but using PRODUCTION mode. Set FLUTTERWAVE_USE_TEST_MODE=true in .env.local"
         : null,
     },
-    allSet: !!(flutterwaveSecretKey && flutterwavePublicKey),
+    allSet: useV4 ? !!(flwClientId && flwClientSecret) : !!(flutterwaveSecretKey && flutterwavePublicKey),
     tests: {},
   };
+
+  // Test 0: v4 OAuth2 Token (if using v4)
+  if (useV4) {
+    try {
+      clearTokenCache(); // Clear cache to force fresh token request
+      const accessToken = await getAccessToken();
+      result.tests.v4OAuth2Token = {
+        success: true,
+        tokenPrefix: accessToken ? `${accessToken.substring(0, 20)}...` : null,
+        tokenLength: accessToken?.length || 0,
+        message: "✅ v4 OAuth2 token obtained successfully",
+      };
+    } catch (error: any) {
+      const errorDetails = error.response?.data || {};
+      result.tests.v4OAuth2Token = {
+        success: false,
+        error: error.message,
+        errorCode: errorDetails.error,
+        errorDescription: errorDetails.error_description,
+        status: error.response?.status,
+        message: error.response?.status === 401
+          ? "❌ v4 OAuth2 authentication failed: Invalid client credentials. Please verify FLW_CLIENT_ID and FLW_CLIENT_SECRET are correct and match (both Live or both Test)."
+          : `❌ v4 OAuth2 token request failed: ${error.message}`,
+        recommendation: error.response?.status === 401
+          ? "1. Verify FLW_CLIENT_ID and FLW_CLIENT_SECRET are set in Vercel environment variables\n2. Ensure both credentials are from the same environment (both Live or both Test)\n3. Check that credentials are copied correctly (no extra spaces or characters)\n4. If using Live credentials, ensure FLUTTERWAVE_USE_TEST_MODE=false"
+          : "Check Vercel logs for more details",
+      };
+    }
+  } else {
+    result.tests.v4OAuth2Token = {
+      success: false,
+      error: "v4 credentials not configured",
+      message: "⚠️ v4 credentials not set - using v3 API",
+      note: "To use v4 API, set FLW_CLIENT_ID and FLW_CLIENT_SECRET in environment variables",
+    };
+  }
 
   // Test 1: API Connection (Balance Check)
   if (result.allSet) {
