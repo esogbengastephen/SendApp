@@ -51,7 +51,7 @@
     "html2canvas": "^1.4.1",
     "jspdf": "^2.5.2",
     "nanoid": "^5.1.6",
-    "next": "^16.0.7",
+    "next": "16.0.10",
     "nodemailer": "^7.0.10",
     "paystack-sdk": "^3.4.1",
     "puppeteer": "^23.10.4",
