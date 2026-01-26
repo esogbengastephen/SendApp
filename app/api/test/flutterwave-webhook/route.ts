@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { getTransaction } from "@/lib/transactions";
+import { getTransaction, updateTransaction } from "@/lib/transactions";
 import { distributeTokens } from "@/lib/token-distribution";
 import { getExchangeRate } from "@/lib/settings";
 import { calculateTransactionFee, calculateFinalTokens, calculateFeeInTokens } from "@/lib/fee-calculation";
