@@ -176,24 +176,73 @@ export async function POST(request: NextRequest) {
       let userId = metadata.user_id || metadata.userId;
 
       // FALLBACK: If metadata is missing, try to find transaction by tx_ref
+      // Try multiple strategies to find the transaction
       if (!transactionId && txRef) {
         console.log(`[Flutterwave Webhook] ⚠️ No transaction_id in metadata. Looking up transaction by tx_ref: ${txRef}`);
         
         try {
-          // Try to find transaction by payment_reference (which might be the tx_ref)
-          const { data: transactionByRef, error: lookupError } = await supabaseAdmin
+          // Strategy 1: Search by payment_reference
+          let transactionByRef = null;
+          let lookupError = null;
+          
+          const { data: txByPaymentRef, error: err1 } = await supabaseAdmin
             .from("transactions")
             .select("transaction_id, wallet_address, user_id, status, ngn_amount, send_amount")
             .eq("payment_reference", txRef)
-            .or(`metadata->>flutterwave_tx_ref.eq.${txRef},paystack_reference.eq.${txRef}`)
             .eq("status", "pending")
             .maybeSingle();
           
-          if (transactionByRef && !lookupError) {
-            console.log(`[Flutterwave Webhook] ✅ Found transaction by tx_ref: ${transactionByRef.transaction_id}`);
+          if (txByPaymentRef && !err1) {
+            transactionByRef = txByPaymentRef;
+            console.log(`[Flutterwave Webhook] ✅ Found transaction by payment_reference: ${transactionByRef.transaction_id}`);
+          } else {
+            // Strategy 2: Search by metadata->>flutterwave_tx_ref
+            const { data: txByMetadata, error: err2 } = await supabaseAdmin
+              .from("transactions")
+              .select("transaction_id, wallet_address, user_id, status, ngn_amount, send_amount")
+              .eq("metadata->>flutterwave_tx_ref", txRef)
+              .eq("status", "pending")
+              .maybeSingle();
+            
+            if (txByMetadata && !err2) {
+              transactionByRef = txByMetadata;
+              console.log(`[Flutterwave Webhook] ✅ Found transaction by metadata->>flutterwave_tx_ref: ${transactionByRef.transaction_id}`);
+            } else {
+              // Strategy 3: Search recent pending transactions (last 10 minutes) and check metadata
+              const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+              const { data: recentTxs, error: err3 } = await supabaseAdmin
+                .from("transactions")
+                .select("transaction_id, wallet_address, user_id, status, ngn_amount, send_amount, metadata")
+                .eq("status", "pending")
+                .gte("created_at", tenMinutesAgo)
+                .order("created_at", { ascending: false })
+                .limit(10);
+              
+              if (recentTxs && !err3) {
+                // Check each transaction's metadata for matching tx_ref
+                for (const tx of recentTxs) {
+                  const txMetadata = tx.metadata as any || {};
+                  if (txMetadata.flutterwave_tx_ref === txRef || 
+                      txMetadata.transaction_id === txRef ||
+                      tx.payment_reference === txRef) {
+                    transactionByRef = tx;
+                    console.log(`[Flutterwave Webhook] ✅ Found transaction in recent pending: ${transactionByRef.transaction_id}`);
+                    break;
+                  }
+                }
+              }
+              
+              if (!transactionByRef) {
+                lookupError = err2 || err3;
+              }
+            }
+          }
+          
+          if (transactionByRef) {
             transactionId = transactionByRef.transaction_id;
             walletAddress = transactionByRef.wallet_address || walletAddress;
             userId = transactionByRef.user_id || userId;
+            console.log(`[Flutterwave Webhook] ✅ Transaction found: ${transactionId}, wallet: ${walletAddress || "MISSING"}`);
           } else {
             console.error(`[Flutterwave Webhook] ❌ Transaction not found by tx_ref: ${txRef}`);
             console.error(`[Flutterwave Webhook] Lookup error:`, lookupError);
@@ -206,8 +255,8 @@ export async function POST(request: NextRequest) {
       // Check if this is an on-ramp payment (has transaction_id)
       if (transactionId) {
         console.log(`[Flutterwave Webhook] On-ramp payment detected: transaction ${transactionId}`);
-        console.log(`[Flutterwave Webhook] Wallet address: ${walletAddress || "MISSING"}`);
-        console.log(`[Flutterwave Webhook] User ID: ${userId || "MISSING"}`);
+        console.log(`[Flutterwave Webhook] Wallet address from metadata: ${walletAddress || "MISSING"}`);
+        console.log(`[Flutterwave Webhook] User ID from metadata: ${userId || "MISSING"}`);
 
         // Find existing transaction
         const transaction = await getTransaction(transactionId);
@@ -218,6 +267,17 @@ export async function POST(request: NextRequest) {
             { success: false, error: "Transaction not found" },
             { status: 404 }
           );
+        }
+
+        // Ensure we have wallet address and user_id from transaction if missing from metadata
+        if (!walletAddress && transaction.walletAddress) {
+          walletAddress = transaction.walletAddress;
+          console.log(`[Flutterwave Webhook] ✅ Retrieved wallet address from transaction record: ${walletAddress}`);
+        }
+        
+        if (!userId && transaction.userId) {
+          userId = transaction.userId;
+          console.log(`[Flutterwave Webhook] ✅ Retrieved user_id from transaction record: ${userId}`);
         }
 
         // Check if already processed
@@ -383,17 +443,23 @@ export async function POST(request: NextRequest) {
           );
         }
       } else {
-        // Not an on-ramp payment - no transaction_id found
+        // Not an on-ramp payment - no transaction_id found after all lookup strategies
         console.log(`[Flutterwave Webhook] ⚠️ No transaction_id found in metadata or by tx_ref lookup`);
         console.log(`[Flutterwave Webhook] tx_ref: ${txRef}`);
         console.log(`[Flutterwave Webhook] Metadata keys:`, Object.keys(metadata));
         console.log(`[Flutterwave Webhook] Full metadata:`, JSON.stringify(metadata, null, 2));
+        console.log(`[Flutterwave Webhook] Charge data keys:`, Object.keys(chargeData));
+        console.log(`[Flutterwave Webhook] Full chargeData:`, JSON.stringify(chargeData, null, 2));
         console.log(`[Flutterwave Webhook] This might be a regular payment (not on-ramp), skipping token distribution`);
         
+        // Return success but with a note that metadata is missing
+        // The payment was successful, but we can't process it without transaction_id
         return NextResponse.json({
           success: true,
           message: "Payment received but no transaction_id found. This might not be an on-ramp payment.",
           note: "Enable 'Add meta to webhook' in Flutterwave dashboard to include metadata in webhooks.",
+          tx_ref: txRef,
+          suggestion: "Check Flutterwave dashboard > Settings > Webhooks > 'Add meta to webhook' should be enabled",
         });
       }
     }
