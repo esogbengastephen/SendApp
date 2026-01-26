@@ -127,11 +127,6 @@ export async function POST(request: NextRequest) {
     console.log(`[Test Webhook] Fee (NGN): ${feeNGN}, Fee (SEND): ${feeInSEND}`);
     console.log(`[Test Webhook] Final SEND amount: ${finalSendAmount}`);
 
-    // Update transaction status to processing
-    await updateTransaction(transaction.transactionId, {
-      status: "processing",
-    });
-
     // Record revenue
     const revenueResult = await recordRevenue(transaction.transactionId, feeNGN, feeInTokens.toString());
     if (!revenueResult.success) {
