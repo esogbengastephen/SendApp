@@ -212,7 +212,7 @@ export async function POST(request: NextRequest) {
               const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
               const { data: recentTxs, error: err3 } = await supabaseAdmin
                 .from("transactions")
-                .select("transaction_id, wallet_address, user_id, status, ngn_amount, send_amount, metadata")
+                .select("transaction_id, wallet_address, user_id, status, ngn_amount, send_amount, metadata, payment_reference")
                 .eq("status", "pending")
                 .gte("created_at", tenMinutesAgo)
                 .order("created_at", { ascending: false })
