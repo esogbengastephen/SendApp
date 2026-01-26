@@ -119,9 +119,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Calculate fees and final token amount
-    const feeNGN = calculateTransactionFee(transaction.ngnAmount);
+    const feeNGN = await calculateTransactionFee(transaction.ngnAmount);
     const feeInTokens = calculateFeeInTokens(feeNGN, exchangeRate);
-    const finalSendAmount = calculateFinalTokens(transaction.ngnAmount, exchangeRate, feeInTokens);
+    const finalSendAmount = calculateFinalTokens(transaction.ngnAmount, exchangeRate, parseFloat(feeInTokens));
 
     console.log(`[Test Webhook] Exchange rate: ${exchangeRate}`);
     console.log(`[Test Webhook] Fee (NGN): ${feeNGN}, Fee (SEND): ${feeInTokens}`);
