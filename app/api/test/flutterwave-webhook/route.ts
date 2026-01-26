@@ -182,7 +182,7 @@ export async function POST(request: NextRequest) {
     await updateTransaction(transaction.transactionId, {
       status: "completed",
       txHash: distributionResult.txHash || "",
-      completedAt: new Date().toISOString(),
+      completedAt: new Date(),
     });
 
     // Send token distribution email
