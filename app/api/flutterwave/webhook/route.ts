@@ -71,10 +71,19 @@ export async function POST(request: NextRequest) {
     // Verify webhook signature
     const isValid = verifyWebhookSignature(body, signature);
     if (!isValid) {
-      console.error("[Flutterwave Webhook] Invalid signature");
-      console.error("[Flutterwave Webhook] Received signature:", signature.substring(0, 20) + "...");
+      console.error("[Flutterwave Webhook] ❌ Invalid signature - Webhook rejected");
+      console.error("[Flutterwave Webhook] Received signature:", signature.substring(0, 30) + "...");
+      console.error("[Flutterwave Webhook] ⚠️ This usually means FLUTTERWAVE_WEBHOOK_SECRET_HASH in Vercel doesn't match the secret hash in Flutterwave Dashboard");
+      console.error("[Flutterwave Webhook] 📋 Action required: Check Flutterwave Dashboard > Settings > Webhooks > Secret hash and ensure it matches Vercel env var");
+      
+      // Return 200 to prevent Flutterwave from retrying (we'll process manually if needed)
+      // But log the error for debugging
       return NextResponse.json(
-        { success: false, error: "Invalid signature" },
+        { 
+          success: false, 
+          error: "Invalid signature",
+          message: "Webhook signature verification failed. Check FLUTTERWAVE_WEBHOOK_SECRET_HASH configuration.",
+        },
         { status: 401 }
       );
     }

@@ -377,11 +377,19 @@ export function verifyWebhookSignature(
   const isValidHex = computedHashHex === signature;
   
   if (isValidBase64 || isValidHex) {
-    console.log(`[Flutterwave] Signature verification successful (format: ${isValidBase64 ? 'base64' : 'hex'})`);
+    console.log(`[Flutterwave] ✅ Signature verification successful (format: ${isValidBase64 ? 'base64' : 'hex'})`);
     return true;
   }
   
-  console.error(`[Flutterwave] Signature mismatch. Expected (base64): ${computedHashBase64.substring(0, 20)}..., Expected (hex): ${computedHashHex.substring(0, 20)}..., Received: ${signature.substring(0, 20)}...`);
+  // Enhanced error logging for debugging
+  console.error(`[Flutterwave] ❌ Signature mismatch detected`);
+  console.error(`[Flutterwave] Expected (base64): ${computedHashBase64.substring(0, 30)}...`);
+  console.error(`[Flutterwave] Expected (hex): ${computedHashHex.substring(0, 30)}...`);
+  console.error(`[Flutterwave] Received: ${signature.substring(0, 30)}...`);
+  console.error(`[Flutterwave] Secret hash configured: ${secretHash ? 'YES (length: ' + secretHash.length + ')' : 'NO'}`);
+  console.error(`[Flutterwave] Using webhook secret hash: ${!!FLUTTERWAVE_WEBHOOK_SECRET_HASH}`);
+  console.error(`[Flutterwave] ⚠️ TROUBLESHOOTING: Ensure FLUTTERWAVE_WEBHOOK_SECRET_HASH in Vercel exactly matches the secret hash in Flutterwave Dashboard > Settings > Webhooks`);
+  
   return false;
 }
 
