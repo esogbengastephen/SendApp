@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
     console.log(`[Test Webhook] Final SEND amount: ${finalSendAmount}`);
 
     // Record revenue
-    const revenueResult = await recordRevenue(transaction.transactionId, feeNGN, feeInTokens.toString());
+    const revenueResult = await recordRevenue(transaction.transactionId, feeNGN, feeInSEND);
     if (!revenueResult.success) {
       console.error(`[Test Webhook] ⚠️ Failed to record revenue: ${revenueResult.error}`);
     }
