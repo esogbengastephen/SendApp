@@ -120,11 +120,11 @@ export async function POST(request: NextRequest) {
 
     // Calculate fees and final token amount
     const feeNGN = await calculateTransactionFee(transaction.ngnAmount);
-    const feeInTokens = calculateFeeInTokens(feeNGN, exchangeRate);
-    const finalSendAmount = calculateFinalTokens(transaction.ngnAmount, exchangeRate, parseFloat(feeInTokens));
+    const feeInSEND = calculateFeeInTokens(feeNGN, exchangeRate);
+    const finalSendAmount = calculateFinalTokens(transaction.ngnAmount, feeNGN, exchangeRate);
 
     console.log(`[Test Webhook] Exchange rate: ${exchangeRate}`);
-    console.log(`[Test Webhook] Fee (NGN): ${feeNGN}, Fee (SEND): ${feeInTokens}`);
+    console.log(`[Test Webhook] Fee (NGN): ${feeNGN}, Fee (SEND): ${feeInSEND}`);
     console.log(`[Test Webhook] Final SEND amount: ${finalSendAmount}`);
 
     // Update transaction status to processing
@@ -223,9 +223,9 @@ export async function POST(request: NextRequest) {
       message: "Webhook processing completed successfully",
       transactionId: transaction.transactionId,
       txHash: distributionResult.txHash,
-      sendAmount: finalSendAmount.toString(),
+      sendAmount: finalSendAmount,
       feeNGN,
-      feeInTokens: feeInTokens.toString(),
+      feeInTokens: feeInSEND,
       foundBy,
     });
   } catch (error: any) {
