@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { supabaseAdmin } from "@/lib/supabase";
 import { getTotalRevenueInSEND } from "@/lib/revenue";
 
 export async function GET() {
@@ -18,8 +18,9 @@ export async function GET() {
       return `${sign}${change.toFixed(1)}%`;
     };
 
+    // Use supabaseAdmin to bypass RLS - admin stats need full access to all tables
     // Query all onramp transactions
-    const { data: allTransactions, error: transactionsError } = await supabase
+    const { data: allTransactions, error: transactionsError } = await supabaseAdmin
       .from("transactions")
       .select("*");
 
@@ -31,7 +32,7 @@ export async function GET() {
     const transactions = allTransactions || [];
 
     // Query all offramp transactions
-    const { data: allOfframpTransactions, error: offrampError } = await supabase
+    const { data: allOfframpTransactions, error: offrampError } = await supabaseAdmin
       .from("offramp_transactions")
       .select("*");
 
@@ -43,7 +44,7 @@ export async function GET() {
     const offrampTransactions = allOfframpTransactions || [];
 
     // Query all users for KYC and smart wallet stats - get count first for accurate total
-    const { count: totalUsersCount, error: countError } = await supabase
+    const { count: totalUsersCount, error: countError } = await supabaseAdmin
       .from("users")
       .select("*", { count: "exact", head: true });
 
@@ -51,9 +52,9 @@ export async function GET() {
       console.error("Supabase error (users count):", countError);
     }
 
-    const { data: allUsers, error: usersError } = await supabase
+    const { data: allUsers, error: usersError } = await supabaseAdmin
       .from("users")
-      .select("id, email, flutterwave_kyc_tier, flutterwave_nin, smart_wallet_address, solana_wallet_address");
+      .select("id, email, flutterwave_kyc_tier, smart_wallet_address, solana_wallet_address");
 
     if (usersError) {
       console.error("Supabase error (users):", usersError);
@@ -220,6 +221,11 @@ export async function GET() {
       total: totalUsers,
     };
 
+    // Total volume processed (TV): all NGN that flowed through the app (onramp + offramp)
+    const currentTotalVolume = currentTotalRevenue + currentOfframpVolume;
+    const previousTotalVolume = previousTotalRevenue + previousOfframpVolume;
+    const allTimeTotalVolume = (allTimeTotalRevenue || 0) + (offrampTotalVolume || 0);
+
     // Calculate percentage changes
     const percentageChanges = {
       totalTransactions: calculatePercentageChange(
@@ -234,6 +240,7 @@ export async function GET() {
         currentTotalTokensDistributed,
         previousTotalTokensDistributed
       ),
+      totalVolumeProcessed: calculatePercentageChange(currentTotalVolume, previousTotalVolume),
       pendingPayments: calculatePercentageChange(
         currentPeriod.filter((tx) => tx.status === "pending").length,
         previousPeriod.filter((tx) => tx.status === "pending").length
@@ -284,6 +291,9 @@ export async function GET() {
     const stats = {
       // User stats
       totalUsers: totalUsers || 0,
+      
+      // Total volume processed (TV): all funds processed by the app (onramp + offramp NGN)
+      totalVolumeProcessed: allTimeTotalVolume,
       
       // Onramp stats
       totalTransactions: transactions.length || 0,
@@ -368,9 +378,19 @@ export async function GET() {
       stats,
     });
   } catch (error: any) {
-    console.error("Error fetching stats:", error);
+    console.error("[Admin Stats] Error:", error?.message || error);
+    const details = error?.message || String(error);
+    const isConfigError = !process.env.SUPABASE_SERVICE_ROLE_KEY ||
+      process.env.SUPABASE_SERVICE_ROLE_KEY.includes("placeholder");
     return NextResponse.json(
-      { success: false, error: "Failed to fetch stats", details: error.message },
+      {
+        success: false,
+        error: "Failed to fetch stats",
+        details,
+        hint: isConfigError
+          ? "Ensure SUPABASE_SERVICE_ROLE_KEY is set in .env.local (from Supabase Dashboard → Settings → API → service_role)."
+          : undefined,
+      },
       { status: 500 }
     );
   }

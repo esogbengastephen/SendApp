@@ -167,6 +167,32 @@ function PaymentCallbackContent() {
     }
   }, [txRef, statusParam]);
 
+  // When loaded inside payment iframe, tell parent so it can close modal and redirect
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.self === window.top) return;
+    if (status !== "success" && status !== "error") return;
+    if (!txRef) return;
+    window.parent.postMessage(
+      { type: "FLUTTERWAVE_PAYMENT_DONE", tx_ref: txRef, status },
+      "*"
+    );
+  }, [status, txRef]);
+
+  // When loaded in popup (opened from payment form), redirect main window to this callback and close popup
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.opener) return;
+    if (status !== "success" && status !== "error") return;
+    if (!txRef) return;
+    const url = `${window.location.pathname}${window.location.search}`;
+    try {
+      window.opener.location.href = url;
+    } catch (_) {
+      // Cross-origin or opener closed; ignore
+    }
+    window.close();
+  }, [status, txRef]);
+
   return (
     <div className="flex items-center justify-center min-h-screen bg-background-light dark:bg-background-dark p-4">
       <div className="w-full max-w-md">

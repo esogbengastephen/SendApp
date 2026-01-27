@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { useAccount } from "wagmi";
 import { DEPOSIT_ACCOUNT } from "@/lib/constants";
 
@@ -1135,8 +1135,8 @@ export default function SettingsPage() {
                     </tr>
                   ) : (
                     admins.map((admin) => (
-                      <>
-                        <tr key={admin.id} className="border-b border-slate-200 dark:border-slate-700">
+                      <Fragment key={admin.id}>
+                        <tr className="border-b border-slate-200 dark:border-slate-700">
                           <td className="py-3 px-4">
                             <code className="text-xs bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded">
                               {admin.wallet_address.slice(0, 10)}...{admin.wallet_address.slice(-8)}
@@ -1218,7 +1218,7 @@ export default function SettingsPage() {
                             </td>
                           </tr>
                         )}
-                      </>
+                      </Fragment>
                     ))
                   )}
                 </tbody>

@@ -725,57 +725,107 @@ export default function PaymentForm() {
         hasMetadata: !!paymentRequest.metadata,
       });
 
-      let requestBody: string;
-      try {
-        requestBody = JSON.stringify(paymentRequest);
-        console.log(`[Flutterwave Payment] Request body length: ${requestBody.length} bytes`);
-      } catch (jsonError: any) {
-        console.error(`[Flutterwave Payment] JSON stringify error:`, jsonError);
-        throw new Error(`Failed to prepare request: ${jsonError.message}`);
+      // Flutterwave Inline: open payment in modal instead of redirecting
+      const pubKey = process.env.NEXT_PUBLIC_FLUTTERWAVE_PUBLIC_KEY;
+      if (!pubKey || pubKey.trim() === "") {
+        throw new Error("Flutterwave is not configured. Please set NEXT_PUBLIC_FLUTTERWAVE_PUBLIC_KEY.");
       }
 
-      const processResponse = await fetch("/api/flutterwave/initialize-payment", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const fwConfig = {
+        public_key: pubKey,
+        tx_ref: flutterwaveTxRef,
+        amount: parseFloat(ngnAmount),
+        currency: "NGN" as const,
+        customer: {
+          email: user.email.trim(),
+          name: (user as { full_name?: string }).full_name || user.email.split("@")[0] || "Customer",
+          phone_number: (user as { mobile_number?: string; phone_number?: string }).mobile_number ||
+            (user as { mobile_number?: string; phone_number?: string }).phone_number ||
+            "",
         },
-        body: requestBody,
-      });
+        redirect_url: callbackUrl,
+        customizations: {
+          title: "FlipPay - SEND Token Purchase",
+          description: "Purchase SEND tokens with Naira",
+          logo: typeof window !== "undefined" ? `${window.location.origin}/logo.png` : "",
+        },
+        meta: paymentRequest.metadata,
+        payment_options: "card,account,ussd,transfer,banktransfer",
+      };
 
-      if (!processResponse.ok) {
-        const errorText = await processResponse.text();
-        console.error("Payment processing failed:", errorText);
-        // Try to parse as JSON for better error message
-        try {
-          const errorData = JSON.parse(errorText);
-          throw new Error(errorData.error || `Payment processing failed: ${processResponse.status}`);
-        } catch {
-          throw new Error(`Payment processing failed: ${processResponse.status} ${errorText}`);
+      // Ensure Flutterwave script is loaded: poll for FlutterwaveCheckout, then inject our own script if still missing (retry instead of "still loading" error)
+      const ensureFlutterwave = (): Promise<void> => {
+        if (typeof window === "undefined") return Promise.reject(new Error("Window not available"));
+        const win = window as unknown as { FlutterwaveCheckout?: (opts: unknown) => void };
+        if (win.FlutterwaveCheckout) return Promise.resolve();
+
+        const FW_URL = "https://checkout.flutterwave.com/v3.js";
+        const pollMs = 200;
+        const initialWait = 6000; // poll 6s for layout script
+
+        return new Promise((resolve, reject) => {
+          const pollStart = Date.now();
+          const id = setInterval(() => {
+            if (win.FlutterwaveCheckout) {
+              clearInterval(id);
+              resolve();
+              return;
+            }
+            if (Date.now() - pollStart < initialWait) return;
+
+            clearInterval(id);
+            // Layout script didn't expose FlutterwaveCheckout in time; inject our own (retry)
+            const script = document.createElement("script");
+            script.src = FW_URL;
+            script.async = true;
+            script.onload = () => resolve();
+            script.onerror = () => reject(new Error("Could not load payment form. Check your connection or try again."));
+            document.body.appendChild(script);
+          }, pollMs);
+        });
+      };
+
+      try {
+        await ensureFlutterwave();
+        const fw = (window as unknown as { FlutterwaveCheckout?: (opts: typeof fwConfig) => void }).FlutterwaveCheckout;
+        if (typeof fw !== "function") {
+          throw new Error("Payment form did not load.");
         }
+        fw(fwConfig);
+        console.log("[Flutterwave Payment] Inline checkout modal opened");
+        setIsLoading(false);
+        return;
+      } catch (inlineError: unknown) {
+        // Inline script failed to load or run; fall back to redirect so the user can still pay
+        console.warn("[Flutterwave Payment] Inline failed, falling back to redirect:", (inlineError as Error)?.message);
       }
 
-      const processData = await processResponse.json();
-      console.log("[Flutterwave Payment] Response:", processData);
-
-      if (!processData.success) {
-        throw new Error(processData.error || "Failed to initialize payment");
+      // Fallback: redirect to Flutterwave hosted page
+      const initRes = await fetch("/api/flutterwave/initialize-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(paymentRequest),
+      });
+      const initData = await initRes.json();
+      if (!initRes.ok || !initData.success) {
+        throw new Error(initData.error || "Failed to start payment");
       }
-
-      // Redirect to Flutterwave checkout page
-      if (processData.authorization_url || processData.link) {
-        const paymentUrl = processData.authorization_url || processData.link;
-        console.log(`[Flutterwave Payment] Redirecting to: ${paymentUrl}`);
-        
-        // Redirect user to Flutterwave checkout
-        window.location.href = paymentUrl;
-      } else {
+      const paymentUrl = initData.authorization_url || initData.link;
+      if (!paymentUrl) {
         throw new Error("No payment URL received from Flutterwave");
       }
+      window.location.href = paymentUrl;
+      setIsLoading(false);
     } catch (error: any) {
       console.error("Payment error:", error);
+      const msg = error?.message || "An error occurred. Please try again.";
+      const isCredentialError =
+        /Invalid client credentials|FLW_CLIENT_ID|FLW_CLIENT_SECRET/i.test(msg);
       setModalData({
         title: "Payment Error",
-        message: error.message || "An error occurred. Please try again.",
+        message: isCredentialError
+          ? "Flutterwave v4 credentials are invalid or mismatched. Options: (1) Add FLW_CLIENT_ID and FLW_CLIENT_SECRET from Dashboard → Settings → API → \"Switch to v4 live API keys\" (both Live or both Test). (2) Or use v3: set FLUTTERWAVE_FORCE_V3=true and FLUTTERWAVE_SECRET_KEY in .env.local. Restart the dev server after changing."
+          : msg,
         type: "error",
       });
       setShowModal(true);
@@ -953,7 +1003,7 @@ export default function PaymentForm() {
                 disabled={!transactionsEnabled || isLoading || !ngnAmount || !walletAddress}
                 className="w-full bg-primary text-slate-900 font-bold py-3 sm:py-3 px-4 rounded-md hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-slate-900 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
               >
-                {isLoading ? "Processing..." : transactionsEnabled ? "Pay with Flutterwave" : "Transactions Disabled"}
+                {isLoading ? "Processing..." : transactionsEnabled ? "Pay now" : "Transactions Disabled"}
               </button>
             </div>
           </form>

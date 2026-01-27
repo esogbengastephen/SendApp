@@ -23,6 +23,9 @@ interface EnhancedStats {
   // User stats
   totalUsers?: number;
   
+  // Total volume processed (TV): all funds processed by the app
+  totalVolumeProcessed?: number;
+  
   // Onramp stats
   totalTransactions: number;
   totalRevenue: number;
@@ -101,6 +104,7 @@ interface EnhancedStats {
     totalTransactions: string;
     totalRevenue: string;
     totalTokensDistributed: string;
+    totalVolumeProcessed?: string;
     pendingPayments: string;
     successfulPayments: string;
     failedPayments: string;
@@ -215,6 +219,14 @@ export default function AdminDashboard() {
   ] : [];
 
   const statCards = [
+    {
+      title: "Total Volume (TV)",
+      value: loading ? "..." : `₦${(stats.totalVolumeProcessed ?? stats.revenueBreakdown?.total ?? 0).toLocaleString()}`,
+      icon: "savings",
+      color: "bg-primary",
+      change: stats.percentageChanges?.totalVolumeProcessed ?? "0%",
+      subtitle: "All funds processed (onramp + offramp)",
+    },
     {
       title: "Total Users",
       value: loading ? "..." : (stats.totalUsers || 0).toLocaleString(),
@@ -365,6 +377,11 @@ export default function AdminDashboard() {
             <h3 className="text-xs sm:text-sm font-medium text-medium-grey dark:text-light-grey mb-1">
               {stat.title}
             </h3>
+            {"subtitle" in stat && stat.subtitle && (
+              <p className="text-xs text-medium-grey dark:text-light-grey mb-1">
+                {stat.subtitle}
+              </p>
+            )}
             <p className="text-xl sm:text-2xl font-bold text-text-primary dark:text-text-primary-dark">
               {loading ? "..." : stat.value}
             </p>
@@ -676,6 +693,15 @@ export default function AdminDashboard() {
                 payment
               </span>
               <span className="text-text-primary dark:text-text-primary-dark">Verify Pending Payments</span>
+            </Link>
+            <Link
+              href="/admin/invoices"
+              className="flex items-center gap-3 p-3 rounded-lg bg-light-blue dark:bg-background-dark hover:opacity-80 transition-opacity"
+            >
+              <span className="material-icons-outlined" style={{ color: COLORS.primary }}>
+                description
+              </span>
+              <span className="text-text-primary dark:text-text-primary-dark">View Invoices</span>
             </Link>
           </div>
         </div>

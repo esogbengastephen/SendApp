@@ -13,12 +13,14 @@ interface Payment {
   walletAddress?: string | null;
   sendAmount?: string | null;
   txHash?: string | null;
+  source?: string;
 }
 
 export default function PaymentsPage() {
   const [payments, setPayments] = useState<Payment[]>([]);
   const [loading, setLoading] = useState(true);
   const [verifying, setVerifying] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchPayments();
@@ -26,30 +28,56 @@ export default function PaymentsPage() {
 
   const fetchPayments = async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       const response = await fetch("/api/admin/payments");
-      const data = await response.json();
-      
-      if (data.success) {
+      const contentType = response.headers.get("content-type") || "";
+      let data: { success?: boolean; payments?: Payment[]; error?: string; details?: string } = {};
+      if (contentType.includes("application/json")) {
+        try {
+          data = await response.json();
+        } catch {
+          data = { error: `Invalid JSON (status ${response.status})` };
+        }
+      } else {
+        data = { error: response.ok ? "Server returned non-JSON" : `Request failed (${response.status})` };
+      }
+
+      if (data.success === true && Array.isArray(data.payments)) {
         setPayments(data.payments);
       } else {
-        console.error("Failed to fetch payments:", data.error);
+        const msg =
+          data.error ||
+          data.details ||
+          (response.ok ? "Server returned no payments data." : `Request failed (${response.status}).`);
+        setFetchError(msg);
+        if (process.env.NODE_ENV === "development") {
+          const extra = data.error || data.details ? null : (Object.keys(data).length ? data : "empty response");
+          console.warn("Payments fetch failed:", response.status, msg, extra ?? "");
+        }
       }
     } catch (error) {
-      console.error("Error fetching payments:", error);
+      const msg = error instanceof Error ? error.message : "Could not load payments";
+      setFetchError(msg);
+      if (process.env.NODE_ENV === "development") {
+        console.error("Payments fetch error:", msg, error);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const handleVerifyPayment = async (reference: string) => {
+  const handleVerifyPayment = async (reference: string, source?: string) => {
+    if (source === "Flutterwave") {
+      alert("Flutterwave payments are verified via webhook. Status is already up to date.");
+      return;
+    }
     setVerifying(reference);
     try {
       const response = await fetch(`/api/paystack/verify?reference=${reference}`);
       const data = await response.json();
       
       if (data.success) {
-        // Refresh payments list
         await fetchPayments();
         alert("Payment verified successfully!");
       } else {
@@ -70,7 +98,7 @@ export default function PaymentsPage() {
           Payment Verification
         </h1>
         <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 mt-1 sm:mt-2">
-          Verify and manage Paystack payments
+          Verify and manage payments (Paystack & Flutterwave)
         </p>
       </div>
 
@@ -90,6 +118,9 @@ export default function PaymentsPage() {
                   Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
+                  Source
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
                   Date
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
@@ -100,13 +131,26 @@ export default function PaymentsPage() {
             <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-slate-500">
+                  <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
                     Loading payments...
+                  </td>
+                </tr>
+              ) : fetchError ? (
+                <tr>
+                  <td colSpan={6} className="px-6 py-8 text-center">
+                    <p className="text-slate-600 dark:text-slate-400 mb-2">{fetchError}</p>
+                    <button
+                      type="button"
+                      onClick={fetchPayments}
+                      className="bg-primary text-slate-900 font-medium px-4 py-2 rounded-lg hover:opacity-90 transition-opacity text-sm"
+                    >
+                      Retry
+                    </button>
                   </td>
                 </tr>
               ) : payments.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-slate-500">
+                  <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
                     No payments found
                   </td>
                 </tr>
@@ -147,13 +191,16 @@ export default function PaymentsPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">
+                      {payment.source || "—"}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">
                       {new Date(payment.createdAt).toLocaleString()}
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex flex-col gap-2">
-                        {!payment.verified && payment.status === "success" && (
+                        {!payment.verified && payment.status === "success" && payment.source === "Paystack" && (
                           <button
-                            onClick={() => handleVerifyPayment(payment.reference)}
+                            onClick={() => handleVerifyPayment(payment.reference, payment.source)}
                             disabled={verifying === payment.reference}
                             className="bg-primary text-slate-900 font-medium px-3 py-1 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 text-xs"
                           >

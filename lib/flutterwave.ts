@@ -581,15 +581,35 @@ export interface PaymentLinkResponse {
  * Initialize Flutterwave payment (creates payment link/checkout)
  * Similar to Paystack's initializeTransaction but uses Flutterwave API
  */
+// v3 base URL and payments path (used when v4 auth fails and v3 secret is set)
+const FLUTTERWAVE_V3_BASE = FLUTTERWAVE_USE_TEST_MODE
+  ? "https://developersandbox-api.flutterwave.com/v3"
+  : "https://api.flutterwave.com/v3";
+
 export async function initializePayment(
   params: InitializePaymentParams
 ): Promise<{ success: boolean; data?: PaymentLinkResponse["data"]; error?: string }> {
   try {
     // Get authentication header (v4 uses OAuth2 token, v3 uses secret key)
     let authHeader: string;
+    let useV4 = USE_V4_API;
+    let apiBase = FLUTTERWAVE_API_BASE;
+
     if (USE_V4_API) {
-      const accessToken = await getAccessToken();
-      authHeader = `Bearer ${accessToken}`;
+      try {
+        const accessToken = await getAccessToken();
+        authHeader = `Bearer ${accessToken}`;
+      } catch (v4Err: any) {
+        const isInvalidCreds = /Invalid client credentials|invalid_client/i.test(v4Err?.message || "");
+        if (isInvalidCreds && FLUTTERWAVE_SECRET_KEY?.trim()) {
+          console.warn("[Flutterwave] v4 auth failed, falling back to v3:", v4Err?.message);
+          useV4 = false;
+          apiBase = FLUTTERWAVE_V3_BASE;
+          authHeader = `Bearer ${FLUTTERWAVE_SECRET_KEY.trim()}`;
+        } else {
+          throw v4Err;
+        }
+      }
     } else {
       if (!FLUTTERWAVE_SECRET_KEY) {
         return {
@@ -624,12 +644,12 @@ export async function initializePayment(
     }
 
     console.log(`[Flutterwave Payment] Initializing payment: ${params.amount} NGN, txRef: ${params.txRef}`);
-    console.log(`[Flutterwave Payment] Using API: ${USE_V4_API ? 'v4' : 'v3'}`);
+    console.log(`[Flutterwave Payment] Using API: ${useV4 ? 'v4' : 'v3'}`);
 
     // v4 API uses different endpoint structure
-    const endpoint = USE_V4_API 
-      ? `${FLUTTERWAVE_API_BASE}/charges`
-      : `${FLUTTERWAVE_API_BASE}/payments`;
+    const endpoint = useV4
+      ? `${apiBase}/charges`
+      : `${apiBase}/payments`;
 
     const response = await axios.post(
       endpoint,
@@ -644,10 +664,9 @@ export async function initializePayment(
 
     console.log(`[Flutterwave Payment] Response:`, response.data);
 
-    // v4 API might have different response structure
-    // Check for both v3 and v4 response formats
+    // v4 API might have different response structure; v3 uses /payments
     const responseData = response.data;
-    const isSuccess = responseData.status === "success" || 
+    const isSuccess = responseData.status === "success" ||
                      responseData.status === "succeeded" ||
                      (responseData.data && (responseData.data.link || responseData.data.authorization_url));
 

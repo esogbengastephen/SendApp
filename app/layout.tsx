@@ -116,6 +116,11 @@ export default function RootLayout({
         </Script>
         
         <link rel="manifest" href="/manifest.json" />
+        {/* Flutterwave Inline - payment modal (no redirect to checkout URL); load early so Pay now works reliably */}
+        <Script
+          src="https://checkout.flutterwave.com/v3.js"
+          strategy="beforeInteractive"
+        />
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -202,13 +207,15 @@ export default function RootLayout({
               if (typeof window !== 'undefined') {
                 // Handle synchronous errors
                 window.addEventListener('error', function(event) {
-                  console.error('Global error caught:', {
-                    message: event.message,
-                    filename: event.filename,
-                    lineno: event.lineno,
-                    colno: event.colno,
-                    error: event.error
-                  });
+                  var hasMessage = event.message && String(event.message).trim();
+                  var hasError = event.error && (event.error.message || String(event.error).trim());
+                  if (!hasMessage && !hasError) {
+                    console.warn('Global error (no details):', event.filename || 'unknown', event.lineno, event.colno);
+                    return;
+                  }
+                  var msg = event.message || '(no message)';
+                  var err = event.error ? (event.error.message || String(event.error)) : '';
+                  console.error('Global error caught:', msg, err || { filename: event.filename, lineno: event.lineno, colno: event.colno });
                   
                   // Handle WebSocket security errors gracefully
                   if (event.error && event.error.message) {
