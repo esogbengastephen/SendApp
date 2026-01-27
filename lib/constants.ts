@@ -18,9 +18,9 @@ export const DEFAULT_EXCHANGE_RATE = parseFloat(
 
 // Deposit Account Information
 export const DEPOSIT_ACCOUNT = {
-  name: "FlipPay",
-  accountNumber: "9327975691",
-  bank: "Wema Bank",
+  name: "Flipbridge Digital Limited",
+  accountNumber: "6565315226",
+  bank: "Moniepoint MFB",
 };
 
 // Paystack Dummy Email (prevents Paystack from sending emails to users)

@@ -8,6 +8,7 @@ import Toast from "./Toast";
 import PoweredBySEND from "./PoweredBySEND";
 import { calculateSendAmount } from "@/lib/transactions";
 import { getUserFromStorage } from "@/lib/session";
+import { getTokenLogo } from "@/lib/logos";
 
 // Helper function to safely access localStorage (for mobile browser compatibility)
 const safeLocalStorage = {
@@ -868,25 +869,25 @@ export default function PaymentForm() {
   return (
     <div className="w-full max-w-lg mx-auto">
       <div className="flex flex-col items-center">
-        {/* Logo */}
-        <div className="mb-6 sm:mb-8">
+        {/* Logo - responsive, compact on mobile */}
+        <div className="mb-4 sm:mb-6 md:mb-8">
           {/* White logo for light mode */}
           <img 
             src="/whitelogo.png" 
             alt="FlipPay" 
-            className="h-12 sm:h-16 w-auto dark:hidden"
+            className="h-10 sm:h-14 md:h-16 w-auto dark:hidden"
           />
           {/* Regular logo for dark mode */}
           <img 
             src="/logo.png" 
             alt="FlipPay" 
-            className="h-12 sm:h-16 w-auto hidden dark:block"
+            className="h-10 sm:h-14 md:h-16 w-auto hidden dark:block"
           />
         </div>
 
-        {/* Form Card */}
-        <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 md:p-8 rounded-xl shadow-lg w-full">
-          <form className="space-y-6" onSubmit={handleSubmit}>
+        {/* Form Card - mobile-first padding, touch-friendly */}
+        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 md:p-6 rounded-xl sm:rounded-2xl shadow-lg w-full border border-slate-200/50 dark:border-slate-700/50">
+          <form className="space-y-5 sm:space-y-6" onSubmit={handleSubmit}>
             {/* NGN Amount Input */}
             <div>
               <label
@@ -923,33 +924,39 @@ export default function PaymentForm() {
               </div>
             </div>
 
-            {/* $SEND Amount Display */}
+            {/* $SEND Amount Display - compact box with SEND logo */}
             <div>
               <label className="block text-sm sm:text-base font-medium text-slate-700 dark:text-slate-300">
                 Amount of $SEND
               </label>
               <div className="mt-2 relative">
-                <div className="flex items-center w-full rounded-md border border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 px-3 sm:px-4 py-2.5 sm:py-3">
-                  <span className="pr-2 text-slate-400 dark:text-slate-500 text-sm sm:text-base">
-                    $SEND
-                  </span>
+                <div className="flex items-center gap-2 w-full min-h-[42px] sm:min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 sm:px-3.5 sm:py-2.5">
+                  {getTokenLogo("SEND") ? (
+                    <img
+                      src={getTokenLogo("SEND")}
+                      alt="SEND"
+                      className="w-6 h-6 sm:w-7 sm:h-7 shrink-0 rounded-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-slate-400 dark:text-slate-500 text-sm font-medium shrink-0">$SEND</span>
+                  )}
                   <input
-                    className="w-full bg-transparent border-0 focus:ring-0 text-slate-900 dark:text-slate-100 text-sm sm:text-base"
+                    className="flex-1 min-w-0 bg-transparent border-0 focus:ring-0 text-slate-900 dark:text-slate-100 text-base font-medium"
                     id="send_amount"
                     name="send_amount"
-                    placeholder="Calculated amount"
+                    placeholder="0.00"
                     readOnly
                     type="text"
                     value={sendAmount}
                   />
                 </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1.5">
                   Rate: 1 NGN = {exchangeRate} $SEND
                 </p>
               </div>
             </div>
 
-            {/* Wallet Address Input */}
+            {/* Wallet Address Input - 16px font, touch target */}
             <div>
               <label
                 className="block text-sm sm:text-base font-medium text-slate-700 dark:text-slate-300"
@@ -959,11 +966,11 @@ export default function PaymentForm() {
               </label>
               <div className="mt-2">
                 <input
-                  className={`w-full rounded-md border ${
+                  className={`w-full min-h-[48px] sm:min-h-[52px] rounded-lg sm:rounded-md border ${
                     errors.walletAddress
                       ? "border-red-300 dark:border-red-600"
                       : "border-slate-300 dark:border-slate-600"
-                  } bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 focus:ring-2 focus:ring-primary focus:border-primary placeholder:text-slate-400 dark:placeholder:text-slate-500 px-3 sm:px-4 py-2.5 sm:py-3 text-sm sm:text-base`}
+                  } bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-base focus:ring-2 focus:ring-primary focus:border-primary placeholder:text-slate-400 dark:placeholder:text-slate-500 px-4 py-3 sm:py-3.5`}
                   id="wallet_address"
                   name="wallet_address"
                   placeholder="0x..."
@@ -1001,7 +1008,7 @@ export default function PaymentForm() {
               <button
                 type="submit"
                 disabled={!transactionsEnabled || isLoading || !ngnAmount || !walletAddress}
-                className="w-full bg-primary text-slate-900 font-bold py-3 sm:py-3 px-4 rounded-md hover:opacity-90 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-slate-900 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
+                className="w-full min-h-[48px] sm:min-h-[52px] bg-primary text-slate-900 font-bold py-3.5 px-4 rounded-lg sm:rounded-md hover:opacity-90 active:opacity-95 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-slate-900 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed text-base touch-manipulation"
               >
                 {isLoading ? "Processing..." : transactionsEnabled ? "Pay now" : "Transactions Disabled"}
               </button>
@@ -1035,15 +1042,17 @@ export default function PaymentForm() {
       />
       
       {/* Powered by SEND */}
-      <PoweredBySEND />
+      <div className="w-full mt-6 sm:mt-8">
+        <PoweredBySEND />
+      </div>
       
-      {/* Create Send App Account Link */}
-      <div className="mt-4 sm:mt-6 text-center px-4">
+      {/* Create Send App Account Link - tap-friendly, responsive */}
+      <div className="mt-4 sm:mt-6 text-center px-2 sm:px-4 w-full">
         <a
           href="https://send.app/"
           target="_blank"
           rel="noopener noreferrer"
-          className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 hover:text-primary transition-colors underline"
+          className="inline-block py-3 px-4 text-xs sm:text-sm text-slate-500 dark:text-slate-400 hover:text-primary active:text-primary transition-colors underline rounded touch-manipulation"
         >
           Click to Create a Send App account
         </a>
