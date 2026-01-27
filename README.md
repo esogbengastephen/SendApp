@@ -7,7 +7,7 @@ A Next.js web application that allows users to purchase $SEND tokens on the Base
 - 💰 Deposit Naira and receive $SEND tokens
 - 🔗 Support for Base wallet addresses and SendTags
 - 🔐 Secure payment processing via Paystack
-- ⚡ Automatic token distribution from liquidity pool
+- ⚡ Automatic token distribution: liquidity pool holds USDC, swaps to $SEND (Paraswap/Aerodrome on Base), with small SEND fallback
 - 🎨 Modern, responsive UI with dark mode support
 - 👨‍💼 Admin dashboard with wallet authentication
 - 📊 Analytics and transaction management
@@ -19,7 +19,7 @@ A Next.js web application that allows users to purchase $SEND tokens on the Base
 - Node.js 18+ and npm
 - Paystack account and API keys
 - Base network RPC access
-- Liquidity pool wallet with $SEND tokens
+- Liquidity pool wallet: USDC on Base (primary); optional small SEND balance for fallback when swap is unavailable
 - Supabase account (optional, for admin wallet management)
 
 ### Installation
@@ -97,7 +97,7 @@ See `.env.local.example` for all required environment variables.
 Required:
 - `PAYSTACK_SECRET_KEY` - Paystack secret key
 - `NEXT_PUBLIC_PAYSTACK_PUBLIC_KEY` - Paystack public key
-- `LIQUIDITY_POOL_PRIVATE_KEY` - Private key for token distribution
+- `LIQUIDITY_POOL_PRIVATE_KEY` - Private key for the liquidity pool (holds USDC on Base; we swap USDC→$SEND via Paraswap/Aerodrome and send to users; keep a small SEND balance as fallback)
 - `NEXT_PUBLIC_ADMIN_WALLETS` - Comma-separated admin wallet addresses
 
 Optional:
