@@ -345,12 +345,12 @@ export async function POST(request: NextRequest) {
           // Continue anyway - trigger should handle it
         }
         
-        // Distribute tokens immediately (using final amount after fee)
+        // Distribute tokens: admin rate gives equivalent SEND user paid for → swap USDC to that much SEND → send to user
         try {
           const distributionResult = await distributeTokens(
             transactionId,
             walletAddress,
-            finalSendAmount // Use final amount after fee deduction
+            finalSendAmount
           );
           
           if (distributionResult.success) {

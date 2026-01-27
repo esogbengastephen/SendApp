@@ -384,12 +384,12 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Distribute tokens
+        // Distribute tokens: admin rate gives equivalent SEND user paid for → swap USDC to that much SEND → send to user
         try {
           console.log(`[Flutterwave Webhook] Starting token distribution...`);
           console.log(`[Flutterwave Webhook] Transaction ID: ${transactionId}`);
           console.log(`[Flutterwave Webhook] Wallet Address: ${walletAddress}`);
-          console.log(`[Flutterwave Webhook] Amount: ${finalSendAmount} SEND`);
+          console.log(`[Flutterwave Webhook] Equivalent SEND (admin rate): ${finalSendAmount} $SEND → swap USDC for this amount`);
           
           const distributionResult = await distributeTokens(
             transactionId,

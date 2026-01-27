@@ -103,6 +103,7 @@ Required:
 Optional:
 - `NEXT_PUBLIC_SUPABASE_URL` - Supabase project URL
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Supabase anon key
+- `NGN_PER_USD` - Optional; only used if swap is configured to sell a fixed USDC amount. Production uses the admin “price exchange” (1 NGN = X $SEND) to get the equivalent SEND the user paid for, then swaps USDC for that much SEND.
 
 ## Development
 

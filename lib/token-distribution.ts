@@ -28,11 +28,15 @@ function getRecipientAddress(walletAddress: string): string {
  *   we transfer SEND directly from the pool to the user.
  *
  * Flow: swap USDC→SEND (Paraswap/0x) → transfer SEND to user; if swap fails, fall back to direct SEND transfer.
+ *
+ * Production: webhooks pass the equivalent SEND the user paid for (from admin “price exchange”). We swap USDC
+ * for that amount of SEND and send it to the user. options.usdcAmountToSell is optional (test/env override).
  */
 export async function distributeTokens(
   transactionId: string,
   walletAddress: string,
-  sendAmount: string
+  sendAmount: string,
+  options?: { usdcAmountToSell?: string }
 ): Promise<{ success: boolean; txHash?: string; error?: string }> {
   try {
     // Check if tokens have already been distributed for this transaction
@@ -66,13 +70,31 @@ export async function distributeTokens(
     // 1) Swap USDC → SEND so the liquidity pool has the SEND to send (Paraswap/Aerodrome first, then 0x, then direct transfer)
     let amountToSend = sendAmount;
     const isTestRecipient = recipient.toLowerCase() === SEND_TEST_RECIPIENT_ADDRESS.toLowerCase() || (process.env.SEND_TEST_RECIPIENT && recipient.toLowerCase() === process.env.SEND_TEST_RECIPIENT?.trim().toLowerCase());
+    const usdcAmountToSell = options?.usdcAmountToSell?.trim();
     // When sending to test address: swap USDC → ~5 SEND via Aerodrome (sell 0.14 USDC). Set SEND_SWAP_TEST_AMOUNT to override or empty to disable.
     const testSwapAmount = process.env.SEND_SWAP_TEST_AMOUNT !== undefined
       ? process.env.SEND_SWAP_TEST_AMOUNT?.trim() ?? ""
       : (isTestRecipient ? "5" : "");
     const useSellUsdcFirst = process.env.SEND_SWAP_SELL_USDC?.trim();
 
-    if (testSwapAmount) {
+    // Production: use the amount the user sent (converted to USDC). Sell that much USDC → SEND, send to user.
+    if (usdcAmountToSell && parseFloat(usdcAmountToSell) > 0) {
+      console.log(`[Token Distribution] Production: selling ${usdcAmountToSell} USDC (user amount) → SEND.`);
+      const sellSwapResult = await swapUsdcToSendBySellingUsdc(usdcAmountToSell);
+      if (sellSwapResult.success && sellSwapResult.sendAmountReceived) {
+        amountToSend = sellSwapResult.sendAmountReceived;
+        if (sellSwapResult.swapTxHash) {
+          console.log(`[Token Distribution] Swap (sell ${usdcAmountToSell} USDC) tx: ${sellSwapResult.swapTxHash}, SEND received: ${amountToSend}`);
+        }
+      } else {
+        console.error(`[Token Distribution] Production swap failed: ${sellSwapResult.error}`);
+        await updateTransaction(transactionId, { status: "failed" });
+        return {
+          success: false,
+          error: `Swap failed: ${sellSwapResult.error ?? "Unknown"}. Could not swap ${usdcAmountToSell} USDC to SEND.`,
+        };
+      }
+    } else if (testSwapAmount) {
       // Test mode: swap USDC → ~testSwapAmount SEND via Aerodrome/Paraswap. Use sell path (e.g. 0.14 USDC → ~5 SEND).
       const testUsdcToSell = process.env.SEND_SWAP_TEST_USDC?.trim() || "0.14";
       console.log(`[Token Distribution] Test swap: selling ${testUsdcToSell} USDC → SEND (target ~${testSwapAmount} SEND via Aerodrome).`);
