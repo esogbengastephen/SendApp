@@ -381,6 +381,20 @@ export function verifyWebhookSignature(
     return true;
   }
   
+  // Flutterwave v3 fallback: some configurations send the secret hash itself in verif-hash
+  // (e.g. when "Secret hash" is used as a shared secret rather than HMAC key).
+  // Accept if the header exactly matches our configured secret hash.
+  if (secretHash && signature === secretHash) {
+    console.log(`[Flutterwave] ✅ Signature verification successful (v3 exact secret match)`);
+    return true;
+  }
+  
+  // Trimmed comparison in case of whitespace
+  if (secretHash && signature.trim() === secretHash.trim()) {
+    console.log(`[Flutterwave] ✅ Signature verification successful (v3 exact secret match, trimmed)`);
+    return true;
+  }
+  
   // Enhanced error logging for debugging
   console.error(`[Flutterwave] ❌ Signature mismatch detected`);
   console.error(`[Flutterwave] Expected (base64): ${computedHashBase64.substring(0, 30)}...`);
