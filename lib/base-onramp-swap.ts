@@ -405,14 +405,14 @@ async function trySwapUsdcToWethThenWethToSend(sendAmountHuman: string): Promise
       "BUY"
     );
     wethAmountWei = String((priceRouteWethSend as Record<string, unknown>).srcAmount ?? "0");
-    if (!wethAmountWei || BigInt(wethAmountWei) <= 0n) throw new Error("Paraswap: no WETH amount for SEND buy");
+    if (!wethAmountWei || BigInt(wethAmountWei) <= BigInt(0)) throw new Error("Paraswap: no WETH amount for SEND buy");
   } catch (e) {
     try {
       const res = await fetch(`${ZEROX_API_BASE}/swap/v1/quote?sellToken=${WETH_ADDRESS_BASE}&buyToken=${SEND_TOKEN_ADDRESS}&buyAmount=${sendWei}&takerAddress=${poolAddress}&slippagePercentage=1`);
       if (!res.ok) throw new Error(`0x ${res.status}`);
       const q = await res.json();
       wethAmountWei = String(q.sellAmount ?? q.sellTokenAmount ?? "0");
-      if (!wethAmountWei || BigInt(wethAmountWei) <= 0n) throw new Error("0x: no sellAmount");
+      if (!wethAmountWei || BigInt(wethAmountWei) <= BigInt(0)) throw new Error("0x: no sellAmount");
     } catch (e2) {
       return { success: false, error: `WETH→SEND quote failed: ${(e as Error)?.message ?? e}. ${(e2 as Error)?.message ?? e2}` };
     }
@@ -565,7 +565,7 @@ async function trySwapUsdcToWethThenWethToSendBySellingUsdc(usdcAmountHuman: str
     args: [poolAddress as `0x${string}`],
   })) as bigint;
   const wethAmountWei = wethBal.toString();
-  if (wethBal <= 0n) return { success: false, error: "No WETH received from USDC→WETH swap" };
+  if (wethBal <= BigInt(0)) return { success: false, error: "No WETH received from USDC→WETH swap" };
 
   // Step 3: Approve WETH for Paraswap
   await ensureTokenAllowance(WETH_ADDRESS_BASE, poolAddress, wethBal);
@@ -626,7 +626,7 @@ export async function getUsdcAmountNeededForSend(sendAmountHuman: string): Promi
     const priceRoute = await getParaswapQuote(sendWei, poolAddress, "BUY");
     const srcAmountWei = String((priceRoute as Record<string, unknown>).srcAmount ?? "0");
     const usdcHuman = formatUnits(BigInt(srcAmountWei), USDC_DECIMALS);
-    if (BigInt(srcAmountWei) <= 0n) return null;
+    if (BigInt(srcAmountWei) <= BigInt(0)) return null;
     return usdcHuman;
   } catch {
     try {
@@ -636,7 +636,7 @@ export async function getUsdcAmountNeededForSend(sendAmountHuman: string): Promi
       if (!res.ok) return null;
       const q = await res.json();
       const sellAmountWei = String(q.sellAmount ?? q.sellTokenAmount ?? "0");
-      if (BigInt(sellAmountWei) <= 0n) return null;
+      if (BigInt(sellAmountWei) <= BigInt(0)) return null;
       return formatUnits(BigInt(sellAmountWei), USDC_DECIMALS);
     } catch {
       return null;
