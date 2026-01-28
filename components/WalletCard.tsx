@@ -24,11 +24,11 @@ export const WalletCard: React.FC<WalletCardProps> = ({
   onViewAssets
 }) => {
   return (
-    <div className="bg-white/60 dark:bg-primary/90 rounded-2xl p-4 flex flex-col justify-between border border-white/40 shadow-sm relative overflow-hidden group min-h-[140px]">
-      <div className="absolute -right-4 -bottom-4 w-16 h-16 bg-white opacity-20 rounded-full"></div>
+    <div className="bg-ds-surface-strong dark:bg-ds-dark-surface rounded-ds-lg p-ds-5 flex flex-col justify-between border border-ds-border dark:border-white/10 shadow-ds-soft relative overflow-hidden group min-h-[140px] animate-card-enter">
+      <div className="absolute -right-4 -bottom-4 w-16 h-16 bg-white/20 dark:bg-white/5 rounded-full" aria-hidden></div>
       
       <div className="flex justify-between items-start mb-2">
-        <div className="flex items-center gap-1.5 text-background-dark dark:text-secondary">
+        <div className="flex items-center gap-1.5 text-ds-text-primary">
           <span className="material-icons-outlined text-lg">{icon}</span>
           <span className="font-bold text-sm">{label}</span>
         </div>
@@ -39,13 +39,13 @@ export const WalletCard: React.FC<WalletCardProps> = ({
               className="focus:outline-none"
               title="View assets"
             >
-              <span className="material-icons-outlined text-background-dark/60 dark:text-secondary/60 text-sm cursor-pointer hover:text-background-dark dark:hover:text-secondary transition-colors">
+              <span className="material-icons-outlined text-ds-text-muted text-sm cursor-pointer hover:text-ds-text-primary transition-colors duration-motion-fast">
                 list
               </span>
             </button>
           )}
           <button onClick={onToggleVisibility} className="focus:outline-none">
-            <span className="material-icons-outlined text-background-dark/60 dark:text-secondary/60 text-sm cursor-pointer">
+            <span className="material-icons-outlined text-ds-text-muted text-sm cursor-pointer hover:text-ds-text-primary transition-colors duration-motion-fast">
               {isHidden ? 'visibility_off' : 'visibility'}
             </span>
           </button>
@@ -53,18 +53,18 @@ export const WalletCard: React.FC<WalletCardProps> = ({
       </div>
 
       <div className="mb-3">
-        <h2 className="text-xl font-extrabold text-background-dark dark:text-secondary tracking-tight">
+        <h2 className="text-xl font-extrabold text-ds-text-primary tracking-tight">
           {isHidden ? '••••••••' : amount}
         </h2>
       </div>
 
       {accountNumber ? (
         <div className="space-y-1">
-          <p className="text-[10px] uppercase font-semibold text-background-dark/70 dark:text-secondary/70">Account Details</p>
+          <p className="text-[10px] uppercase font-semibold text-ds-text-secondary">Account Details</p>
           <div className="flex items-center gap-1">
-            <p className="text-xs font-bold text-background-dark dark:text-secondary tracking-wider">{accountNumber}</p>
+            <p className="text-xs font-bold text-ds-text-primary tracking-wider">{accountNumber}</p>
             <span 
-              className="material-icons-outlined text-[10px] text-background-dark/50 dark:text-secondary/50 cursor-pointer hover:text-background-dark dark:hover:text-secondary transition-colors"
+              className="material-icons-outlined text-[10px] text-ds-text-muted cursor-pointer hover:text-ds-text-primary transition-colors duration-motion-fast"
               onClick={() => navigator.clipboard.writeText(accountNumber)}
             >
               content_copy

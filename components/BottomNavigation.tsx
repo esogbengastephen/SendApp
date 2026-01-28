@@ -39,21 +39,23 @@ export default function BottomNavigation() {
     router.push(route);
   };
 
+  const inactiveClass = "text-white/70";
+  const transitionClass = "transition-all duration-motion-base ease-standard";
+
   return (
     <div className="fixed bottom-0 left-0 w-full z-50 px-4 pb-4">
       <div className="max-w-md mx-auto">
-        {/* Dark grey rounded bar with animated blue highlight */}
-        <div className="relative bg-background-dark dark:bg-background-dark rounded-2xl h-20 shadow-lg backdrop-blur-md overflow-visible border-2 dark:border-primary border-transparent">
-          {/* Animated blue highlight circle with active icon inside */}
-          <div 
-            className={`absolute top-1/2 w-14 h-14 bg-primary rounded-full transition-all duration-500 ease-out shadow-lg flex flex-col items-center justify-center pointer-events-none ${
+        <div className="relative bg-background-dark dark:bg-ds-dark-surface rounded-ds-xl h-20 shadow-ds-soft backdrop-blur-md overflow-visible border border-white/5">
+          {/* Active tab pill */}
+          <div
+            className={`absolute top-1/2 w-14 h-14 bg-ds-primary rounded-full ${transitionClass} flex flex-col items-center justify-center pointer-events-none ${
               isAnimating ? "animate-popIn" : ""
             }`}
             style={{
               left: `calc(${
-                activeTab === "home" ? "10%" : 
-                activeTab === "history" ? "30%" : 
-                activeTab === "upload" ? "50%" : 
+                activeTab === "home" ? "10%" :
+                activeTab === "history" ? "30%" :
+                activeTab === "upload" ? "50%" :
                 activeTab === "chart" ? "70%" : "90%"
               } - 1.75rem)`,
               transform: "translateY(-50%)",
@@ -61,135 +63,82 @@ export default function BottomNavigation() {
             }}
             onAnimationEnd={() => setIsAnimating(false)}
           >
-            {/* Inner glow effect for better visibility */}
-            <div className="absolute inset-0 bg-primary/50 rounded-full blur-md"></div>
-            
-            {/* Active icon inside the blue circle */}
             <span className="material-icons-outlined text-2xl text-secondary relative z-10">
               {activeTab === "home" ? "home" :
                activeTab === "history" ? "history" :
                activeTab === "upload" ? "arrow_upward" :
-               activeTab === "chart" ? "show_chart" :
-               "language"}
+               activeTab === "chart" ? "show_chart" : "language"}
             </span>
-            {/* Active label */}
             <span className="text-[8px] font-bold text-secondary relative z-10 mt-0.5 uppercase tracking-tight">
               {activeTab === "home" ? "Home" :
                activeTab === "history" ? "History" :
                activeTab === "upload" ? "Send" :
-               activeTab === "chart" ? "Chart" :
-               "More"}
+               activeTab === "chart" ? "Chart" : "More"}
             </span>
           </div>
 
-          {/* Icons container - inactive icons with labels */}
           <div className="relative flex justify-around items-center h-full px-2 pt-1">
-            {/* Home */}
-            <button 
+            <button
               onClick={() => handleNavigation("home", "/")}
-              className="relative z-30 flex flex-col items-center justify-center transition-all duration-300"
+              className={`relative z-30 flex flex-col items-center justify-center ${transitionClass}`}
               aria-label="Home"
             >
-              <span className={`material-icons-outlined text-xl transition-all duration-300 ${
-                activeTab === "home" 
-                  ? "opacity-0" 
-                  : "text-secondary opacity-100"
-              }`}>
+              <span className={`material-icons-outlined text-xl ${transitionClass} ${activeTab === "home" ? "opacity-0" : inactiveClass}`}>
                 home
               </span>
-              <span className={`text-[8px] font-semibold mt-0.5 uppercase tracking-tight transition-all duration-300 ${
-                activeTab === "home" 
-                  ? "opacity-0" 
-                  : "text-secondary opacity-100"
-              }`}>
+              <span className={`text-[8px] font-semibold mt-0.5 uppercase tracking-tight ${transitionClass} ${activeTab === "home" ? "opacity-0" : inactiveClass}`}>
                 Home
               </span>
             </button>
 
-            {/* History */}
-            <button 
+            <button
               onClick={() => handleNavigation("history", "/history")}
-              className="relative z-30 flex flex-col items-center justify-center transition-all duration-300"
+              className={`relative z-30 flex flex-col items-center justify-center ${transitionClass}`}
               aria-label="History"
             >
-              <span className={`material-icons-outlined text-xl transition-all duration-300 ${
-                activeTab === "history" 
-                  ? "opacity-0" 
-                  : "text-secondary opacity-100"
-              }`}>
+              <span className={`material-icons-outlined text-xl ${transitionClass} ${activeTab === "history" ? "opacity-0" : inactiveClass}`}>
                 history
               </span>
-              <span className={`text-[8px] font-semibold mt-0.5 uppercase tracking-tight transition-all duration-300 ${
-                activeTab === "history" 
-                  ? "opacity-0" 
-                  : "text-secondary opacity-100"
-              }`}>
+              <span className={`text-[8px] font-semibold mt-0.5 uppercase tracking-tight ${transitionClass} ${activeTab === "history" ? "opacity-0" : inactiveClass}`}>
                 History
               </span>
             </button>
 
-            {/* Send */}
-            <button 
+            <button
               onClick={() => handleNavigation("upload", "/send")}
-              className="relative z-30 flex flex-col items-center justify-center transition-all duration-300"
+              className={`relative z-30 flex flex-col items-center justify-center ${transitionClass}`}
               aria-label="Send"
             >
-              <span className={`material-icons-outlined text-xl transition-all duration-300 ${
-                activeTab === "upload" 
-                  ? "opacity-0" 
-                  : "text-secondary opacity-100"
-              }`}>
+              <span className={`material-icons-outlined text-xl ${transitionClass} ${activeTab === "upload" ? "opacity-0" : inactiveClass}`}>
                 arrow_upward
               </span>
-              <span className={`text-[8px] font-semibold mt-0.5 uppercase tracking-tight transition-all duration-300 ${
-                activeTab === "upload" 
-                  ? "opacity-0" 
-                  : "text-secondary opacity-100"
-              }`}>
+              <span className={`text-[8px] font-semibold mt-0.5 uppercase tracking-tight ${transitionClass} ${activeTab === "upload" ? "opacity-0" : inactiveClass}`}>
                 Send
               </span>
             </button>
 
-            {/* Chart */}
-            <button 
+            <button
               onClick={() => handleNavigation("chart", "/chart")}
-              className="relative z-30 flex flex-col items-center justify-center transition-all duration-300"
+              className={`relative z-30 flex flex-col items-center justify-center ${transitionClass}`}
               aria-label="Chart"
             >
-              <span className={`material-icons-outlined text-xl transition-all duration-300 ${
-                activeTab === "chart" 
-                  ? "opacity-0" 
-                  : "text-secondary opacity-100"
-              }`}>
+              <span className={`material-icons-outlined text-xl ${transitionClass} ${activeTab === "chart" ? "opacity-0" : inactiveClass}`}>
                 show_chart
               </span>
-              <span className={`text-[8px] font-semibold mt-0.5 uppercase tracking-tight transition-all duration-300 ${
-                activeTab === "chart" 
-                  ? "opacity-0" 
-                  : "text-secondary opacity-100"
-              }`}>
+              <span className={`text-[8px] font-semibold mt-0.5 uppercase tracking-tight ${transitionClass} ${activeTab === "chart" ? "opacity-0" : inactiveClass}`}>
                 Chart
               </span>
             </button>
 
-            {/* More */}
-            <button 
+            <button
               onClick={() => handleNavigation("www", "/banners")}
-              className="relative z-30 flex flex-col items-center justify-center transition-all duration-300"
+              className={`relative z-30 flex flex-col items-center justify-center ${transitionClass}`}
               aria-label="More"
             >
-              <span className={`material-icons-outlined text-xl transition-all duration-300 ${
-                activeTab === "www" 
-                  ? "opacity-0" 
-                  : "text-secondary opacity-100"
-              }`}>
+              <span className={`material-icons-outlined text-xl ${transitionClass} ${activeTab === "www" ? "opacity-0" : inactiveClass}`}>
                 language
               </span>
-              <span className={`text-[8px] font-semibold mt-0.5 uppercase tracking-tight transition-all duration-300 ${
-                activeTab === "www" 
-                  ? "opacity-0" 
-                  : "text-secondary opacity-100"
-              }`}>
+              <span className={`text-[8px] font-semibold mt-0.5 uppercase tracking-tight ${transitionClass} ${activeTab === "www" ? "opacity-0" : inactiveClass}`}>
                 More
               </span>
             </button>

@@ -431,7 +431,7 @@ export default function UserDashboard() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col relative overflow-x-hidden bg-background-light dark:bg-background-dark pb-24">
+    <div className="min-h-screen flex flex-col relative overflow-x-hidden bg-ds-bg-light dark:bg-background-dark pb-24">
       {/* Header Background */}
       <div className="absolute top-0 left-0 w-full h-[380px] bg-primary rounded-b-[3rem] z-0 overflow-hidden shadow-lg">
         <div className="absolute -top-10 -right-10 w-64 h-64 bg-white opacity-10 rounded-full blur-3xl"></div>
@@ -443,12 +443,12 @@ export default function UserDashboard() {
         <div className="flex justify-between items-center mb-6 text-secondary">
           <button
             onClick={() => router.push("/settings")}
-            className="flex items-center gap-3 hover:opacity-80 transition-opacity cursor-pointer group"
+            className="flex items-center gap-3 hover:opacity-80 transition-opacity duration-motion-fast cursor-pointer group"
             aria-label="Open Settings"
             title="Tap to open settings"
           >
             {userProfile?.photoUrl ? (
-              <div className="relative w-12 h-12 rounded-full overflow-hidden border-2 border-secondary/20 group-hover:border-secondary/40 transition-colors">
+              <div className="relative w-12 h-12 rounded-full overflow-hidden border-2 border-secondary/20 group-hover:border-secondary/40 transition-colors duration-motion-fast">
                 <Image
                   src={userProfile.photoUrl}
                   alt={userProfile.displayName || "Profile"}
@@ -459,12 +459,12 @@ export default function UserDashboard() {
                 />
               </div>
             ) : (
-              <div className="w-12 h-12 rounded-full bg-secondary/20 flex items-center justify-center border-2 border-secondary/10 group-hover:border-secondary/30 transition-colors">
+              <div className="w-12 h-12 rounded-full bg-secondary/20 flex items-center justify-center border-2 border-secondary/10 group-hover:border-secondary/30 transition-colors duration-motion-fast">
                 <span className="material-icons-outlined text-secondary text-2xl">face</span>
               </div>
             )}
             <div>
-              <p className="text-xs font-semibold opacity-70 text-secondary/70">Welcome back,</p>
+              <p className="text-xs font-semibold text-secondary/70">Welcome back,</p>
               <h1 className="text-xl font-bold leading-tight text-secondary group-hover:underline">
                 {userProfile?.displayName || user?.displayName || getFirstNameFromEmail(userProfile?.email || user?.email)}
               </h1>
@@ -474,33 +474,33 @@ export default function UserDashboard() {
             {/* Theme Toggle */}
             <button 
               onClick={toggleTheme}
-              className="bg-secondary/10 p-2 rounded-full hover:bg-secondary/20 transition backdrop-blur-sm"
+              className="bg-secondary/10 p-2 rounded-full hover:bg-secondary/20 transition-all duration-motion-fast backdrop-blur-sm"
               aria-label="Toggle theme"
             >
-              <span className="material-icons-outlined text-secondary text-xl">
+              <span className="material-icons-outlined text-secondary/70 text-xl">
                 {isDarkMode ? 'light_mode' : 'dark_mode'}
               </span>
             </button>
             {/* History Button */}
-            <button className="bg-secondary/10 p-2 rounded-full hover:bg-secondary/20 transition backdrop-blur-sm">
-              <span className="material-icons-outlined text-secondary text-xl">history</span>
+            <button className="bg-secondary/10 p-2 rounded-full hover:bg-secondary/20 transition-all duration-motion-fast backdrop-blur-sm">
+              <span className="material-icons-outlined text-secondary/70 text-xl">history</span>
             </button>
             {/* Notifications Button */}
             <NotificationBell />
             {/* Logout Button */}
             <button 
               onClick={handleLogout}
-              className="bg-secondary/10 p-2 rounded-full hover:bg-secondary/20 transition backdrop-blur-sm"
+              className="bg-secondary/10 p-2 rounded-full hover:bg-secondary/20 transition-all duration-motion-fast backdrop-blur-sm"
               aria-label="Logout"
             >
-              <span className="material-icons-outlined text-secondary text-xl">power_settings_new</span>
+              <span className="material-icons-outlined text-secondary/70 text-xl">power_settings_new</span>
             </button>
           </div>
         </div>
 
-        {/* Token Price Banner with Scrolling */}
-        <div className="mb-4 bg-white/30 backdrop-blur-sm rounded-xl border border-white/20 overflow-hidden relative">
-          <p className="text-[10px] font-bold text-gray-700 dark:text-white/60 uppercase tracking-tighter mb-1 px-4 pt-2">Token Price</p>
+        {/* Token Price Banner: white in light mode so blue isn't stacked; surface in dark */}
+        <div className="mb-4 bg-white dark:bg-ds-dark-surface-soft backdrop-blur-sm rounded-ds-lg border border-ds-border dark:border-white/10 overflow-hidden relative shadow-ds-soft">
+          <p className="text-[10px] font-bold text-ds-text-secondary uppercase tracking-tighter mb-1 px-4 pt-2">Token Price</p>
           <div className="relative h-8 overflow-hidden">
             <div className="animate-marquee whitespace-nowrap flex items-center">
               {/* First set of prices */}
@@ -517,7 +517,7 @@ export default function UserDashboard() {
                         unoptimized
                       />
                     )}
-                    <span className="text-xs text-gray-900 dark:text-white font-medium">1 SEND: {tokenPrices.SEND}</span>
+                    <span className="text-xs text-ds-text-primary font-medium">1 SEND: {tokenPrices.SEND}</span>
                   </div>
                 )}
                 {tokenPrices.USDC && (
@@ -532,7 +532,7 @@ export default function UserDashboard() {
                         unoptimized
                       />
                     )}
-                    <span className="text-xs text-gray-900 dark:text-white font-medium">1 USDC: {tokenPrices.USDC}</span>
+                    <span className="text-xs text-ds-text-primary font-medium">1 USDC: {tokenPrices.USDC}</span>
                   </div>
                 )}
                 {tokenPrices.USDT && (
@@ -547,7 +547,7 @@ export default function UserDashboard() {
                         unoptimized
                       />
                     )}
-                    <span className="text-xs text-gray-900 dark:text-white font-medium">1 USDT: {tokenPrices.USDT}</span>
+                    <span className="text-xs text-ds-text-primary font-medium">1 USDT: {tokenPrices.USDT}</span>
                   </div>
                 )}
               </div>
@@ -565,7 +565,7 @@ export default function UserDashboard() {
                         unoptimized
                       />
                     )}
-                    <span className="text-xs text-gray-900 dark:text-white font-medium">1 SEND: {tokenPrices.SEND}</span>
+                    <span className="text-xs text-ds-text-primary font-medium">1 SEND: {tokenPrices.SEND}</span>
                   </div>
                 )}
                 {tokenPrices.USDC && (
@@ -580,7 +580,7 @@ export default function UserDashboard() {
                         unoptimized
                       />
                     )}
-                    <span className="text-xs text-gray-900 dark:text-white font-medium">1 USDC: {tokenPrices.USDC}</span>
+                    <span className="text-xs text-ds-text-primary font-medium">1 USDC: {tokenPrices.USDC}</span>
                   </div>
                 )}
                 {tokenPrices.USDT && (
@@ -595,7 +595,7 @@ export default function UserDashboard() {
                         unoptimized
                       />
                     )}
-                    <span className="text-xs text-gray-900 dark:text-white font-medium">1 USDT: {tokenPrices.USDT}</span>
+                    <span className="text-xs text-ds-text-primary font-medium">1 USDT: {tokenPrices.USDT}</span>
                   </div>
                 )}
               </div>
@@ -603,8 +603,8 @@ export default function UserDashboard() {
           </div>
         </div>
 
-        {/* Wallet Section */}
-        <div className="bg-white/40 dark:bg-white/20 backdrop-blur-md rounded-3xl p-4 border border-white/30 shadow-sm mb-6 relative">
+        {/* Wallet Section: white container in light mode so cards + primary buttons stand out; surface in dark */}
+        <div className="bg-white dark:bg-ds-dark-surface backdrop-blur-md rounded-ds-xl p-ds-5 border border-ds-border dark:border-white/10 shadow-ds-soft mb-6 relative animate-card-enter">
           <div className="grid grid-cols-2 gap-3 mb-4">
             <WalletCard 
               label="NGN"
@@ -634,83 +634,41 @@ export default function UserDashboard() {
               onClick={() => router.push("/send")}
               className="flex flex-col items-center gap-1 group"
             >
-              <div className="w-10 h-10 rounded-xl bg-secondary text-primary flex items-center justify-center shadow-lg group-active:scale-95 transition-transform">
+              <div className="w-10 h-10 rounded-ds-md bg-ds-primary text-secondary flex items-center justify-center shadow-ds-soft group-active:scale-[0.98] transition-transform duration-motion-fast ease-standard">
                 <span className="material-icons-round text-lg transform -rotate-45">arrow_upward</span>
               </div>
-              <span className="text-[10px] font-bold text-gray-900 dark:text-white uppercase tracking-wide">Send</span>
+              <span className="text-[10px] font-bold text-ds-text-primary uppercase tracking-wide">Send</span>
             </button>
             <button 
               onClick={() => router.push("/receive")}
               className="flex flex-col items-center gap-1 group"
             >
-              <div className="w-10 h-10 rounded-xl bg-secondary text-primary flex items-center justify-center shadow-lg group-active:scale-95 transition-transform">
+              <div className="w-10 h-10 rounded-ds-md bg-ds-primary text-secondary flex items-center justify-center shadow-ds-soft group-active:scale-[0.98] transition-transform duration-motion-fast ease-standard">
                 <span className="material-icons-round text-lg rotate-135" style={{ transform: 'matrix(-0.707107, 0.707107, -0.707107, -0.707107, 0, 0) rotate(45deg)' }}>arrow_downward</span>
               </div>
-              <span className="text-[10px] font-bold text-gray-900 dark:text-white uppercase tracking-wide">Receive</span>
+              <span className="text-[10px] font-bold text-ds-text-primary uppercase tracking-wide">Receive</span>
             </button>
           </div>
 
-          <div className="absolute -bottom-5 left-1/2 transform -translate-x-1/2 w-12 h-6 bg-primary rounded-b-full flex items-center justify-center shadow-sm z-20">
+          <div className="absolute -bottom-5 left-1/2 transform -translate-x-1/2 w-12 h-6 bg-ds-primary rounded-b-full flex items-center justify-center shadow-ds-soft z-20">
             <span className="material-icons-round text-secondary text-sm">keyboard_arrow_down</span>
           </div>
         </div>
 
-        {/* Services Section */}
-        <div className="mt-8">
-          <h3 className="text-[10px] font-bold text-gray-500 dark:text-gray-400 mb-4 px-1 uppercase tracking-wider">Services</h3>
-          <div className="grid grid-cols-4 gap-3">
-            <ServiceButton 
-              icon="currency_exchange" 
-              label={"Crypto\nto Naira"} 
-              useCustomIcon 
-              onClick={() => handleServiceClick(services[0])}
-            />
-            <ServiceButton 
-              icon="swap_vert" 
-              label={"Naira\nto Crypto"} 
-              useCustomIcon 
-              onClick={() => handleServiceClick(services[1])}
-            />
-            <ServiceButton 
-              icon="receipt_long" 
-              label={"Generate\nInvoice"} 
-              onClick={() => handleServiceClick(services[2])}
-            />
-            <ServiceButton 
-              icon="trending_up" 
-              label={"Create\nPrediction"} 
-              onClick={() => handleServiceClick(services[3])}
-            />
-            <ServiceButton 
-              icon="wifi" 
-              label={"Buy\nData"} 
-              onClick={() => handleServiceClick(services[4])}
-            />
-            <ServiceButton 
-              icon="phone_iphone" 
-              label={"Buy\nAirtime"} 
-              onClick={() => handleServiceClick(services[5])}
-            />
-            <ServiceButton 
-              icon="sports_soccer" 
-              label={"Pay\nBetting"} 
-              onClick={() => handleServiceClick(services[6])}
-            />
-            <ServiceButton 
-              icon="tv" 
-              label={"TV\nSub"} 
-              onClick={() => handleServiceClick(services[7])}
-            />
-            <ServiceButton 
-              icon="bolt" 
-              label={"Electricity"} 
-              onClick={() => handleServiceClick(services[8])}
-            />
-            <ServiceButton 
-              icon="card_giftcard" 
-              label={"Gift Card\nRedeem"} 
-              onClick={() => handleServiceClick(services[9])}
-            />
+        {/* Services Section - neutral bg; light gray tint in light mode for soft separation */}
+        <div className="mt-ds-7 bg-white dark:bg-ds-dark-surface rounded-ds-xl p-ds-5 shadow-ds-soft border border-ds-border dark:border-white/5">
+          <h3 className="text-[10px] font-bold text-ds-text-secondary mb-4 px-1 uppercase tracking-wider">Services</h3>
+          <div className="grid grid-cols-4 gap-ds-4">
+            <ServiceButton icon="currency_exchange" label={"Crypto\nto Naira"} useCustomIcon onClick={() => handleServiceClick(services[0])} />
+            <ServiceButton icon="swap_vert" label={"Naira\nto Crypto"} useCustomIcon onClick={() => handleServiceClick(services[1])} />
+            <ServiceButton icon="receipt_long" label={"Generate\nInvoice"} onClick={() => handleServiceClick(services[2])} />
+            <ServiceButton icon="trending_up" label={"Create\nPrediction"} onClick={() => handleServiceClick(services[3])} />
+            <ServiceButton icon="wifi" label={"Buy\nData"} onClick={() => handleServiceClick(services[4])} />
+            <ServiceButton icon="phone_iphone" label={"Buy\nAirtime"} onClick={() => handleServiceClick(services[5])} />
+            <ServiceButton icon="sports_soccer" label={"Pay\nBetting"} onClick={() => handleServiceClick(services[6])} />
+            <ServiceButton icon="tv" label={"TV\nSub"} onClick={() => handleServiceClick(services[7])} />
+            <ServiceButton icon="bolt" label={"Electricity"} onClick={() => handleServiceClick(services[8])} />
+            <ServiceButton icon="card_giftcard" label={"Gift Card\nRedeem"} onClick={() => handleServiceClick(services[9])} />
           </div>
         </div>
 

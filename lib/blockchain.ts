@@ -122,6 +122,17 @@ export function getLiquidityPoolAddress(): string {
 }
 
 /**
+ * Get the next nonce for the liquidity pool address.
+ * Call this before each sendTransaction/writeContract when sending multiple txs in sequence
+ * so the chain sees the latest nonce (avoids "nonce too low" after a previous tx is mined).
+ */
+export async function getNextNonce(): Promise<number> {
+  const publicClient = getPublicClient();
+  const address = getLiquidityPoolAddress();
+  return publicClient.getTransactionCount({ address: address as `0x${string}` });
+}
+
+/**
  * Get token balance for an address
  */
 export async function getTokenBalance(address: string): Promise<string> {
@@ -199,12 +210,13 @@ export async function transferTokens(
       );
     }
 
-    // Transfer tokens
+    // Transfer tokens (use fresh nonce to avoid "nonce too low" when multiple txs are sent)
     const hash = await walletClient.writeContract({
       address: SEND_TOKEN_ADDRESS as `0x${string}`,
       abi: ERC20_ABI,
       functionName: "transfer",
       args: [toAddress as `0x${string}`, amountInWei],
+      nonce: await getNextNonce(),
     });
 
     // Wait for transaction confirmation

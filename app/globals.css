@@ -4,6 +4,59 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ========== DESIGN SYSTEM TOKENS ========== */
+/* Fintech-grade: calm hierarchy, same palette, less noise */
+
+:root {
+  /* Brand & primary (actions only) */
+  --color-primary: #00B8FF;
+  --color-surface-strong: #BFEFFF;
+  --color-surface-soft: #E6F7FF;
+  --color-bg-light: #F8FCFF;
+  --color-border: #D9EEF9;
+
+  /* Text */
+  --text-primary: #0A2540;
+  --text-secondary: #5E7A8A;
+  --text-muted: #9FB7C5;
+
+  /* Motion (no bounce / spring for money app) */
+  --motion-fast: 120ms;
+  --motion-base: 180ms;
+  --motion-slow: 260ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0.2, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+
+  /* Spacing (8pt) */
+  --space-2: 4px;
+  --space-3: 8px;
+  --space-4: 12px;
+  --space-5: 16px;
+  --space-6: 24px;
+  --space-7: 32px;
+  --space-8: 40px;
+
+  /* Radius */
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  /* Shadows (no colored shadows) */
+  --shadow-soft: 0 4px 12px rgba(0, 0, 0, 0.06);
+  --shadow-base: 0 8px 20px rgba(0, 0, 0, 0.08);
+}
+
+.dark {
+  --color-primary: #4CCBFF;
+  --dark-bg: #071826;
+  --dark-surface: #0E2A3A;
+  --dark-surface-soft: #123B52;
+  --text-primary: #EAF6FF;
+  --text-secondary: #9CC3D8;
+  --text-muted: #6E97AD;
+}
+
 body {
   font-family: 'Inter', sans-serif;
   min-height: 100dvh;

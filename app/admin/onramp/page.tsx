@@ -41,6 +41,98 @@ const STATUS_COLORS: Record<string, string> = {
   failed: COLORS.error,
 };
 
+interface SendRoutesResult {
+  success: boolean;
+  message?: string;
+  routes?: {
+    chain: string;
+    hasUsdcSendPool: boolean;
+    hasUsdcWethPool: boolean;
+    hasWethSendPool: boolean;
+    canSwapUsdcWethSend: boolean;
+    canSwapUsdcToSend: boolean;
+    pools: Record<string, string | undefined>;
+  };
+  links?: Record<string, string>;
+}
+
+function SendRoutesCheckCard() {
+  const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState<SendRoutesResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const checkRoutes = async () => {
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await fetch("/api/admin/check-send-routes");
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || data.message || "Request failed");
+        return;
+      }
+      setResult(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Network error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-card-light dark:bg-card-dark p-4 sm:p-6 rounded-xl shadow-lg border border-light-grey dark:border-medium-grey">
+      <h2 className="text-lg font-semibold text-text-primary dark:text-text-primary-dark mb-2">
+        USDC → SEND swap routes (Aerodrome, Base)
+      </h2>
+      <p className="text-sm text-medium-grey dark:text-light-grey mb-4">
+        Confirm where USDC → SEND can be swapped on-chain. Distribution uses Aerodrome first (direct or USDC→WETH→SEND).
+      </p>
+      <button
+        type="button"
+        onClick={checkRoutes}
+        disabled={loading}
+        className="px-4 py-2 rounded-lg font-medium text-white disabled:opacity-50"
+        style={{ backgroundColor: COLORS.primary }}
+      >
+        {loading ? "Checking…" : "Check routes"}
+      </button>
+      {error && (
+        <p className="mt-3 text-sm text-error">{error}</p>
+      )}
+      {result && result.routes && (
+        <div className="mt-4 space-y-2 text-sm">
+          <p className={result.routes.canSwapUsdcToSend ? "text-success font-medium" : "text-warning font-medium"}>
+            {result.message}
+          </p>
+          <ul className="list-disc list-inside text-medium-grey dark:text-light-grey">
+            <li>Direct USDC–SEND pool: {result.routes.hasUsdcSendPool ? "Yes" : "No"}</li>
+            <li>USDC–WETH pool: {result.routes.hasUsdcWethPool ? "Yes" : "No"}</li>
+            <li>WETH–SEND pool: {result.routes.hasWethSendPool ? "Yes" : "No"}</li>
+            <li>USDC→WETH→SEND possible: {result.routes.canSwapUsdcWethSend ? "Yes" : "No"}</li>
+          </ul>
+          {result.links && (
+            <div className="pt-2 flex flex-wrap gap-2">
+              <a href={result.links.dexscreener} target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                DexScreener
+              </a>
+              <a href={result.links.aerodromeSwap} target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                Aerodrome Swap
+              </a>
+              <a href={result.links.aerodromeLiquidityUsdcSend} target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                Aerodrome USDC–SEND
+              </a>
+              <a href={result.links.aerodromeLiquidityWethSend} target="_blank" rel="noopener noreferrer" className="text-primary underline">
+                Aerodrome WETH–SEND
+              </a>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function OnrampTransactionsPage() {
   const [transactions, setTransactions] = useState<OnrampTransaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -164,6 +256,9 @@ export default function OnrampTransactionsPage() {
           <p className="text-2xl font-bold text-primary">{loading ? "..." : stats.totalTokensDistributed.toLocaleString()} $SEND</p>
         </div>
       </div>
+
+      {/* USDC → SEND swap routes (Aerodrome) */}
+      <SendRoutesCheckCard />
 
       {/* Filters */}
       <div className="bg-card-light dark:bg-card-dark p-4 sm:p-6 rounded-xl shadow-lg border border-light-grey dark:border-medium-grey">
