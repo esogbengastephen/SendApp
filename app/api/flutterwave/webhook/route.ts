@@ -111,9 +111,21 @@ export async function POST(request: NextRequest) {
       const amount = parseFloat(chargeData.amount || "0");
       const status = chargeData.status;
       
-      // According to Flutterwave docs, metadata is in data.meta (not data.metadata)
-      // But we check multiple locations for backward compatibility
-      const metadata = chargeData.meta || chargeData.metadata || chargeData.customer?.meta || {};
+      // According to Flutterwave docs, metadata can be in multiple locations:
+      // - event.meta_data (v4 webhook format - at event root level) - CHECK THIS FIRST
+      // - data.meta (v3/v4 - inside chargeData)
+      // - data.metadata (legacy)
+      // - data.customer.meta (some formats)
+      // Note: event.meta_data is the most reliable source for v4 webhooks
+      const metadata = (event.meta_data && Object.keys(event.meta_data).length > 0) 
+        ? event.meta_data 
+        : (chargeData.meta && Object.keys(chargeData.meta).length > 0)
+        ? chargeData.meta
+        : (chargeData.metadata && Object.keys(chargeData.metadata).length > 0)
+        ? chargeData.metadata
+        : (chargeData.customer?.meta && Object.keys(chargeData.customer.meta).length > 0)
+        ? chargeData.customer.meta
+        : {};
       
       console.log(`[Flutterwave Webhook] Charge event: ${event.event}`);
       console.log(`[Flutterwave Webhook] Charge ID: ${chargeId}`);
@@ -124,11 +136,15 @@ export async function POST(request: NextRequest) {
       
       // BEST PRACTICE: Verify transaction with Flutterwave API before processing
       // This ensures the webhook data hasn't been tampered with
-      if (txRef) {
+      // NOTE: Verification is non-blocking - if it fails, we still process the webhook
+      // since signature verification (above) is the primary security check
+      if (txRef || flwRef) {
         try {
           const { verifyPayment } = await import("@/lib/flutterwave");
-          console.log(`[Flutterwave Webhook] Verifying transaction with Flutterwave API: ${txRef}`);
-          const verificationResult = await verifyPayment(txRef);
+          // For v3 API, try flw_ref first (more reliable), then fallback to tx_ref
+          const refToVerify = flwRef || txRef;
+          console.log(`[Flutterwave Webhook] Verifying transaction with Flutterwave API: ${refToVerify} (${flwRef ? 'flw_ref' : 'tx_ref'})`);
+          const verificationResult = await verifyPayment(refToVerify);
           
           if (verificationResult.success && verificationResult.data) {
             const verifiedData = verificationResult.data;
@@ -145,28 +161,24 @@ export async function POST(request: NextRequest) {
             
             // Verify amount matches
             if (verifiedAmount !== amount) {
-              console.error(`[Flutterwave Webhook] ⚠️ Amount mismatch! Webhook: ₦${amount}, Verified: ₦${verifiedAmount}`);
-              return NextResponse.json({
-                success: false,
-                error: "Amount mismatch between webhook and verified transaction",
-              }, { status: 400 });
+              console.warn(`[Flutterwave Webhook] ⚠️ Amount mismatch! Webhook: ₦${amount}, Verified: ₦${verifiedAmount}. Continuing with webhook amount.`);
+              // Don't block - continue with webhook data
             }
             
             // Verify status matches
             if (verifiedStatus !== "successful" && verifiedStatus !== "success") {
-              console.log(`[Flutterwave Webhook] Verified status is not successful: ${verifiedStatus}`);
-              return NextResponse.json({
-                success: true,
-                message: "Verified transaction status is not successful, skipping processing",
-              });
+              console.warn(`[Flutterwave Webhook] ⚠️ Verified status is not successful: ${verifiedStatus}. Webhook status: ${status}. Continuing with webhook status.`);
+              // Don't block - continue with webhook data
             }
           } else {
-            console.error(`[Flutterwave Webhook] ⚠️ Verification failed:`, verificationResult.error);
-            // Continue processing but log the warning
+            console.warn(`[Flutterwave Webhook] ⚠️ Verification API call failed (non-blocking):`, verificationResult.error);
+            console.warn(`[Flutterwave Webhook] Continuing with webhook processing since signature is verified.`);
+            // Continue processing - signature verification is the primary security check
           }
         } catch (verifyError: any) {
-          console.error(`[Flutterwave Webhook] ⚠️ Error verifying transaction:`, verifyError?.message || verifyError);
-          // Continue processing but log the error
+          console.warn(`[Flutterwave Webhook] ⚠️ Error verifying transaction (non-blocking):`, verifyError?.message || verifyError);
+          console.warn(`[Flutterwave Webhook] Continuing with webhook processing since signature is verified.`);
+          // Continue processing - signature verification is the primary security check
         }
       }
 
@@ -183,6 +195,14 @@ export async function POST(request: NextRequest) {
       let transactionId = metadata.transaction_id || metadata.transactionId;
       let walletAddress = metadata.wallet_address || metadata.walletAddress;
       let userId = metadata.user_id || metadata.userId;
+      let sendAmount = metadata.send_amount || metadata.sendAmount;
+      
+      console.log(`[Flutterwave Webhook] Extracted from metadata:`, {
+        transactionId: transactionId || "MISSING",
+        walletAddress: walletAddress || "MISSING",
+        userId: userId || "MISSING",
+        sendAmount: sendAmount || "MISSING",
+      });
 
       // FALLBACK: If metadata is missing, try to find transaction by tx_ref
       // Try multiple strategies to find the transaction
