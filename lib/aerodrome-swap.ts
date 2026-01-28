@@ -341,12 +341,12 @@ export async function tryAerodromeSellUsdc(
       return { success: false, error: "Aerodrome getAmountsOut returned empty" };
     }
     const outAmount = amountsOut[amountsOut.length - 1];
-    if (outAmount <= 0n) {
+    if (outAmount <= BigInt(0)) {
       return { success: false, error: "Aerodrome quote returned zero SEND" };
     }
     expectedSendOut = outAmount;
     // 1% slippage
-    amountOutMin = (outAmount * 99n) / 100n;
+    amountOutMin = (outAmount * BigInt(99)) / BigInt(100);
   } catch (e) {
     return {
       success: false,
@@ -404,11 +404,11 @@ export async function tryAerodromeBuySend(sendAmountHuman: string): Promise<Aero
       return { success: false, error: "Aerodrome getAmountsIn returned empty" };
     }
     const usdcNeeded = amountsIn[0];
-    if (usdcNeeded <= 0n) {
+    if (usdcNeeded <= BigInt(0)) {
       return { success: false, error: "Aerodrome quote returned zero USDC needed" };
     }
     // 2% buffer for slippage
-    amountInMax = (usdcNeeded * 102n) / 100n;
+    amountInMax = (usdcNeeded * BigInt(102)) / BigInt(100);
   } catch (e) {
     return {
       success: false,
@@ -458,7 +458,7 @@ export async function getAerodromeUsdcNeededForSend(sendAmountHuman: string): Pr
       args: [amountOut, routes],
     })) as bigint[];
     const usdcWei = amountsIn?.[0];
-    if (usdcWei == null || usdcWei <= 0n) return null;
+    if (usdcWei == null || usdcWei <= BigInt(0)) return null;
     return formatUnits(usdcWei, USDC_DECIMALS);
   } catch {
     return null;
