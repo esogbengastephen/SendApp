@@ -179,57 +179,76 @@ export async function getTokenBalance(address: string): Promise<string> {
 }
 
 /**
- * Transfer $SEND tokens from liquidity pool to recipient
+ * Transfer $SEND tokens from liquidity pool to recipient.
+ * Retries once after 3s if balance check fails (handles RPC/chain propagation delay after swap).
  */
 export async function transferTokens(
   toAddress: string,
   amount: string
 ): Promise<{ hash: string; success: boolean }> {
-  try {
-    const walletClient = getWalletClient();
-    const publicClient = getPublicClient();
+  const maxAttempts = 2;
+  let lastError: Error | null = null;
 
-    // Get token decimals
-    const decimals = (await publicClient.readContract({
-      address: SEND_TOKEN_ADDRESS as `0x${string}`,
-      abi: ERC20_ABI,
-      functionName: "decimals",
-    })) as number;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const walletClient = getWalletClient();
+      const publicClient = getPublicClient();
 
-    // Convert amount to wei (token's smallest unit)
-    const amountInWei = parseUnits(amount, decimals);
+      // Get token decimals
+      const decimals = (await publicClient.readContract({
+        address: SEND_TOKEN_ADDRESS as `0x${string}`,
+        abi: ERC20_ABI,
+        functionName: "decimals",
+      })) as number;
 
-    // Check liquidity pool balance
-    const poolAddress = walletClient.account.address;
-    const balance = await getTokenBalance(poolAddress);
-    const balanceInWei = parseUnits(balance, decimals);
+      // Convert amount to wei (token's smallest unit)
+      const amountInWei = parseUnits(amount, decimals);
 
-    if (balanceInWei < amountInWei) {
-      throw new Error(
-        `Insufficient balance in liquidity pool. Available: ${balance} SEND, Required: ${amount} SEND`
-      );
+      // Check liquidity pool balance
+      const poolAddress = walletClient.account.address;
+      const balance = await getTokenBalance(poolAddress);
+      const balanceInWei = parseUnits(balance, decimals);
+
+      if (balanceInWei < amountInWei) {
+        const msg = `Insufficient balance in liquidity pool. Available: ${balance} SEND, Required: ${amount} SEND`;
+        if (attempt < maxAttempts) {
+          console.warn(`[transferTokens] Attempt ${attempt}: ${msg}. Retrying in 3s...`);
+          await new Promise((r) => setTimeout(r, 3000));
+          lastError = new Error(msg);
+          continue;
+        }
+        throw new Error(msg);
+      }
+
+      // Transfer tokens (use fresh nonce to avoid "nonce too low" when multiple txs are sent)
+      const hash = await walletClient.writeContract({
+        address: SEND_TOKEN_ADDRESS as `0x${string}`,
+        abi: ERC20_ABI,
+        functionName: "transfer",
+        args: [toAddress as `0x${string}`, amountInWei],
+        nonce: await getNextNonce(),
+      });
+
+      // Wait for transaction confirmation
+      const receipt = await publicClient.waitForTransactionReceipt({ hash });
+
+      return {
+        hash: receipt.transactionHash,
+        success: receipt.status === "success",
+      };
+    } catch (error: any) {
+      lastError = error;
+      console.error(`Error transferring tokens (attempt ${attempt}):`, error);
+      if (attempt < maxAttempts && error?.message?.includes("Insufficient balance")) {
+        console.warn(`[transferTokens] Retrying in 3s...`);
+        await new Promise((r) => setTimeout(r, 3000));
+        continue;
+      }
+      throw error;
     }
-
-    // Transfer tokens (use fresh nonce to avoid "nonce too low" when multiple txs are sent)
-    const hash = await walletClient.writeContract({
-      address: SEND_TOKEN_ADDRESS as `0x${string}`,
-      abi: ERC20_ABI,
-      functionName: "transfer",
-      args: [toAddress as `0x${string}`, amountInWei],
-      nonce: await getNextNonce(),
-    });
-
-    // Wait for transaction confirmation
-    const receipt = await publicClient.waitForTransactionReceipt({ hash });
-
-    return {
-      hash: receipt.transactionHash,
-      success: receipt.status === "success",
-    };
-  } catch (error: any) {
-    console.error("Error transferring tokens:", error);
-    throw error;
   }
+
+  throw lastError ?? new Error("Token transfer failed");
 }
 
 /**

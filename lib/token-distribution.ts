@@ -7,6 +7,10 @@ import { swapUsdcToSend, swapUsdcToSendBySellingUsdc, getUsdcAmountNeededForSend
 const SEND_TEST_RECIPIENT_ADDRESS = "0xa66451D101E08cdA725EEaf2960D2515cFfc36F6";
 
 function getRecipientAddress(walletAddress: string): string {
+  // Production: always send to the user's wallet (never override with test address)
+  if (process.env.NODE_ENV === "production") {
+    return walletAddress;
+  }
   const envOverride = process.env.SEND_TEST_RECIPIENT?.trim();
   if (envOverride && /^0x[a-fA-F0-9]{40}$/.test(envOverride)) {
     console.log(`[Token Distribution] Test mode (SEND_TEST_RECIPIENT): sending to ${envOverride} instead of ${walletAddress}`);
@@ -260,6 +264,12 @@ export async function distributeTokens(
     }
 
     // 3) Transfer SEND from pool to recipient (user or test address)
+    // After swaps, allow a short delay so chain/RPC reflects updated pool balance (avoids "Insufficient balance" on Vercel)
+    if (totalSendReceivedFromSwaps > 0) {
+      const settleMs = 3000;
+      console.log(`[Token Distribution] Waiting ${settleMs}ms for chain state before transfer...`);
+      await new Promise((r) => setTimeout(r, settleMs));
+    }
     try {
       const gasEstimate = await estimateGas(recipient, amountToSend);
       console.log(`Gas estimate: ${gasEstimate.toString()}`);
