@@ -167,7 +167,7 @@ export async function distributeTokens(
           if (!usdcNeeded || parseFloat(usdcNeeded) <= 0) {
             const fallbackUsdc = process.env.SEND_SWAP_FALLBACK_USDC?.trim() || "1";
             console.warn(`[Token Distribution] No quote for ${sendAmount} SEND. Trying sell ${fallbackUsdc} USDC.`);
-            let fallbackSell: { success: boolean; error?: string; sendAmountReceived?: string };
+            let fallbackSell: { success: boolean; error?: string; sendAmountReceived?: string; swapTxHash?: string };
             try {
               fallbackSell = await swapUsdcToSendBySellingUsdc(fallbackUsdc);
             } catch (e) {
