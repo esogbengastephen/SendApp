@@ -326,16 +326,13 @@ export async function POST(request: NextRequest) {
 
         console.log(`[Flutterwave Webhook] Converting ${amount} NGN → ${finalSendAmount} SEND (rate: ${exchangeRate}, fee: ${feeNGN} NGN / ${feeInSEND} $SEND)`);
 
-        // Update transaction status
-        // Store Flutterwave reference (txRef/flwRef) in payment_reference
-        // The txRef from Flutterwave is unique, but we use transaction_id from metadata to find our transaction
+        // Update transaction with payment details but keep status "pending" until tokens are sent.
+        // Only mark "completed" after distributeTokens() succeeds (so Flutterwave retries can retry distribution).
         await updateTransaction(transactionId, {
-          status: "completed",
-          paymentReference: flwRef || txRef || metadata.flutterwave_tx_ref, // Store Flutterwave reference
+          paymentReference: flwRef || txRef || metadata.flutterwave_tx_ref,
           ngnAmount: amount,
           sendAmount: finalSendAmount,
           exchangeRate,
-          completedAt: new Date(),
           fee_ngn: feeNGN,
           fee_in_send: feeInSEND,
         });
@@ -404,22 +401,41 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Distribute tokens: admin rate gives equivalent SEND user paid for → swap USDC to that much SEND → send to user
+        // Distribute tokens: retry up to 3 times so users reliably receive tokens when payment is confirmed
+        const maxDistributionAttempts = 3;
+        const retryDelaysMs = [0, 2000, 5000]; // first attempt immediate, then 2s, then 5s
+        let distributionResult: { success: boolean; txHash?: string; error?: string } | null = null;
+
+        for (let attempt = 1; attempt <= maxDistributionAttempts; attempt++) {
+          try {
+            if (attempt > 1) {
+              const delay = retryDelaysMs[attempt - 1] ?? 5000;
+              console.log(`[Flutterwave Webhook] Retry ${attempt}/${maxDistributionAttempts} in ${delay}ms...`);
+              await new Promise((r) => setTimeout(r, delay));
+            }
+            console.log(`[Flutterwave Webhook] Starting token distribution (attempt ${attempt}/${maxDistributionAttempts})...`);
+            console.log(`[Flutterwave Webhook] Transaction ID: ${transactionId}`);
+            console.log(`[Flutterwave Webhook] Wallet Address: ${walletAddress}`);
+            console.log(`[Flutterwave Webhook] Equivalent SEND (admin rate): ${finalSendAmount} $SEND → swap USDC for this amount`);
+
+            distributionResult = await distributeTokens(
+              transactionId,
+              walletAddress,
+              finalSendAmount
+            );
+
+            console.log(`[Flutterwave Webhook] Distribution result (attempt ${attempt}):`, JSON.stringify(distributionResult, null, 2));
+
+            if (distributionResult.success) break;
+            console.warn(`[Flutterwave Webhook] Attempt ${attempt} failed: ${distributionResult.error}`);
+          } catch (distErr: any) {
+            console.error(`[Flutterwave Webhook] Attempt ${attempt} exception:`, distErr?.message ?? distErr);
+            distributionResult = { success: false, error: distErr?.message ?? String(distErr) };
+          }
+        }
+
         try {
-          console.log(`[Flutterwave Webhook] Starting token distribution...`);
-          console.log(`[Flutterwave Webhook] Transaction ID: ${transactionId}`);
-          console.log(`[Flutterwave Webhook] Wallet Address: ${walletAddress}`);
-          console.log(`[Flutterwave Webhook] Equivalent SEND (admin rate): ${finalSendAmount} $SEND → swap USDC for this amount`);
-          
-          const distributionResult = await distributeTokens(
-            transactionId,
-            walletAddress,
-            finalSendAmount
-          );
-
-          console.log(`[Flutterwave Webhook] Distribution result:`, JSON.stringify(distributionResult, null, 2));
-
-          if (distributionResult.success) {
+          if (distributionResult?.success) {
             console.log(`[Flutterwave Webhook] 🎉 Tokens distributed successfully! TX: ${distributionResult.txHash}`);
 
             // Send token distribution email
@@ -448,12 +464,13 @@ export async function POST(request: NextRequest) {
               },
             });
           } else {
-            console.error(`[Flutterwave Webhook] ❌ Token distribution failed: ${distributionResult.error}`);
+            const errMsg = distributionResult?.error ?? "All distribution attempts failed";
+            console.error(`[Flutterwave Webhook] ❌ Token distribution failed: ${errMsg}`);
             console.error(`[Flutterwave Webhook] Distribution error details:`, distributionResult);
             return NextResponse.json(
-              { 
-                success: false, 
-                error: `Token distribution failed: ${distributionResult.error}`,
+              {
+                success: false,
+                error: `Token distribution failed: ${errMsg}`,
                 details: distributionResult,
               },
               { status: 500 }
@@ -463,8 +480,8 @@ export async function POST(request: NextRequest) {
           console.error(`[Flutterwave Webhook] ❌ Token distribution exception:`, distError);
           console.error(`[Flutterwave Webhook] Exception stack:`, distError.stack);
           return NextResponse.json(
-            { 
-              success: false, 
+            {
+              success: false,
               error: `Token distribution error: ${distError.message}`,
               stack: process.env.NODE_ENV === "development" ? distError.stack : undefined,
             },

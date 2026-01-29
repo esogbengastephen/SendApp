@@ -178,15 +178,34 @@ export async function getTokenBalance(address: string): Promise<string> {
   }
 }
 
+/** True if the error looks like a transient one we should retry (RPC/network/nonce). */
+function isTransientTransferError(error: any): boolean {
+  const msg = (error?.message ?? String(error)).toLowerCase();
+  const code = (error?.code ?? "").toString().toLowerCase();
+  return (
+    msg.includes("insufficient balance") ||
+    msg.includes("nonce") ||
+    msg.includes("timeout") ||
+    msg.includes("etimedout") ||
+    msg.includes("econnreset") ||
+    msg.includes("fetch") ||
+    msg.includes("network") ||
+    code === "timeout" ||
+    code === "econnreset" ||
+    code === "etimedout"
+  );
+}
+
 /**
  * Transfer $SEND tokens from liquidity pool to recipient.
- * Retries once after 3s if balance check fails (handles RPC/chain propagation delay after swap).
+ * Retries up to 3 times on balance check failure or transient errors (RPC/network/nonce).
  */
 export async function transferTokens(
   toAddress: string,
   amount: string
 ): Promise<{ hash: string; success: boolean }> {
-  const maxAttempts = 2;
+  const maxAttempts = 3;
+  const retryDelayMs = 3000;
   let lastError: Error | null = null;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
@@ -212,8 +231,8 @@ export async function transferTokens(
       if (balanceInWei < amountInWei) {
         const msg = `Insufficient balance in liquidity pool. Available: ${balance} SEND, Required: ${amount} SEND`;
         if (attempt < maxAttempts) {
-          console.warn(`[transferTokens] Attempt ${attempt}: ${msg}. Retrying in 3s...`);
-          await new Promise((r) => setTimeout(r, 3000));
+          console.warn(`[transferTokens] Attempt ${attempt}: ${msg}. Retrying in ${retryDelayMs}ms...`);
+          await new Promise((r) => setTimeout(r, retryDelayMs));
           lastError = new Error(msg);
           continue;
         }
@@ -238,10 +257,10 @@ export async function transferTokens(
       };
     } catch (error: any) {
       lastError = error;
-      console.error(`Error transferring tokens (attempt ${attempt}):`, error);
-      if (attempt < maxAttempts && error?.message?.includes("Insufficient balance")) {
-        console.warn(`[transferTokens] Retrying in 3s...`);
-        await new Promise((r) => setTimeout(r, 3000));
+      console.error(`Error transferring tokens (attempt ${attempt}/${maxAttempts}):`, error);
+      if (attempt < maxAttempts && isTransientTransferError(error)) {
+        console.warn(`[transferTokens] Transient error, retrying in ${retryDelayMs}ms...`);
+        await new Promise((r) => setTimeout(r, retryDelayMs));
         continue;
       }
       throw error;
