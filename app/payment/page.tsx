@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import PaymentForm from "@/components/PaymentForm";
 import { isUserLoggedIn } from "@/lib/session";
 import BottomNavigation from "@/components/BottomNavigation";
 
-export default function PaymentPage() {
+function PaymentPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const network = (searchParams.get("network") || "send").toLowerCase();
@@ -25,5 +25,17 @@ export default function PaymentPage() {
       </div>
       <BottomNavigation />
     </div>
+  );
+}
+
+export default function PaymentPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen min-h-[100dvh] bg-background-light dark:bg-background-dark flex items-center justify-center">
+        <div className="animate-spin rounded-full h-10 w-10 border-2 border-primary border-t-transparent" />
+      </div>
+    }>
+      <PaymentPageContent />
+    </Suspense>
   );
 }
