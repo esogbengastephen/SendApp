@@ -136,7 +136,9 @@ export async function distributeTokens(
     }
 
     if (amountToSend === sendAmount && !testSwapAmount) {
-      // Try sell path first when we have a quote (Aerodrome direct pool often works better with sell).
+      // Try one swap: sell first; if it succeeds, skip buy path (no double swap).
+      let lastSwapError: string | undefined;
+      let swapSucceeded = false;
       const usdcNeeded = await getUsdcAmountNeededForSend(sendAmount);
       if (usdcNeeded && parseFloat(usdcNeeded) > 0) {
         const usdcNum = parseFloat(usdcNeeded);
@@ -146,13 +148,12 @@ export async function distributeTokens(
         if (sellSwapResult.success && sellSwapResult.sendAmountReceived) {
           amountToSend = sellSwapResult.sendAmountReceived;
           totalSendReceivedFromSwaps += parseFloat(sellSwapResult.sendAmountReceived);
+          swapSucceeded = true; // sell succeeded — do not try buy path
           console.log(`[Token Distribution] Swap (sell ${usdcWithBuffer} USDC) tx: ${sellSwapResult.swapTxHash}, SEND received: ${amountToSend}`);
         }
       }
-      // If no quote or sell path failed, try buy path (buy exactly sendAmount SEND).
-      let lastSwapError: string | undefined;
-      let swapSucceeded = false; // true when buy or fallback sell got SEND into the pool
-      if (amountToSend === sendAmount) {
+      // Only try buy path when sell did not succeed (avoid double swap).
+      if (!swapSucceeded && amountToSend === sendAmount) {
         let buySwapResult: { success: boolean; error?: string; swapTxHash?: string };
         try {
           buySwapResult = await swapUsdcToSend(sendAmount);
@@ -206,11 +207,11 @@ export async function distributeTokens(
       }
     }
 
-    // 2) Check pool SEND balance. If less than user's amount, swap more USDC → SEND until we have at least sendAmount (max 3 top-ups).
-    if (!testSwapAmount && !Number.isNaN(sendNum) && sendNum > 0) {
+    // 2) Top-ups only when one swap gave less than sendAmount. Skip if we already got enough (avoid double swap).
+    if (!testSwapAmount && !Number.isNaN(sendNum) && sendNum > 0 && totalSendReceivedFromSwaps < sendNum) {
       const poolAddress = getLiquidityPoolAddress();
       let poolBalanceNum = parseFloat(await getTokenBalance(poolAddress));
-      const maxTopUps = 3;
+      const maxTopUps = 1; // at most one top-up to cover shortfall from slippage
       let topUpCount = 0;
 
       while (poolBalanceNum < sendNum && topUpCount < maxTopUps) {
