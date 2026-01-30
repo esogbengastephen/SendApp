@@ -466,7 +466,7 @@ export default function UserDashboard() {
         <div className="absolute top-20 -left-10 w-48 h-48 bg-white opacity-10 rounded-full blur-2xl"></div>
       </div>
 
-      <div className="relative z-10 px-6 pt-12 flex-grow flex flex-col">
+      <div className="relative z-10 px-4 sm:px-6 pt-12 flex-grow flex flex-col">
         {/* Profile Header */}
         <div className="flex justify-between items-center mb-6 text-secondary">
           <button
@@ -574,19 +574,22 @@ export default function UserDashboard() {
         </div>
 
         {/* Wallet Section: white container in light mode so cards + primary buttons stand out; surface in dark */}
-        <div className="bg-white dark:bg-ds-dark-surface backdrop-blur-md rounded-ds-xl p-ds-5 border border-ds-border dark:border-white/10 shadow-ds-soft mb-6 relative animate-card-enter">
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            <WalletCard 
-              label="NGN"
+        <div className="bg-white dark:bg-ds-dark-surface backdrop-blur-md rounded-ds-xl p-4 sm:p-ds-5 border border-ds-border dark:border-white/10 shadow-ds-soft mb-6 relative animate-card-enter">
+          <div className="grid grid-cols-2 gap-2 sm:gap-3 mb-4">
+            <div className="min-w-0">
+              <WalletCard 
+                label="NGN"
               currency="NGN"
               amount={`₦ ${(dashboardData?.balance.ngn || 0).toLocaleString()}`}
               isHidden={!showNGNBalance}
               onToggleVisibility={() => setShowNGNBalance(!showNGNBalance)}
               accountNumber={dashboardData?.user.accountNumber || undefined}
               icon="account_balance_wallet"
-            />
-            <WalletCard 
-              label="Crypto"
+              />
+            </div>
+            <div className="min-w-0">
+              <WalletCard 
+                label="Crypto"
               currency="Crypto"
               amount={loadingBalances && cachedTotalCryptoUSD === null
                 ? "Loading..." 
@@ -596,7 +599,8 @@ export default function UserDashboard() {
               onToggleVisibility={() => setShowCryptoBalance(!showCryptoBalance)}
               onViewAssets={() => setShowAssetsModal(true)}
               icon="currency_bitcoin"
-            />
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4 px-2">
