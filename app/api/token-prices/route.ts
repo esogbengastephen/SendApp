@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SEND_TOKEN_ADDRESS } from "@/lib/constants";
 import { supabaseAdmin } from "@/lib/supabase";
+import { getSettings } from "@/lib/settings";
 
 const COINGECKO_API_BASE = "https://api.coingecko.com/api/v3";
 
 /**
  * GET - Fetch prices for SEND, USDC, and USDT tokens
- * Priority: Database (buy prices) > CoinGecko API
+ * SEND: Admin dashboard exchange rate (1 SEND = 1/exchangeRate NGN) takes priority.
+ * USDC/USDT: Database (buy prices) > CoinGecko API
  */
 export async function GET(request: NextRequest) {
   try {
@@ -33,28 +35,40 @@ export async function GET(request: NextRequest) {
       USDT: null,
     };
 
-    // Step 1: Try to fetch prices from database first
+    // Step 0: Use admin dashboard SEND→NGN rate for the moving banner (1 SEND = 1/exchangeRate NGN)
+    try {
+      const settings = await getSettings();
+      const ngnToSend = settings.exchangeRate;
+      if (ngnToSend && ngnToSend > 0) {
+        pricesNGN.SEND = 1 / ngnToSend;
+        prices.SEND = pricesNGN.SEND / 1500; // Approximate USD for compatibility
+      }
+    } catch (settingsError) {
+      console.warn("Token prices: could not load admin exchange rate, will use DB/CoinGecko for SEND:", settingsError);
+    }
+
+    // Step 1: Try to fetch prices from database first (for USDC, USDT; SEND already set from admin)
     try {
       const { data: dbPrices, error: dbError } = await supabaseAdmin
         .from("token_buy_prices")
         .select("token_symbol, buy_price_ngn");
 
       if (!dbError && dbPrices && dbPrices.length > 0) {
-        // Use database prices (these are buy prices in NGN)
-        dbPrices.forEach((price) => {
+        // Use database prices (these are buy prices in NGN). Don't overwrite SEND if already set from admin.
+        for (const price of dbPrices) {
           const symbol = price.token_symbol as keyof typeof pricesNGN;
-          if (symbol in pricesNGN) {
+          if (symbol === "SEND" && pricesNGN.SEND != null) {
+            // Keep admin dashboard rate for SEND
+          } else if (symbol in pricesNGN) {
             pricesNGN[symbol] = parseFloat(price.buy_price_ngn.toString());
-            // Convert NGN to USD for prices object (approximate conversion)
-            // Assuming 1 USD ≈ 1500 NGN for conversion
             const usdPrice = parseFloat(price.buy_price_ngn.toString()) / 1500;
             prices[symbol] = usdPrice;
           }
-        });
+        }
       }
     } catch (dbError) {
       console.error("Error fetching prices from database:", dbError);
-      // Continue to CoinGecko fallback
+      // Fall through to CoinGecko for missing prices
     }
 
     // Step 2: Fetch missing prices from CoinGecko API

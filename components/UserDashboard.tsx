@@ -52,6 +52,37 @@ const services: Service[] = [
   { id: "gift-card-redeem", name: "Gift Card\nRedeem", icon: "card_giftcard", route: "/gift-card-redeem" },
 ];
 
+/** Token icon for price banner: round like the rest, clipped to circle; fallback when image fails */
+function TokenPriceIcon({ symbol }: { symbol: "SEND" | "USDC" | "USDT" }) {
+  const [imgError, setImgError] = useState(false);
+  const url = getTokenLogo(symbol);
+  const circleClass = "w-7 h-7 min-w-[28px] min-h-[28px] rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden bg-primary/10 dark:bg-primary/20 relative";
+  if (!url) {
+    return (
+      <div className={circleClass}>
+        <span className="text-xs font-bold text-primary">$</span>
+      </div>
+    );
+  }
+  return (
+    <div className={circleClass}>
+      {imgError ? (
+        <span className="text-xs font-bold text-primary" aria-hidden="true">$</span>
+      ) : (
+        <Image
+          src={url}
+          alt={symbol}
+          width={28}
+          height={28}
+          className="absolute inset-0 rounded-full object-cover w-full h-full"
+          unoptimized
+          onError={() => setImgError(true)}
+        />
+      )}
+    </div>
+  );
+}
+
 export default function UserDashboard() {
   const router = useRouter();
   const pathname = usePathname();
@@ -233,11 +264,10 @@ export default function UserDashboard() {
       if (data.success && data.pricesNGN) {
         const { SEND, USDC, USDT } = data.pricesNGN;
         
-        // Format NGN prices for display
+        // Format NGN prices for display (use "NGN" so the Naira symbol ₦ doesn't look like "on" in some fonts)
         const formatPrice = (price: number | null) => {
           if (price === null) return "N/A";
-          // Format NGN prices with comma separators
-          return `₦${price.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+          return `NGN ${price.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         };
         
         const sendPrice = formatPrice(SEND);
@@ -372,11 +402,9 @@ export default function UserDashboard() {
     if (option === "SEND") {
       router.push("/payment");
     } else if (option === "BASE") {
-      // Navigate to offramp with base network
-      router.push("/offramp?network=base&type=base");
+      router.push("/payment?network=base");
     } else if (option === "SOLANA") {
-      // Navigate to offramp with solana network
-      router.push("/offramp?network=solana&type=solana");
+      router.push("/payment?network=solana");
     }
   };
 
@@ -481,10 +509,6 @@ export default function UserDashboard() {
                 {isDarkMode ? 'light_mode' : 'dark_mode'}
               </span>
             </button>
-            {/* History Button */}
-            <button className="bg-secondary/10 p-2 rounded-full hover:bg-secondary/20 transition-all duration-motion-fast backdrop-blur-sm">
-              <span className="material-icons-outlined text-secondary/70 text-xl">history</span>
-            </button>
             {/* Notifications Button */}
             <NotificationBell />
             {/* Logout Button */}
@@ -504,98 +528,44 @@ export default function UserDashboard() {
           <div className="relative h-8 overflow-hidden">
             <div className="animate-marquee whitespace-nowrap flex items-center">
               {/* First set of prices */}
-              <div className="flex items-center gap-4 px-4 inline-flex">
+              <div className="flex items-center gap-8 px-5 sm:px-6 inline-flex">
                 {tokenPrices.SEND && (
-                  <div className="flex items-center gap-1.5">
-                    {getTokenLogo("SEND") && (
-                      <Image
-                        src={getTokenLogo("SEND")}
-                        alt="SEND"
-                        width={16}
-                        height={16}
-                        className="rounded-full"
-                        unoptimized
-                      />
-                    )}
-                    <span className="text-xs text-ds-text-primary font-medium">1 SEND: {tokenPrices.SEND}</span>
+                  <div className="flex items-center gap-2">
+                    <TokenPriceIcon symbol="SEND" />
+                    <span className="text-xs text-ds-text-primary font-medium whitespace-nowrap">1 SEND: {tokenPrices.SEND}</span>
                   </div>
                 )}
                 {tokenPrices.USDC && (
-                  <div className="flex items-center gap-1.5">
-                    {getTokenLogo("USDC") && (
-                      <Image
-                        src={getTokenLogo("USDC")}
-                        alt="USDC"
-                        width={16}
-                        height={16}
-                        className="rounded-full"
-                        unoptimized
-                      />
-                    )}
-                    <span className="text-xs text-ds-text-primary font-medium">1 USDC: {tokenPrices.USDC}</span>
+                  <div className="flex items-center gap-2">
+                    <TokenPriceIcon symbol="USDC" />
+                    <span className="text-xs text-ds-text-primary font-medium whitespace-nowrap">1 USDC: {tokenPrices.USDC}</span>
                   </div>
                 )}
                 {tokenPrices.USDT && (
-                  <div className="flex items-center gap-1.5">
-                    {getTokenLogo("USDT") && (
-                      <Image
-                        src={getTokenLogo("USDT")}
-                        alt="USDT"
-                        width={16}
-                        height={16}
-                        className="rounded-full"
-                        unoptimized
-                      />
-                    )}
-                    <span className="text-xs text-ds-text-primary font-medium">1 USDT: {tokenPrices.USDT}</span>
+                  <div className="flex items-center gap-2">
+                    <TokenPriceIcon symbol="USDT" />
+                    <span className="text-xs text-ds-text-primary font-medium whitespace-nowrap">1 USDT: {tokenPrices.USDT}</span>
                   </div>
                 )}
               </div>
               {/* Duplicate for seamless scrolling */}
-              <div className="flex items-center gap-4 px-4 inline-flex">
+              <div className="flex items-center gap-8 px-5 sm:px-6 inline-flex">
                 {tokenPrices.SEND && (
-                  <div className="flex items-center gap-1.5">
-                    {getTokenLogo("SEND") && (
-                      <Image
-                        src={getTokenLogo("SEND")}
-                        alt="SEND"
-                        width={16}
-                        height={16}
-                        className="rounded-full"
-                        unoptimized
-                      />
-                    )}
-                    <span className="text-xs text-ds-text-primary font-medium">1 SEND: {tokenPrices.SEND}</span>
+                  <div className="flex items-center gap-2">
+                    <TokenPriceIcon symbol="SEND" />
+                    <span className="text-xs text-ds-text-primary font-medium whitespace-nowrap">1 SEND: {tokenPrices.SEND}</span>
                   </div>
                 )}
                 {tokenPrices.USDC && (
-                  <div className="flex items-center gap-1.5">
-                    {getTokenLogo("USDC") && (
-                      <Image
-                        src={getTokenLogo("USDC")}
-                        alt="USDC"
-                        width={16}
-                        height={16}
-                        className="rounded-full"
-                        unoptimized
-                      />
-                    )}
-                    <span className="text-xs text-ds-text-primary font-medium">1 USDC: {tokenPrices.USDC}</span>
+                  <div className="flex items-center gap-2">
+                    <TokenPriceIcon symbol="USDC" />
+                    <span className="text-xs text-ds-text-primary font-medium whitespace-nowrap">1 USDC: {tokenPrices.USDC}</span>
                   </div>
                 )}
                 {tokenPrices.USDT && (
-                  <div className="flex items-center gap-1.5">
-                    {getTokenLogo("USDT") && (
-                      <Image
-                        src={getTokenLogo("USDT")}
-                        alt="USDT"
-                        width={16}
-                        height={16}
-                        className="rounded-full"
-                        unoptimized
-                      />
-                    )}
-                    <span className="text-xs text-ds-text-primary font-medium">1 USDT: {tokenPrices.USDT}</span>
+                  <div className="flex items-center gap-2">
+                    <TokenPriceIcon symbol="USDT" />
+                    <span className="text-xs text-ds-text-primary font-medium whitespace-nowrap">1 USDT: {tokenPrices.USDT}</span>
                   </div>
                 )}
               </div>
@@ -659,16 +629,16 @@ export default function UserDashboard() {
         <div className="mt-ds-7 bg-white dark:bg-ds-dark-surface rounded-ds-xl p-ds-5 shadow-ds-soft border border-ds-border dark:border-white/5">
           <h3 className="text-[10px] font-bold text-ds-text-secondary mb-4 px-1 uppercase tracking-wider">Services</h3>
           <div className="grid grid-cols-4 gap-ds-4">
-            <ServiceButton icon="currency_exchange" label={"Crypto\nto Naira"} useCustomIcon onClick={() => handleServiceClick(services[0])} />
+            <ServiceButton icon="currency_exchange" label={"Crypto\nto Naira"} useCustomIcon comingSoon />
             <ServiceButton icon="swap_vert" label={"Naira\nto Crypto"} useCustomIcon onClick={() => handleServiceClick(services[1])} />
-            <ServiceButton icon="receipt_long" label={"Generate\nInvoice"} onClick={() => handleServiceClick(services[2])} />
-            <ServiceButton icon="trending_up" label={"Create\nPrediction"} onClick={() => handleServiceClick(services[3])} />
-            <ServiceButton icon="wifi" label={"Buy\nData"} onClick={() => handleServiceClick(services[4])} />
-            <ServiceButton icon="phone_iphone" label={"Buy\nAirtime"} onClick={() => handleServiceClick(services[5])} />
-            <ServiceButton icon="sports_soccer" label={"Pay\nBetting"} onClick={() => handleServiceClick(services[6])} />
-            <ServiceButton icon="tv" label={"TV\nSub"} onClick={() => handleServiceClick(services[7])} />
-            <ServiceButton icon="bolt" label={"Electricity"} onClick={() => handleServiceClick(services[8])} />
-            <ServiceButton icon="card_giftcard" label={"Gift Card\nRedeem"} onClick={() => handleServiceClick(services[9])} />
+            <ServiceButton icon="receipt_long" label={"Generate\nInvoice"} comingSoon />
+            <ServiceButton icon="trending_up" label={"Create\nPrediction"} comingSoon />
+            <ServiceButton icon="wifi" label={"Buy\nData"} comingSoon />
+            <ServiceButton icon="phone_iphone" label={"Buy\nAirtime"} comingSoon />
+            <ServiceButton icon="sports_soccer" label={"Pay\nBetting"} comingSoon />
+            <ServiceButton icon="tv" label={"TV\nSub"} comingSoon />
+            <ServiceButton icon="bolt" label={"Electricity"} comingSoon />
+            <ServiceButton icon="card_giftcard" label={"Gift Card\nRedeem"} comingSoon />
           </div>
         </div>
 
@@ -706,6 +676,12 @@ export default function UserDashboard() {
                     return "bg-yellow-100 dark:bg-yellow-900/30";
                   };
 
+                  const getStatusLabel = (status: string) => {
+                    if (status === "completed" || status === "paid") return "Successful";
+                    if (status === "failed") return "Failed";
+                    return "Pending";
+                  };
+
                   return (
                     <div
                       key={tx.id}
@@ -737,8 +713,8 @@ export default function UserDashboard() {
                             {tx.secondaryAmountLabel}
                           </p>
                         )}
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${getStatusBg(tx.status)} ${getStatusColor(tx.status)} capitalize`}>
-                          {tx.status}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded ${getStatusBg(tx.status)} ${getStatusColor(tx.status)} font-medium`}>
+                          {getStatusLabel(tx.status)}
                         </span>
                       </div>
                     </div>

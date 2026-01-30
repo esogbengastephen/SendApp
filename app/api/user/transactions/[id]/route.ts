@@ -40,6 +40,7 @@ export async function GET(
           );
         }
 
+        const effectiveStatus = (data.status === "pending" && data.tx_hash) ? "completed" : (data.status || "pending");
         transactionDetails = {
           type: "crypto_purchase",
           id: data.id,
@@ -47,7 +48,7 @@ export async function GET(
           ngnAmount: parseFloat(data.ngn_amount || "0"),
           sendAmount: parseFloat(data.send_amount || "0"),
           walletAddress: data.wallet_address,
-          status: data.status,
+          status: effectiveStatus,
           txHash: data.tx_hash,
           paystackReference: data.paystack_reference,
           exchangeRate: data.exchange_rate,
@@ -170,6 +171,7 @@ export async function GET(
           );
         }
 
+        const effectiveStatus = (data.status === "pending" && data.swap_tx_hash) ? "completed" : (data.status || "pending");
         transactionDetails = {
           type: "offramp",
           id: data.id,
@@ -188,7 +190,7 @@ export async function GET(
           exchangeRate: data.exchange_rate,
           feeNgn: parseFloat(data.fee_ngn?.toString() || "0"),
           feeInSend: data.fee_in_send,
-          status: data.status,
+          status: effectiveStatus,
           swapTxHash: data.swap_tx_hash,
           swapAttempts: data.swap_attempts || 0,
           paystackReference: data.paystack_reference,

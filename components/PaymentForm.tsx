@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { nanoid } from "nanoid";
-import { isValidWalletOrTag, isValidAmount } from "@/utils/validation";
+import { isValidWalletOrTag, isValidAmount, isValidSolanaAddress } from "@/utils/validation";
 import Modal from "./Modal";
 import Toast from "./Toast";
 import PoweredBySEND from "./PoweredBySEND";
@@ -45,7 +45,13 @@ interface VirtualAccount {
   hasVirtualAccount: boolean;
 }
 
-export default function PaymentForm() {
+export type PaymentNetwork = "send" | "base" | "solana";
+
+interface PaymentFormProps {
+  network?: PaymentNetwork;
+}
+
+export default function PaymentForm({ network = "send" }: PaymentFormProps) {
   const [ngnAmount, setNgnAmount] = useState<string>("");
   const [sendAmount, setSendAmount] = useState<string>("0.00");
   const [walletAddress, setWalletAddress] = useState<string>("");
@@ -54,6 +60,10 @@ export default function PaymentForm() {
   const [isTransactionCompleted, setIsTransactionCompleted] = useState(false);
   const [exchangeRate, setExchangeRate] = useState<number>(50);
   const [minimumPurchase, setMinimumPurchase] = useState<number>(3000);
+  const [selectedStablecoin, setSelectedStablecoin] = useState<"USDC" | "USDT">("USDC");
+  const [stablecoinPricesNGN, setStablecoinPricesNGN] = useState<{ USDC: number | null; USDT: number | null }>({ USDC: null, USDT: null });
+  const [isStablecoinDropdownOpen, setIsStablecoinDropdownOpen] = useState(false);
+  const stablecoinDropdownRef = useRef<HTMLDivElement>(null);
   const [errors, setErrors] = useState<{
     ngnAmount?: string;
     walletAddress?: string;
@@ -319,10 +329,54 @@ export default function PaymentForm() {
     };
   }, []);
 
-  // Calculate $SEND amount based on NGN amount and generate transaction ID when amount is entered
+  // Fetch stablecoin prices (USDC/USDT) when network is base or solana
   useEffect(() => {
-    if (ngnAmount && parseFloat(ngnAmount) > 0) {
-      const calculated = (parseFloat(ngnAmount) * exchangeRate).toFixed(2);
+    if (network !== "base" && network !== "solana") return;
+    const fetchTokenPrices = async () => {
+      try {
+        const response = await fetch(`/api/token-prices?t=${Date.now()}`, { cache: "no-store" });
+        const data = await response.json();
+        if (data.success && data.pricesNGN) {
+          setStablecoinPricesNGN({
+            USDC: data.pricesNGN.USDC ?? null,
+            USDT: data.pricesNGN.USDT ?? null,
+          });
+        }
+      } catch (error) {
+        console.error("Failed to fetch token prices:", error);
+      }
+    };
+    fetchTokenPrices();
+    const interval = setInterval(fetchTokenPrices, 60000);
+    return () => clearInterval(interval);
+  }, [network]);
+
+  // Effective exchange rate: SEND uses /api/rate; base/solana use 1/priceNGN (tokens per 1 NGN)
+  const effectiveExchangeRate =
+    network === "send"
+      ? exchangeRate
+      : (() => {
+          const priceNGN = selectedStablecoin === "USDC" ? stablecoinPricesNGN.USDC : stablecoinPricesNGN.USDT;
+          return priceNGN && priceNGN > 0 ? 1 / priceNGN : 0;
+        })();
+
+  // Close stablecoin dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (stablecoinDropdownRef.current && !stablecoinDropdownRef.current.contains(e.target as Node)) {
+        setIsStablecoinDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Calculate crypto amount based on NGN amount and effective rate
+  useEffect(() => {
+    if (ngnAmount && parseFloat(ngnAmount) > 0 && effectiveExchangeRate > 0) {
+      const calculated = (parseFloat(ngnAmount) * effectiveExchangeRate).toFixed(
+        network === "send" ? 2 : 6
+      );
       setSendAmount(calculated);
 
       // Always ensure transaction ID exists when amount is entered
@@ -344,24 +398,29 @@ export default function PaymentForm() {
     } else {
       setSendAmount("0.00");
     }
-  }, [ngnAmount, exchangeRate]);
+  }, [ngnAmount, effectiveExchangeRate, network]);
 
   // Update transaction ID in database with amount and exchange rate
   const updateTransactionIdWithAmount = async (amount: number, sendAmt: string) => {
     if (!transactionId) return;
 
     try {
+      const body: Record<string, unknown> = {
+        transactionId,
+        ngnAmount: amount,
+        sendAmount: sendAmt,
+      };
+      if (network === "base" || network === "solana") {
+        body.exchangeRate = effectiveExchangeRate;
+        body.network = network;
+        body.token = selectedStablecoin;
+      }
       const response = await fetch("/api/transactions/create-id", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          transactionId,
-          ngnAmount: amount,
-          sendAmount: sendAmt,
-          // Note: exchangeRate is not sent - backend uses admin-set rate from settings
-        }),
+        body: JSON.stringify(body),
       });
 
       const data = await response.json();
@@ -427,7 +486,7 @@ export default function PaymentForm() {
     }
   }, []); // Run once on mount
 
-  // Validate form fields
+  // Validate form fields (wallet validation depends on network)
   const validateForm = (): boolean => {
     const newErrors: typeof errors = {};
 
@@ -435,9 +494,15 @@ export default function PaymentForm() {
       newErrors.ngnAmount = `Minimum purchase amount is ₦${minimumPurchase.toLocaleString()}`;
     }
 
-    if (!walletAddress || !isValidWalletOrTag(walletAddress.trim())) {
-      newErrors.walletAddress =
-        "Please enter a valid Base wallet address (0x...)";
+    const trimmedWallet = walletAddress.trim();
+    if (network === "solana") {
+      if (!trimmedWallet || !isValidSolanaAddress(trimmedWallet)) {
+        newErrors.walletAddress = "Please enter a valid Solana wallet address";
+      }
+    } else {
+      if (!trimmedWallet || !isValidWalletOrTag(trimmedWallet)) {
+        newErrors.walletAddress = "Please enter a valid Base wallet address (0x...) or SendTag";
+      }
     }
 
     setErrors(newErrors);
@@ -616,18 +681,23 @@ export default function PaymentForm() {
       // Create pending transaction first
       console.log(`[Flutterwave Payment] Creating transaction: ${currentTransactionId} for wallet ${finalWalletAddress}, amount: ${ngnAmount} NGN`);
       
-      // Step 1: Create transaction with status "pending"
+      const createTxBody: Record<string, unknown> = {
+        transactionId: currentTransactionId,
+        walletAddress: network === "solana" ? finalWalletAddress : finalWalletAddress.toLowerCase(),
+        ngnAmount: parseFloat(ngnAmount),
+        sendAmount: parseFloat(sendAmount),
+        userId: user.id,
+        userEmail: user.email,
+      };
+      if (network === "base" || network === "solana") {
+        createTxBody.exchangeRate = effectiveExchangeRate;
+        createTxBody.network = network;
+        createTxBody.token = selectedStablecoin;
+      }
       const txResponse = await fetch("/api/transactions/create-id", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          transactionId: currentTransactionId,
-          walletAddress: finalWalletAddress,
-          ngnAmount: parseFloat(ngnAmount),
-          sendAmount: parseFloat(sendAmount),
-          userId: user.id,
-          userEmail: user.email,
-        }),
+        body: JSON.stringify(createTxBody),
       });
       
       const txData = await txResponse.json();
@@ -700,6 +770,7 @@ export default function PaymentForm() {
           user_id: user.id,
           user_email: user.email,
           user_phone: (user as any).mobile_number || "",
+          ...(network !== "send" && { network, token: selectedStablecoin }),
         },
       };
 
@@ -746,8 +817,8 @@ export default function PaymentForm() {
         },
         redirect_url: callbackUrl,
         customizations: {
-          title: "FlipPay - SEND Token Purchase",
-          description: "Purchase SEND tokens with Naira",
+          title: network === "send" ? "FlipPay - SEND Token Purchase" : `FlipPay - ${selectedStablecoin} Purchase`,
+          description: network === "send" ? "Purchase SEND tokens with Naira" : `Purchase ${selectedStablecoin} with Naira`,
           logo: typeof window !== "undefined" ? `${window.location.origin}/logo.png` : "",
         },
         meta: paymentRequest.metadata,
@@ -924,21 +995,86 @@ export default function PaymentForm() {
               </div>
             </div>
 
-            {/* $SEND Amount Display - compact box with SEND logo */}
-            <div>
-              <label className="block text-sm sm:text-base font-medium text-slate-700 dark:text-slate-300">
-                Amount of $SEND
-              </label>
-              <div className="mt-2 relative">
-                <div className="flex items-center gap-2 w-full min-h-[42px] sm:min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 sm:px-3.5 sm:py-2.5">
-                  {getTokenLogo("SEND") ? (
+            {/* USDC / USDT dropdown - only for Base and Solana */}
+            {(network === "base" || network === "solana") && (
+              <div ref={stablecoinDropdownRef} className="relative">
+                <label className="block text-sm sm:text-base font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  Select stablecoin
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsStablecoinDropdownOpen((v) => !v)}
+                  className="w-full flex items-center gap-2 min-h-[42px] sm:min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 sm:px-3.5 sm:py-2.5 text-left"
+                >
+                  {getTokenLogo(selectedStablecoin) ? (
                     <img
-                      src={getTokenLogo("SEND")}
-                      alt="SEND"
+                      src={getTokenLogo(selectedStablecoin)}
+                      alt={selectedStablecoin}
                       className="w-6 h-6 sm:w-7 sm:h-7 shrink-0 rounded-full object-cover"
                     />
                   ) : (
-                    <span className="text-slate-400 dark:text-slate-500 text-sm font-medium shrink-0">$SEND</span>
+                    <span className="text-slate-400 dark:text-slate-500 text-sm font-medium shrink-0">{selectedStablecoin}</span>
+                  )}
+                  <span className="flex-1 font-medium">{selectedStablecoin}</span>
+                  <span className="material-icons-outlined text-slate-500">
+                    {isStablecoinDropdownOpen ? "expand_less" : "expand_more"}
+                  </span>
+                </button>
+                {isStablecoinDropdownOpen && (
+                  <div className="absolute z-10 mt-1 w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 shadow-lg py-1">
+                    {(["USDC", "USDT"] as const).map((token) => (
+                      <button
+                        key={token}
+                        type="button"
+                        onClick={() => {
+                          setSelectedStablecoin(token);
+                          setIsStablecoinDropdownOpen(false);
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2.5 hover:bg-slate-100 dark:hover:bg-slate-700 text-left"
+                      >
+                        {getTokenLogo(token) ? (
+                          <img src={getTokenLogo(token)!} alt={token} className="w-6 h-6 rounded-full object-cover" />
+                        ) : (
+                          <span className="text-sm font-medium">{token}</span>
+                        )}
+                        <span className="font-medium">{token}</span>
+                        {selectedStablecoin === token && (
+                          <span className="material-icons-outlined text-primary text-sm ml-auto">check</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Crypto amount display - SEND or USDC/USDT */}
+            <div>
+              <label className="block text-sm sm:text-base font-medium text-slate-700 dark:text-slate-300">
+                {network === "send" ? "Amount of $SEND" : `Amount of ${selectedStablecoin}`}
+              </label>
+              <div className="mt-2 relative">
+                <div className="flex items-center gap-2 w-full min-h-[42px] sm:min-h-[44px] rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-3 py-2 sm:px-3.5 sm:py-2.5">
+                  {network === "send" ? (
+                    getTokenLogo("SEND") ? (
+                      <img
+                        src={getTokenLogo("SEND")}
+                        alt="SEND"
+                        className="w-6 h-6 sm:w-7 sm:h-7 shrink-0 rounded-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-slate-400 dark:text-slate-500 text-sm font-medium shrink-0">$SEND</span>
+                    )
+                  ) : (
+                    getTokenLogo(selectedStablecoin) ? (
+                      <img
+                        src={getTokenLogo(selectedStablecoin)}
+                        alt={selectedStablecoin}
+                        className="w-6 h-6 sm:w-7 sm:h-7 shrink-0 rounded-full object-cover"
+                      />
+                    ) : (
+                      <span className="text-slate-400 dark:text-slate-500 text-sm font-medium shrink-0">{selectedStablecoin}</span>
+                    )
                   )}
                   <input
                     className="flex-1 min-w-0 bg-transparent border-0 focus:ring-0 text-slate-900 dark:text-slate-100 text-base font-medium"
@@ -951,7 +1087,11 @@ export default function PaymentForm() {
                   />
                 </div>
                 <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-1.5">
-                  Rate: 1 NGN = {exchangeRate} $SEND
+                  {network === "send"
+                    ? `Rate: 1 NGN = ${exchangeRate} $SEND`
+                    : effectiveExchangeRate > 0
+                      ? `Rate: 1 NGN = ${effectiveExchangeRate.toFixed(6)} ${selectedStablecoin}`
+                      : `Loading rate for ${selectedStablecoin}...`}
                 </p>
               </div>
             </div>
@@ -962,7 +1102,9 @@ export default function PaymentForm() {
                 className="block text-sm sm:text-base font-medium text-slate-700 dark:text-slate-300"
                 htmlFor="wallet_address"
               >
-                Enter Send App or Base Wallet Address
+                {network === "solana"
+                  ? "Enter Solana Wallet Address"
+                  : "Enter Send App or Base Wallet Address"}
               </label>
               <div className="mt-2">
                 <input
@@ -973,7 +1115,7 @@ export default function PaymentForm() {
                   } bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-base focus:ring-2 focus:ring-primary focus:border-primary placeholder:text-slate-400 dark:placeholder:text-slate-500 px-4 py-3 sm:py-3.5`}
                   id="wallet_address"
                   name="wallet_address"
-                  placeholder="0x..."
+                  placeholder={network === "solana" ? "Solana address..." : "0x..."}
                   type="text"
                   value={walletAddress}
                   onChange={(e) => handleInputChange("walletAddress", e.target.value)}
@@ -1007,10 +1149,16 @@ export default function PaymentForm() {
               )}
               <button
                 type="submit"
-                disabled={!transactionsEnabled || isLoading || !ngnAmount || !walletAddress}
+                disabled={
+                  !transactionsEnabled ||
+                  isLoading ||
+                  !ngnAmount ||
+                  !walletAddress ||
+                  ((network === "base" || network === "solana") && effectiveExchangeRate <= 0)
+                }
                 className="w-full min-h-[48px] sm:min-h-[52px] bg-primary text-slate-900 font-bold py-3.5 px-4 rounded-lg sm:rounded-md hover:opacity-90 active:opacity-95 transition-opacity focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-white dark:focus:ring-offset-slate-900 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed text-base touch-manipulation"
               >
-                {isLoading ? "Processing..." : transactionsEnabled ? "Pay now" : "Transactions Disabled"}
+                {isLoading ? "Processing..." : (network === "base" || network === "solana") && effectiveExchangeRate <= 0 ? "Loading rate..." : transactionsEnabled ? "Pay now" : "Transactions Disabled"}
               </button>
             </div>
           </form>

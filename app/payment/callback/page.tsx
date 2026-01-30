@@ -229,12 +229,20 @@ function PaymentCallbackContent() {
                 </p>
               </div>
             )}
-            <Link
-              href="/"
-              className="inline-block bg-primary text-slate-900 font-bold py-2 px-6 rounded-md hover:opacity-90 transition-opacity"
-            >
-              Make Another Payment
-            </Link>
+            <div className="flex flex-col sm:flex-row gap-3 justify-center items-center">
+              <Link
+                href="/"
+                className="w-full sm:w-auto inline-block text-center bg-primary text-slate-900 font-bold py-2.5 px-6 rounded-md hover:opacity-90 transition-opacity"
+              >
+                Home
+              </Link>
+              <Link
+                href="/payment"
+                className="w-full sm:w-auto inline-block text-center bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100 font-bold py-2.5 px-6 rounded-md hover:opacity-90 transition-opacity"
+              >
+                Make Another Payment
+              </Link>
+            </div>
           </div>
         )}
 

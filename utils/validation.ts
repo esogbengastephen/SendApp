@@ -21,6 +21,15 @@ export function isValidWalletOrTag(input: string): boolean {
 }
 
 /**
+ * Validates if a string is a valid Solana address (base58, 32–44 chars)
+ */
+export function isValidSolanaAddress(address: string): boolean {
+  const trimmed = address.trim();
+  if (trimmed.length < 32 || trimmed.length > 44) return false;
+  return /^[1-9A-HJ-NP-Za-km-z]+$/.test(trimmed);
+}
+
+/**
  * Validates NGN amount (minimum from settings)
  * @param amount - The amount string to validate
  * @param minimum - The minimum purchase amount (defaults to 3000)

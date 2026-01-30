@@ -121,6 +121,12 @@ function HistoryPageContent() {
     return "bg-yellow-100 dark:bg-yellow-900/30";
   };
 
+  const getStatusLabel = (status: string) => {
+    if (status === "completed" || status === "paid") return "Successful";
+    if (status === "failed") return "Failed";
+    return "Pending";
+  };
+
   const filteredTransactions = filter === "all" 
     ? transactions 
     : filter === "invoice"
@@ -231,8 +237,8 @@ function HistoryPageContent() {
                         {tx.secondaryAmountLabel}
                       </p>
                     )}
-                    <span className={`text-xs px-2 py-1 rounded-full ${getStatusBg(tx.status)} ${getStatusColor(tx.status)} capitalize font-medium`}>
-                      {tx.status}
+                    <span className={`text-xs px-2 py-1 rounded-full ${getStatusBg(tx.status)} ${getStatusColor(tx.status)} font-medium`}>
+                      {getStatusLabel(tx.status)}
                     </span>
                     <span className="material-icons-outlined text-gray-400 dark:text-gray-500 text-sm mt-1">
                       chevron_right
@@ -293,8 +299,8 @@ function HistoryPageContent() {
                         </p>
                       </div>
                     </div>
-                    <span className={`px-3 py-1 rounded-full ${getStatusBg(transactionDetails.status)} ${getStatusColor(transactionDetails.status)} capitalize font-medium`}>
-                      {transactionDetails.status}
+                    <span className={`px-3 py-1 rounded-full ${getStatusBg(transactionDetails.status)} ${getStatusColor(transactionDetails.status)} font-medium`}>
+                      {getStatusLabel(transactionDetails.status)}
                     </span>
                   </div>
 

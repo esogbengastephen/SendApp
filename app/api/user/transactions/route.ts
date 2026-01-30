@@ -30,6 +30,9 @@ export async function GET(request: NextRequest) {
 
     if (cryptoTransactions) {
       cryptoTransactions.forEach(tx => {
+        // If we have a tx_hash, the tokens were sent — treat as completed even if DB still says pending
+        const effectiveStatus = (tx.status === "pending" && tx.tx_hash) ? "completed" : (tx.status || "pending");
+        const color = effectiveStatus === "completed" ? "green" : effectiveStatus === "failed" ? "red" : "yellow";
         allTransactions.push({
           id: tx.id,
           type: "naira_to_crypto", // Renamed for clarity
@@ -40,12 +43,12 @@ export async function GET(request: NextRequest) {
           amountLabel: `₦${parseFloat(tx.ngn_amount || "0").toLocaleString()}`,
           secondaryAmount: parseFloat(tx.send_amount || "0"),
           secondaryAmountLabel: `${parseFloat(tx.send_amount || "0").toFixed(2)} SEND`,
-          status: tx.status,
+          status: effectiveStatus,
           date: tx.created_at,
           txHash: tx.tx_hash,
           reference: tx.transaction_id,
           icon: "currency_bitcoin",
-          color: "primary",
+          color,
         });
       });
     }
@@ -137,22 +140,25 @@ export async function GET(request: NextRequest) {
 
     if (offrampTransactions) {
       offrampTransactions.forEach(tx => {
+        // If we have a swap_tx_hash, the conversion was done — treat as completed even if DB still says pending
+        const effectiveStatus = (tx.status === "pending" && tx.swap_tx_hash) ? "completed" : (tx.status || "pending");
+        const color = effectiveStatus === "completed" ? "green" : effectiveStatus === "failed" ? "red" : "yellow";
         allTransactions.push({
           id: tx.id,
           type: "crypto_to_naira", // Renamed for clarity
           originalType: "offramp", // Keep for backward compatibility
           title: "Crypto to Naira",
-          description: `Converted ${tx.token_amount} ${tx.token_symbol}`,
+          description: `Converted ${tx.token_amount ?? ""} ${tx.token_symbol ?? ""}`.trim() || "Crypto to Naira",
           amount: parseFloat(tx.ngn_amount?.toString() || "0"),
           amountLabel: `₦${parseFloat(tx.ngn_amount?.toString() || "0").toLocaleString()}`,
           secondaryAmount: parseFloat(tx.token_amount || "0"),
-          secondaryAmountLabel: `${tx.token_amount} ${tx.token_symbol}`,
-          status: tx.status,
+          secondaryAmountLabel: [tx.token_amount, tx.token_symbol].filter(Boolean).join(" ") || "",
+          status: effectiveStatus,
           date: tx.created_at,
           txHash: tx.swap_tx_hash,
           reference: tx.transaction_id,
           icon: "currency_exchange",
-          color: tx.status === "completed" ? "green" : tx.status === "failed" ? "red" : "yellow",
+          color,
         });
       });
     }
@@ -235,8 +241,14 @@ export async function GET(request: NextRequest) {
     // 6. TODO: Get Receive Crypto transactions (when implemented)
     // This will track incoming crypto deposits to wallet addresses
 
-    // Sort all transactions by date (newest first)
-    allTransactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    // Sort all transactions by date: newest first (invalid/missing dates go to the end)
+    allTransactions.sort((a, b) => {
+      const timeA = a.date ? new Date(a.date).getTime() : 0;
+      const timeB = b.date ? new Date(b.date).getTime() : 0;
+      if (Number.isNaN(timeA)) return 1;
+      if (Number.isNaN(timeB)) return -1;
+      return timeB - timeA; // descending: newest at top
+    });
 
     return NextResponse.json({
       success: true,

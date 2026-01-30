@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { transactionId, ngnAmount, sendAmount, walletAddress, sendtag, exchangeRate, userId, userEmail } = body;
+    const { transactionId, ngnAmount, sendAmount, walletAddress, sendtag, exchangeRate, userId, userEmail, network } = body;
 
     console.log(`[Create ID] Processing transaction request for wallet: ${walletAddress}, user: ${userEmail || userId || 'guest'}`);
 
@@ -70,8 +70,8 @@ export async function POST(request: NextRequest) {
       if (existing) {
         // Update existing transaction if we have new data
         if (ngnAmount && walletAddress) {
-          const normalizedWallet = walletAddress.trim().toLowerCase();
-          const currentExchangeRate = exchangeRate ? parseFloat(exchangeRate) : existing.exchangeRate || await getExchangeRate();
+          const normalizedWallet = network === "solana" ? walletAddress.trim() : walletAddress.trim().toLowerCase();
+          const currentExchangeRate = exchangeRate != null && exchangeRate !== "" ? parseFloat(exchangeRate) : (existing.exchangeRate ?? await getExchangeRate());
           
           // Calculate fees upfront
           const feeNGN = await calculateTransactionFee(parseFloat(ngnAmount));
@@ -141,9 +141,9 @@ export async function POST(request: NextRequest) {
         );
       }
       
-      const normalizedWallet = walletAddress.trim().toLowerCase();
-      // Use admin-set exchange rate (not from frontend)
-      const currentExchangeRate = await getExchangeRate();
+      const normalizedWallet = network === "solana" ? walletAddress.trim() : walletAddress.trim().toLowerCase();
+      // Use frontend rate for base/solana (USDC/USDT), else admin-set SEND rate
+      const currentExchangeRate = exchangeRate != null && exchangeRate !== "" ? parseFloat(exchangeRate) : await getExchangeRate();
       
       // Calculate fees upfront so user sees correct final amount
       const feeNGN = await calculateTransactionFee(parseFloat(ngnAmount));
