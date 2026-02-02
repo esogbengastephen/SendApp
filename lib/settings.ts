@@ -9,10 +9,18 @@ interface PlatformSettings {
   onrampEnabled: boolean;
   offrampEnabled: boolean;
   minimumPurchase: number;
-  /** Profit margins in NGN (stored in DB, applied when publishing CoinGecko prices) */
+  /** Buy profit margins in NGN (onramp: NGN → crypto) */
   profitNgnSend?: number;
   profitNgnUsdc?: number;
   profitNgnUsdt?: number;
+  /** Sell profit margins in NGN (offramp: crypto → NGN) */
+  profitNgnSendSell?: number;
+  profitNgnUsdcSell?: number;
+  profitNgnUsdtSell?: number;
+  /** Sell rates: 1 SEND = sendToNgnSell NGN; 1 USDC = usdcSellPriceNgn NGN; 1 USDT = usdtSellPriceNgn NGN */
+  sendToNgnSell?: number;
+  usdcSellPriceNgn?: number;
+  usdtSellPriceNgn?: number;
   /** When true, CoinGecko + profit is auto-published every 30s */
   coingeckoAutoPublish?: boolean;
   updatedAt: Date;
