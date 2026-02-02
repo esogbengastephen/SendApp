@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSettings, updateExchangeRate, updateTransactionsEnabled, updateMinimumPurchase, updateOnrampEnabled, updateOfframpEnabled } from "@/lib/settings";
+import { getSettings, updateExchangeRate, updateTransactionsEnabled, updateMinimumPurchase, updateOnrampEnabled, updateOfframpEnabled, updateProfitMargins, updateProfitMarginsSell, updateSellRates, updateCoingeckoAutoPublish } from "@/lib/settings";
 import { isAdminWallet } from "@/lib/supabase";
 
 /**
@@ -34,7 +34,19 @@ export async function GET(request: NextRequest) {
       settings: {
         exchangeRate: settings.exchangeRate,
         transactionsEnabled: settings.transactionsEnabled !== false,
+        onrampEnabled: settings.onrampEnabled !== false,
+        offrampEnabled: settings.offrampEnabled !== false,
         minimumPurchase: settings.minimumPurchase || 3000,
+        profitNgnSend: settings.profitNgnSend ?? 0,
+        profitNgnUsdc: settings.profitNgnUsdc ?? 0,
+        profitNgnUsdt: settings.profitNgnUsdt ?? 0,
+        profitNgnSendSell: settings.profitNgnSendSell ?? 0,
+        profitNgnUsdcSell: settings.profitNgnUsdcSell ?? 0,
+        profitNgnUsdtSell: settings.profitNgnUsdtSell ?? 0,
+        sendToNgnSell: settings.sendToNgnSell,
+        usdcSellPriceNgn: settings.usdcSellPriceNgn,
+        usdtSellPriceNgn: settings.usdtSellPriceNgn,
+        coingeckoAutoPublish: settings.coingeckoAutoPublish === true,
         updatedAt: settings.updatedAt.toISOString(),
         updatedBy: settings.updatedBy,
       },
@@ -54,7 +66,7 @@ export async function GET(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { exchangeRate, transactionsEnabled, onrampEnabled, offrampEnabled, minimumPurchase, walletAddress } = body;
+    const { exchangeRate, transactionsEnabled, onrampEnabled, offrampEnabled, minimumPurchase, profitNgnSend, profitNgnUsdc, profitNgnUsdt, profitNgnSendSell, profitNgnUsdcSell, profitNgnUsdtSell, sendToNgnSell, usdcSellPriceNgn, usdtSellPriceNgn, coingeckoAutoPublish, walletAddress } = body;
 
     // Verify admin access
     if (!walletAddress) {
@@ -117,6 +129,43 @@ export async function PUT(request: NextRequest) {
       await updateOfframpEnabled(enabled, walletAddress.toLowerCase());
     }
 
+    // Update buy profit margins (NGN) if provided
+    if (profitNgnSend !== undefined || profitNgnUsdc !== undefined || profitNgnUsdt !== undefined) {
+      const current = await getSettings();
+      const send = profitNgnSend !== undefined ? (Number(profitNgnSend) || 0) : (current.profitNgnSend ?? 0);
+      const usdc = profitNgnUsdc !== undefined ? (Number(profitNgnUsdc) || 0) : (current.profitNgnUsdc ?? 0);
+      const usdt = profitNgnUsdt !== undefined ? (Number(profitNgnUsdt) || 0) : (current.profitNgnUsdt ?? 0);
+      await updateProfitMargins(Math.max(0, send), Math.max(0, usdc), Math.max(0, usdt), walletAddress.toLowerCase());
+    }
+
+    // Update sell profit margins (NGN) if provided
+    if (profitNgnSendSell !== undefined || profitNgnUsdcSell !== undefined || profitNgnUsdtSell !== undefined) {
+      const current = await getSettings();
+      const send = profitNgnSendSell !== undefined ? (Number(profitNgnSendSell) || 0) : (current.profitNgnSendSell ?? 0);
+      const usdc = profitNgnUsdcSell !== undefined ? (Number(profitNgnUsdcSell) || 0) : (current.profitNgnUsdcSell ?? 0);
+      const usdt = profitNgnUsdtSell !== undefined ? (Number(profitNgnUsdtSell) || 0) : (current.profitNgnUsdtSell ?? 0);
+      await updateProfitMarginsSell(Math.max(0, send), Math.max(0, usdc), Math.max(0, usdt), walletAddress.toLowerCase());
+    }
+
+    // Update sell rates (1 SEND = X NGN, etc.) if provided
+    if (sendToNgnSell !== undefined || usdcSellPriceNgn !== undefined || usdtSellPriceNgn !== undefined) {
+      const sendVal = sendToNgnSell !== undefined ? parseFloat(sendToNgnSell) : undefined;
+      const usdcVal = usdcSellPriceNgn !== undefined ? parseFloat(usdcSellPriceNgn) : undefined;
+      const usdtVal = usdtSellPriceNgn !== undefined ? parseFloat(usdtSellPriceNgn) : undefined;
+      await updateSellRates(
+        sendVal != null && !isNaN(sendVal) ? sendVal : undefined,
+        usdcVal != null && !isNaN(usdcVal) ? usdcVal : undefined,
+        usdtVal != null && !isNaN(usdtVal) ? usdtVal : undefined,
+        walletAddress.toLowerCase()
+      );
+    }
+
+    // Update CoinGecko auto-publish (every 30s) if provided
+    if (coingeckoAutoPublish !== undefined) {
+      const enabled = coingeckoAutoPublish === true || coingeckoAutoPublish === "true";
+      await updateCoingeckoAutoPublish(enabled, walletAddress.toLowerCase());
+    }
+
     // Update minimum purchase if provided
     if (minimumPurchase !== undefined) {
       // Validate minimum purchase
@@ -147,6 +196,16 @@ export async function PUT(request: NextRequest) {
         onrampEnabled: updatedSettings.onrampEnabled !== false,
         offrampEnabled: updatedSettings.offrampEnabled !== false,
         minimumPurchase: updatedSettings.minimumPurchase || 3000,
+        profitNgnSend: updatedSettings.profitNgnSend ?? 0,
+        profitNgnUsdc: updatedSettings.profitNgnUsdc ?? 0,
+        profitNgnUsdt: updatedSettings.profitNgnUsdt ?? 0,
+        profitNgnSendSell: updatedSettings.profitNgnSendSell ?? 0,
+        profitNgnUsdcSell: updatedSettings.profitNgnUsdcSell ?? 0,
+        profitNgnUsdtSell: updatedSettings.profitNgnUsdtSell ?? 0,
+        sendToNgnSell: updatedSettings.sendToNgnSell,
+        usdcSellPriceNgn: updatedSettings.usdcSellPriceNgn,
+        usdtSellPriceNgn: updatedSettings.usdtSellPriceNgn,
+        coingeckoAutoPublish: updatedSettings.coingeckoAutoPublish === true,
         updatedAt: updatedSettings.updatedAt.toISOString(),
         updatedBy: updatedSettings.updatedBy,
       },

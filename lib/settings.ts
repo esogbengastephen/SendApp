@@ -9,6 +9,12 @@ interface PlatformSettings {
   onrampEnabled: boolean;
   offrampEnabled: boolean;
   minimumPurchase: number;
+  /** Profit margins in NGN (stored in DB, applied when publishing CoinGecko prices) */
+  profitNgnSend?: number;
+  profitNgnUsdc?: number;
+  profitNgnUsdt?: number;
+  /** When true, CoinGecko + profit is auto-published every 30s */
+  coingeckoAutoPublish?: boolean;
   updatedAt: Date;
   updatedBy?: string;
 }
@@ -46,10 +52,17 @@ async function loadSettings(): Promise<PlatformSettings> {
       // If no settings found, create default in database
       const defaultSettings: PlatformSettings = {
         exchangeRate: defaultRate,
-        transactionsEnabled: true, // Default: transactions enabled (global – affects all)
-        onrampEnabled: true, // Default: onramp (buy) enabled
-        offrampEnabled: true, // Default: offramp (sell) enabled
-        minimumPurchase: 3000, // Default minimum purchase
+        transactionsEnabled: true,
+        onrampEnabled: true,
+        offrampEnabled: true,
+        minimumPurchase: 3000,
+        profitNgnSend: 0,
+        profitNgnUsdc: 0,
+        profitNgnUsdt: 0,
+        profitNgnSendSell: 0,
+        profitNgnUsdcSell: 0,
+        profitNgnUsdtSell: 0,
+        coingeckoAutoPublish: false,
         updatedAt: new Date(),
         updatedBy: "system",
       };
@@ -65,6 +78,13 @@ async function loadSettings(): Promise<PlatformSettings> {
             onrampEnabled: defaultSettings.onrampEnabled,
             offrampEnabled: defaultSettings.offrampEnabled,
             minimumPurchase: defaultSettings.minimumPurchase,
+            profitNgnSend: defaultSettings.profitNgnSend ?? 0,
+            profitNgnUsdc: defaultSettings.profitNgnUsdc ?? 0,
+            profitNgnUsdt: defaultSettings.profitNgnUsdt ?? 0,
+            profitNgnSendSell: defaultSettings.profitNgnSendSell ?? 0,
+            profitNgnUsdcSell: defaultSettings.profitNgnUsdcSell ?? 0,
+            profitNgnUsdtSell: defaultSettings.profitNgnUsdtSell ?? 0,
+            coingeckoAutoPublish: defaultSettings.coingeckoAutoPublish ?? false,
             updatedAt: defaultSettings.updatedAt.toISOString(),
             updatedBy: defaultSettings.updatedBy,
           },
@@ -99,6 +119,16 @@ async function loadSettings(): Promise<PlatformSettings> {
         onrampEnabled: value.onrampEnabled !== undefined ? value.onrampEnabled : true,
         offrampEnabled: value.offrampEnabled !== undefined ? value.offrampEnabled : true,
         minimumPurchase: value.minimumPurchase !== undefined ? value.minimumPurchase : 3000,
+        profitNgnSend: value.profitNgnSend !== undefined ? Number(value.profitNgnSend) : 0,
+        profitNgnUsdc: value.profitNgnUsdc !== undefined ? Number(value.profitNgnUsdc) : 0,
+        profitNgnUsdt: value.profitNgnUsdt !== undefined ? Number(value.profitNgnUsdt) : 0,
+        profitNgnSendSell: value.profitNgnSendSell !== undefined ? Number(value.profitNgnSendSell) : 0,
+        profitNgnUsdcSell: value.profitNgnUsdcSell !== undefined ? Number(value.profitNgnUsdcSell) : 0,
+        profitNgnUsdtSell: value.profitNgnUsdtSell !== undefined ? Number(value.profitNgnUsdtSell) : 0,
+        sendToNgnSell: value.sendToNgnSell !== undefined ? Number(value.sendToNgnSell) : undefined,
+        usdcSellPriceNgn: value.usdcSellPriceNgn !== undefined ? Number(value.usdcSellPriceNgn) : undefined,
+        usdtSellPriceNgn: value.usdtSellPriceNgn !== undefined ? Number(value.usdtSellPriceNgn) : undefined,
+        coingeckoAutoPublish: value.coingeckoAutoPublish === true,
         updatedAt: value.updatedAt ? new Date(value.updatedAt) : new Date(),
         updatedBy: value.updatedBy,
       };
@@ -120,6 +150,13 @@ async function loadSettings(): Promise<PlatformSettings> {
       onrampEnabled: true,
       offrampEnabled: true,
       minimumPurchase: 3000,
+      profitNgnSend: 0,
+      profitNgnUsdc: 0,
+      profitNgnUsdt: 0,
+      profitNgnSendSell: 0,
+      profitNgnUsdcSell: 0,
+      profitNgnUsdtSell: 0,
+      coingeckoAutoPublish: false,
       updatedAt: new Date(),
     };
   }
@@ -140,6 +177,16 @@ async function saveSettings(settings: PlatformSettings): Promise<void> {
           onrampEnabled: settings.onrampEnabled,
           offrampEnabled: settings.offrampEnabled,
           minimumPurchase: settings.minimumPurchase,
+          profitNgnSend: settings.profitNgnSend ?? 0,
+          profitNgnUsdc: settings.profitNgnUsdc ?? 0,
+          profitNgnUsdt: settings.profitNgnUsdt ?? 0,
+          profitNgnSendSell: settings.profitNgnSendSell ?? 0,
+          profitNgnUsdcSell: settings.profitNgnUsdcSell ?? 0,
+          profitNgnUsdtSell: settings.profitNgnUsdtSell ?? 0,
+          sendToNgnSell: settings.sendToNgnSell,
+          usdcSellPriceNgn: settings.usdcSellPriceNgn,
+          usdtSellPriceNgn: settings.usdtSellPriceNgn,
+          coingeckoAutoPublish: settings.coingeckoAutoPublish ?? false,
           updatedAt: settings.updatedAt.toISOString(),
           updatedBy: settings.updatedBy,
         },
@@ -247,8 +294,9 @@ export async function updateExchangeRate(
   const currentSettings = settings || await getSettings();
   const oldRate = currentSettings.exchangeRate;
   
-  // Create new settings object (preserve transactionsEnabled, onramp/offramp, minimumPurchase)
+  // Create new settings object (preserve transactionsEnabled, onramp/offramp, minimumPurchase, profit, autoPublish)
   const newSettings: PlatformSettings = {
+    ...currentSettings,
     exchangeRate: rate,
     transactionsEnabled: currentSettings.transactionsEnabled !== false,
     onrampEnabled: currentSettings.onrampEnabled !== false,
@@ -431,5 +479,137 @@ export async function updateMinimumPurchase(
 
   console.log(`[Settings] Minimum purchase updated: ${currentSettings.minimumPurchase || 3000} -> ${amount} by ${updatedBy || 'system'}`);
   
+  return { ...newSettings };
+}
+
+/**
+ * Get buy profit margins (NGN) – used when publishing CoinGecko for buy (onramp).
+ */
+export async function getProfitMargins(): Promise<{ profitNgnSend: number; profitNgnUsdc: number; profitNgnUsdt: number }> {
+  const s = await getSettings();
+  return {
+    profitNgnSend: s.profitNgnSend ?? 0,
+    profitNgnUsdc: s.profitNgnUsdc ?? 0,
+    profitNgnUsdt: s.profitNgnUsdt ?? 0,
+  };
+}
+
+/**
+ * Get sell profit margins (NGN) – used when publishing CoinGecko for sell (offramp).
+ */
+export async function getProfitMarginsSell(): Promise<{ profitNgnSendSell: number; profitNgnUsdcSell: number; profitNgnUsdtSell: number }> {
+  const s = await getSettings();
+  return {
+    profitNgnSendSell: s.profitNgnSendSell ?? 0,
+    profitNgnUsdcSell: s.profitNgnUsdcSell ?? 0,
+    profitNgnUsdtSell: s.profitNgnUsdtSell ?? 0,
+  };
+}
+
+/**
+ * Update buy profit margins (NGN). Applied when publishing CoinGecko for buy.
+ */
+export async function updateProfitMargins(
+  profitNgnSend: number,
+  profitNgnUsdc: number,
+  profitNgnUsdt: number,
+  updatedBy?: string
+): Promise<PlatformSettings> {
+  const currentSettings = await getSettings();
+  const newSettings: PlatformSettings = {
+    ...currentSettings,
+    profitNgnSend: Math.max(0, Number(profitNgnSend) || 0),
+    profitNgnUsdc: Math.max(0, Number(profitNgnUsdc) || 0),
+    profitNgnUsdt: Math.max(0, Number(profitNgnUsdt) || 0),
+    updatedAt: new Date(),
+    updatedBy,
+  };
+  settings = newSettings;
+  global.__sendSettings = newSettings;
+  global.__sendSettingsCacheTime = Date.now();
+  await saveSettings(newSettings);
+  console.log(`[Settings] Buy profit margins updated by ${updatedBy || 'system'}`);
+  return { ...newSettings };
+}
+
+/**
+ * Update sell profit margins (NGN). Applied when publishing CoinGecko for sell.
+ */
+export async function updateProfitMarginsSell(
+  profitNgnSendSell: number,
+  profitNgnUsdcSell: number,
+  profitNgnUsdtSell: number,
+  updatedBy?: string
+): Promise<PlatformSettings> {
+  const currentSettings = await getSettings();
+  const newSettings: PlatformSettings = {
+    ...currentSettings,
+    profitNgnSendSell: Math.max(0, Number(profitNgnSendSell) || 0),
+    profitNgnUsdcSell: Math.max(0, Number(profitNgnUsdcSell) || 0),
+    profitNgnUsdtSell: Math.max(0, Number(profitNgnUsdtSell) || 0),
+    updatedAt: new Date(),
+    updatedBy,
+  };
+  settings = newSettings;
+  global.__sendSettings = newSettings;
+  global.__sendSettingsCacheTime = Date.now();
+  await saveSettings(newSettings);
+  console.log(`[Settings] Sell profit margins updated by ${updatedBy || 'system'}`);
+  return { ...newSettings };
+}
+
+/**
+ * Update sell rates (1 SEND = sendToNgnSell NGN; 1 USDC = usdcSellPriceNgn NGN; 1 USDT = usdtSellPriceNgn NGN).
+ */
+export async function updateSellRates(
+  sendToNgnSell?: number,
+  usdcSellPriceNgn?: number,
+  usdtSellPriceNgn?: number,
+  updatedBy?: string
+): Promise<PlatformSettings> {
+  const currentSettings = await getSettings();
+  const newSettings: PlatformSettings = {
+    ...currentSettings,
+    ...(sendToNgnSell !== undefined && sendToNgnSell > 0 && { sendToNgnSell }),
+    ...(usdcSellPriceNgn !== undefined && usdcSellPriceNgn > 0 && { usdcSellPriceNgn }),
+    ...(usdtSellPriceNgn !== undefined && usdtSellPriceNgn > 0 && { usdtSellPriceNgn }),
+    updatedAt: new Date(),
+    updatedBy,
+  };
+  settings = newSettings;
+  global.__sendSettings = newSettings;
+  global.__sendSettingsCacheTime = Date.now();
+  await saveSettings(newSettings);
+  console.log(`[Settings] Sell rates updated by ${updatedBy || 'system'}`);
+  return { ...newSettings };
+}
+
+/**
+ * Get CoinGecko auto-publish setting (publish CoinGecko + profit every 30s when enabled).
+ */
+export async function getCoingeckoAutoPublish(): Promise<boolean> {
+  const s = await getSettings();
+  return s.coingeckoAutoPublish === true;
+}
+
+/**
+ * Update CoinGecko auto-publish (when true, publish CoinGecko + profit every 30s).
+ */
+export async function updateCoingeckoAutoPublish(
+  enabled: boolean,
+  updatedBy?: string
+): Promise<PlatformSettings> {
+  const currentSettings = await getSettings();
+  const newSettings: PlatformSettings = {
+    ...currentSettings,
+    coingeckoAutoPublish: enabled,
+    updatedAt: new Date(),
+    updatedBy,
+  };
+  settings = newSettings;
+  global.__sendSettings = newSettings;
+  global.__sendSettingsCacheTime = Date.now();
+  await saveSettings(newSettings);
+  console.log(`[Settings] CoinGecko auto-publish ${enabled ? 'enabled' : 'disabled'} by ${updatedBy || 'system'}`);
   return { ...newSettings };
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useAccount } from "wagmi";
 
@@ -37,8 +37,17 @@ export default function PriceActionPage() {
   const [profitNgnSend, setProfitNgnSend] = useState<string>("0");
   const [profitNgnUsdc, setProfitNgnUsdc] = useState<string>("0");
   const [profitNgnUsdt, setProfitNgnUsdt] = useState<string>("0");
+  const [profitNgnSendSell, setProfitNgnSendSell] = useState<string>("0");
+  const [profitNgnUsdcSell, setProfitNgnUsdcSell] = useState<string>("0");
+  const [profitNgnUsdtSell, setProfitNgnUsdtSell] = useState<string>("0");
+  const [coingeckoAutoPublish, setCoingeckoAutoPublish] = useState(false);
+  const [savingProfit, setSavingProfit] = useState(false);
   const [savingMinimumPurchase, setSavingMinimumPurchase] = useState(false);
   const [success, setSuccess] = useState(false);
+  const profitSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const profitSellSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastAutoPublishRef = useRef<number>(0);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   // Exchange rates (admin-set) – for BUY & SELL
   const [exchangeRate, setExchangeRate] = useState<string>(""); // 1 NGN = X $SEND
@@ -86,11 +95,19 @@ export default function PriceActionPage() {
         setOnrampEnabled(data.settings.onrampEnabled !== false);
         setOfframpEnabled(data.settings.offrampEnabled !== false);
         setMinimumPurchase(data.settings.minimumPurchase ?? 3000);
+        setProfitNgnSend(String(data.settings.profitNgnSend ?? 0));
+        setProfitNgnUsdc(String(data.settings.profitNgnUsdc ?? 0));
+        setProfitNgnUsdt(String(data.settings.profitNgnUsdt ?? 0));
+        setProfitNgnSendSell(String(data.settings.profitNgnSendSell ?? 0));
+        setProfitNgnUsdcSell(String(data.settings.profitNgnUsdcSell ?? 0));
+        setProfitNgnUsdtSell(String(data.settings.profitNgnUsdtSell ?? 0));
+        setCoingeckoAutoPublish(data.settings.coingeckoAutoPublish === true);
         const ngnToSend = data.settings.exchangeRate;
         if (ngnToSend != null && Number(ngnToSend) > 0) {
           setExchangeRate(Number(ngnToSend).toFixed(5));
           setSendToNgnRate((1 / Number(ngnToSend)).toFixed(2));
         }
+        setSettingsLoaded(true);
       }
     } catch (err) {
       console.error("Failed to fetch settings:", err);
@@ -147,12 +164,89 @@ export default function PriceActionPage() {
     }
   }, [address]);
 
-  // Auto-refresh CoinGecko prices every 30 seconds so "Publish" always uses current rate + profit
+  // Auto-refresh CoinGecko prices every 30 seconds
   useEffect(() => {
     if (!address) return;
     const interval = setInterval(() => fetchCoingeckoPrice(), 30000);
     return () => clearInterval(interval);
   }, [address]);
+
+  // Debounced save of profit margins to DB (1s after last change); only after settings loaded so we don't overwrite with 0,0,0
+  useEffect(() => {
+    if (!address || !settingsLoaded) return;
+    if (profitSaveTimeoutRef.current) clearTimeout(profitSaveTimeoutRef.current);
+    profitSaveTimeoutRef.current = setTimeout(async () => {
+      profitSaveTimeoutRef.current = null;
+      const send = parseFloat(profitNgnSend) || 0;
+      const usdc = parseFloat(profitNgnUsdc) || 0;
+      const usdt = parseFloat(profitNgnUsdt) || 0;
+      setSavingProfit(true);
+      try {
+        await fetch("/api/admin/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            profitNgnSend: send,
+            profitNgnUsdc: usdc,
+            profitNgnUsdt: usdt,
+            walletAddress: address,
+          }),
+        });
+      } catch (err) {
+        console.error("Failed to save profit margins:", err);
+      } finally {
+        setSavingProfit(false);
+      }
+    }, 1000);
+    return () => {
+      if (profitSaveTimeoutRef.current) clearTimeout(profitSaveTimeoutRef.current);
+    };
+  }, [address, settingsLoaded, profitNgnSend, profitNgnUsdc, profitNgnUsdt]);
+
+  // Debounced save of sell profit margins to DB (1s after last change)
+  useEffect(() => {
+    if (!address || !settingsLoaded) return;
+    if (profitSellSaveTimeoutRef.current) clearTimeout(profitSellSaveTimeoutRef.current);
+    profitSellSaveTimeoutRef.current = setTimeout(async () => {
+      profitSellSaveTimeoutRef.current = null;
+      const send = parseFloat(profitNgnSendSell) || 0;
+      const usdc = parseFloat(profitNgnUsdcSell) || 0;
+      const usdt = parseFloat(profitNgnUsdtSell) || 0;
+      setSavingProfit(true);
+      try {
+        await fetch("/api/admin/settings", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            profitNgnSendSell: send,
+            profitNgnUsdcSell: usdc,
+            profitNgnUsdtSell: usdt,
+            walletAddress: address,
+          }),
+        });
+      } catch (err) {
+        console.error("Failed to save sell profit margins:", err);
+      } finally {
+        setSavingProfit(false);
+      }
+    }, 1000);
+    return () => {
+      if (profitSellSaveTimeoutRef.current) clearTimeout(profitSellSaveTimeoutRef.current);
+    };
+  }, [address, settingsLoaded, profitNgnSendSell, profitNgnUsdcSell, profitNgnUsdtSell]);
+
+  // Auto-publish CoinGecko + profit every 30s when coingeckoAutoPublish is on (with safeguards)
+  useEffect(() => {
+    if (!address || !coingeckoAutoPublish) return;
+    const interval = setInterval(async () => {
+      if (!coingeckoPrice || saving) return;
+      const now = Date.now();
+      if (now - lastAutoPublishRef.current < 25000) return;
+      lastAutoPublishRef.current = now;
+      await publishCoingeckoPrice();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [address, coingeckoAutoPublish, coingeckoPrice, saving, profitNgnSend, profitNgnUsdc, profitNgnUsdt]);
 
   const publishCoingeckoPrice = async () => {
     if (!address || !coingeckoPrice) return;
@@ -208,6 +302,43 @@ export default function PriceActionPage() {
       setTimeout(() => setSuccess(false), 3000);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to publish CoinGecko price");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  /** Publish CoinGecko + sell profit → update sell rates (1 SEND = X NGN, etc.) in DB. */
+  const publishCoingeckoPriceSell = async () => {
+    if (!address || !coingeckoPrice) return;
+    setSaving(true);
+    setError(null);
+    setSuccess(false);
+    try {
+      const profitSend = parseFloat(profitNgnSendSell) || 0;
+      const baseSendToNgn = coingeckoPrice.ngn ?? coingeckoPrice.usd * 1500;
+      const sendToNgnSell = baseSendToNgn + profitSend;
+      const profitUsdc = parseFloat(profitNgnUsdcSell) || 0;
+      const profitUsdt = parseFloat(profitNgnUsdtSell) || 0;
+      const res = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sendToNgnSell: sendToNgnSell,
+          usdcSellPriceNgn: coingeckoPrice.USDC?.ngn != null ? coingeckoPrice.USDC.ngn + profitUsdc : undefined,
+          usdtSellPriceNgn: coingeckoPrice.USDT?.ngn != null ? coingeckoPrice.USDT.ngn + profitUsdt : undefined,
+          walletAddress: address,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        setError(data.error || "Failed to publish sell rates");
+        setSaving(false);
+        return;
+      }
+      setSuccess(true);
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to publish sell rates");
     } finally {
       setSaving(false);
     }
@@ -331,6 +462,27 @@ export default function PriceActionPage() {
     }
   };
 
+  const handleCoingeckoAutoPublishToggle = async (newValue: boolean) => {
+    if (!address) return;
+    setCoingeckoAutoPublish(newValue);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ coingeckoAutoPublish: newValue, walletAddress: address }),
+      });
+      const data = await response.json();
+      if (!data.success) {
+        setError(data.error || "Failed to update auto-publish");
+        setCoingeckoAutoPublish(!newValue);
+      }
+    } catch (err) {
+      setCoingeckoAutoPublish(!newValue);
+      setError("Failed to update auto-publish");
+    }
+  };
+
   const handleOfframpToggle = async (newValue: boolean) => {
     if (!address) return;
     setOfframpEnabled(newValue);
@@ -424,6 +576,26 @@ export default function PriceActionPage() {
         <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 mb-3 sm:mb-4">
           CoinGecko Price
         </h2>
+        {/* Indicators: auto pricing, 30s refresh, profit stored, auto-publish */}
+        <div className="flex flex-wrap items-center gap-2 mb-4 p-3 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-primary/20 text-primary dark:bg-primary/30 dark:text-primary">
+            <span className="material-icons-outlined text-sm">schedule</span>
+            Prices refresh every 30s
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+            <span className="material-icons-outlined text-sm">savings</span>
+            {activeTab === "buy" ? "Buy profit" : "Sell profit"} stored in DB, applied on publish
+          </span>
+          {coingeckoAutoPublish && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-green-200 dark:bg-green-900/40 text-green-800 dark:text-green-200">
+              <span className="material-icons-outlined text-sm">autorenew</span>
+              Auto-publish: every 30s
+            </span>
+          )}
+          {savingProfit && (
+            <span className="text-xs text-slate-500 dark:text-slate-400">Saving profit…</span>
+          )}
+        </div>
         <div className="space-y-4">
           {loadingCoingecko ? (
             <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
@@ -465,19 +637,19 @@ export default function PriceActionPage() {
                   </button>
                 </div>
                 <div className="mt-3">
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Profit (NGN)</label>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Profit (NGN) – {activeTab === "buy" ? "Buy" : "Sell"}</label>
                   <input
                     type="number"
                     step="0.01"
                     min="0"
-                    value={profitNgnSend}
-                    onChange={(e) => setProfitNgnSend(e.target.value)}
+                    value={activeTab === "buy" ? profitNgnSend : profitNgnSendSell}
+                    onChange={(e) => (activeTab === "buy" ? setProfitNgnSend(e.target.value) : setProfitNgnSendSell(e.target.value))}
                     placeholder="0"
                     disabled={saving}
                     className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    Added to SEND rate in NGN when publishing (1 $SEND = CoinGecko NGN + this profit).
+                    {activeTab === "buy" ? "Added to SEND buy rate in NGN when publishing (1 $SEND = CoinGecko NGN + this profit)." : "Added to SEND sell rate in NGN when publishing (1 $SEND = CoinGecko NGN + this profit)."}
                   </p>
                 </div>
               </div>
@@ -502,19 +674,19 @@ export default function PriceActionPage() {
                   )}
                 </div>
                 <div className="mt-3">
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Profit (NGN)</label>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Profit (NGN) – {activeTab === "buy" ? "Buy" : "Sell"}</label>
                   <input
                     type="number"
                     step="0.01"
                     min="0"
-                    value={profitNgnUsdc}
-                    onChange={(e) => setProfitNgnUsdc(e.target.value)}
+                    value={activeTab === "buy" ? profitNgnUsdc : profitNgnUsdcSell}
+                    onChange={(e) => (activeTab === "buy" ? setProfitNgnUsdc(e.target.value) : setProfitNgnUsdcSell(e.target.value))}
                     placeholder="0"
                     disabled={saving}
                     className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    Added to USDC rate in NGN when publishing (1 USDC = CoinGecko NGN + this profit).
+                    {activeTab === "buy" ? "Added to USDC buy rate in NGN when publishing." : "Added to USDC sell rate in NGN when publishing."}
                   </p>
                 </div>
               </div>
@@ -539,25 +711,47 @@ export default function PriceActionPage() {
                   )}
                 </div>
                 <div className="mt-3">
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Profit (NGN)</label>
+                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Profit (NGN) – {activeTab === "buy" ? "Buy" : "Sell"}</label>
                   <input
                     type="number"
                     step="0.01"
                     min="0"
-                    value={profitNgnUsdt}
-                    onChange={(e) => setProfitNgnUsdt(e.target.value)}
+                    value={activeTab === "buy" ? profitNgnUsdt : profitNgnUsdtSell}
+                    onChange={(e) => (activeTab === "buy" ? setProfitNgnUsdt(e.target.value) : setProfitNgnUsdtSell(e.target.value))}
                     placeholder="0"
                     disabled={saving}
                     className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    Added to USDT rate in NGN when publishing (1 USDT = CoinGecko NGN + this profit).
+                    {activeTab === "buy" ? "Added to USDT buy rate in NGN when publishing." : "Added to USDT sell rate in NGN when publishing."}
                   </p>
                 </div>
               </div>
 
+              {activeTab === "buy" && (
+                <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+                  <div>
+                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Auto-publish CoinGecko + buy profit every 30s</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">When on, buy rates are published automatically every 30s.</p>
+                  </div>
+                  <label className="cursor-pointer">
+                    <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${coingeckoAutoPublish ? "bg-primary" : "bg-slate-300 dark:bg-slate-600"}`}>
+                      <input
+                        type="checkbox"
+                        checked={coingeckoAutoPublish}
+                        onChange={(e) => handleCoingeckoAutoPublishToggle(e.target.checked)}
+                        disabled={!address}
+                        className="sr-only"
+                        aria-label="Toggle auto-publish on or off"
+                      />
+                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${coingeckoAutoPublish ? "translate-x-6" : "translate-x-1"}`} />
+                    </div>
+                  </label>
+                </div>
+              )}
+
               <button
-                onClick={publishCoingeckoPrice}
+                onClick={activeTab === "buy" ? publishCoingeckoPrice : publishCoingeckoPriceSell}
                 disabled={saving || !coingeckoPrice}
                 className="w-full bg-primary text-slate-900 font-bold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
@@ -566,12 +760,17 @@ export default function PriceActionPage() {
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-slate-900"></div>
                     Publishing...
                   </>
+                ) : activeTab === "buy" ? (
+                  "Publish CoinGecko with Profit (Buy)"
                 ) : (
-                  "Publish CoinGecko with Profit"
+                  "Publish CoinGecko with Profit (Sell)"
                 )}
               </button>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                This will overwrite the current exchange rate with CoinGecko price (plus profit if set).
+                {activeTab === "buy"
+                  ? "Overwrites buy exchange rate and token buy prices with CoinGecko + buy profit."
+                  : "Overwrites sell rates (1 SEND = X NGN, etc.) with CoinGecko + sell profit."}
+                {activeTab === "buy" && coingeckoAutoPublish && " Auto-publish is on: buy rates update every 30s."}
               </p>
             </div>
           ) : (
