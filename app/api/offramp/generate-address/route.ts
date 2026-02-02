@@ -3,9 +3,18 @@ import { supabaseAdmin } from "@/lib/supabase";
 import { nanoid } from "nanoid";
 import { getOrCreateSmartWallet, encryptWalletPrivateKey } from "@/lib/coinbase-smart-wallet";
 import { generateSolanaWalletForUser, encryptSolanaPrivateKey } from "@/lib/solana-wallet";
+import { getOfframpTransactionsEnabled } from "@/lib/settings";
 
 export async function POST(request: NextRequest) {
   try {
+    const offrampEnabled = await getOfframpTransactionsEnabled();
+    if (!offrampEnabled) {
+      return NextResponse.json(
+        { success: false, error: "Sell (offramp) transactions are currently disabled. Please check back later." },
+        { status: 403 }
+      );
+    }
+
     const {
       accountNumber,
       accountName,

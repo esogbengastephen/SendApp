@@ -6,6 +6,8 @@ import { supabase } from "./supabase";
 interface PlatformSettings {
   exchangeRate: number;
   transactionsEnabled: boolean;
+  onrampEnabled: boolean;
+  offrampEnabled: boolean;
   minimumPurchase: number;
   updatedAt: Date;
   updatedBy?: string;
@@ -44,7 +46,9 @@ async function loadSettings(): Promise<PlatformSettings> {
       // If no settings found, create default in database
       const defaultSettings: PlatformSettings = {
         exchangeRate: defaultRate,
-        transactionsEnabled: true, // Default: transactions enabled
+        transactionsEnabled: true, // Default: transactions enabled (global – affects all)
+        onrampEnabled: true, // Default: onramp (buy) enabled
+        offrampEnabled: true, // Default: offramp (sell) enabled
         minimumPurchase: 3000, // Default minimum purchase
         updatedAt: new Date(),
         updatedBy: "system",
@@ -58,6 +62,8 @@ async function loadSettings(): Promise<PlatformSettings> {
           setting_value: {
             exchangeRate: defaultSettings.exchangeRate,
             transactionsEnabled: defaultSettings.transactionsEnabled,
+            onrampEnabled: defaultSettings.onrampEnabled,
+            offrampEnabled: defaultSettings.offrampEnabled,
             minimumPurchase: defaultSettings.minimumPurchase,
             updatedAt: defaultSettings.updatedAt.toISOString(),
             updatedBy: defaultSettings.updatedBy,
@@ -90,6 +96,8 @@ async function loadSettings(): Promise<PlatformSettings> {
       const loadedSettings: PlatformSettings = {
         exchangeRate: value.exchangeRate,
         transactionsEnabled: value.transactionsEnabled !== undefined ? value.transactionsEnabled : true,
+        onrampEnabled: value.onrampEnabled !== undefined ? value.onrampEnabled : true,
+        offrampEnabled: value.offrampEnabled !== undefined ? value.offrampEnabled : true,
         minimumPurchase: value.minimumPurchase !== undefined ? value.minimumPurchase : 3000,
         updatedAt: value.updatedAt ? new Date(value.updatedAt) : new Date(),
         updatedBy: value.updatedBy,
@@ -109,6 +117,8 @@ async function loadSettings(): Promise<PlatformSettings> {
     return {
       exchangeRate: defaultRate,
       transactionsEnabled: true,
+      onrampEnabled: true,
+      offrampEnabled: true,
       minimumPurchase: 3000,
       updatedAt: new Date(),
     };
@@ -127,6 +137,8 @@ async function saveSettings(settings: PlatformSettings): Promise<void> {
         setting_value: {
           exchangeRate: settings.exchangeRate,
           transactionsEnabled: settings.transactionsEnabled,
+          onrampEnabled: settings.onrampEnabled,
+          offrampEnabled: settings.offrampEnabled,
           minimumPurchase: settings.minimumPurchase,
           updatedAt: settings.updatedAt.toISOString(),
           updatedBy: settings.updatedBy,
@@ -235,10 +247,12 @@ export async function updateExchangeRate(
   const currentSettings = settings || await getSettings();
   const oldRate = currentSettings.exchangeRate;
   
-  // Create new settings object (preserve transactionsEnabled and minimumPurchase)
+  // Create new settings object (preserve transactionsEnabled, onramp/offramp, minimumPurchase)
   const newSettings: PlatformSettings = {
     exchangeRate: rate,
     transactionsEnabled: currentSettings.transactionsEnabled !== false,
+    onrampEnabled: currentSettings.onrampEnabled !== false,
+    offrampEnabled: currentSettings.offrampEnabled !== false,
     minimumPurchase: currentSettings.minimumPurchase || 3000,
     updatedAt: new Date(),
     updatedBy,
@@ -283,7 +297,7 @@ export async function updateTransactionsEnabled(
 ): Promise<PlatformSettings> {
   const currentSettings = await getSettings();
   
-  // Create new settings object (preserve minimumPurchase)
+  // Create new settings object (preserve minimumPurchase, onramp/offramp)
   const newSettings: PlatformSettings = {
     ...currentSettings,
     transactionsEnabled: enabled,
@@ -300,8 +314,84 @@ export async function updateTransactionsEnabled(
   // Save to Supabase
   await saveSettings(newSettings);
 
-  console.log(`[Settings] Transactions ${enabled ? 'enabled' : 'disabled'} by ${updatedBy || 'system'}`);
+  console.log(`[Settings] Transactions (global) ${enabled ? 'enabled' : 'disabled'} by ${updatedBy || 'system'}`);
   
+  return { ...newSettings };
+}
+
+/**
+ * Get onramp (buy) enabled status. Effective onramp = global AND onrampEnabled.
+ */
+export async function getOnrampEnabled(): Promise<boolean> {
+  const loadedSettings = await getSettings();
+  return loadedSettings.onrampEnabled !== false;
+}
+
+/**
+ * Get offramp (sell) enabled status. Effective offramp = global AND offrampEnabled.
+ */
+export async function getOfframpEnabled(): Promise<boolean> {
+  const loadedSettings = await getSettings();
+  return loadedSettings.offrampEnabled !== false;
+}
+
+/**
+ * Effective onramp: user can buy (onramp) only when global AND onramp are enabled.
+ */
+export async function getOnrampTransactionsEnabled(): Promise<boolean> {
+  const [global, onramp] = await Promise.all([getTransactionsEnabled(), getOnrampEnabled()]);
+  return global && onramp;
+}
+
+/**
+ * Effective offramp: user can sell (offramp) only when global AND offramp are enabled.
+ */
+export async function getOfframpTransactionsEnabled(): Promise<boolean> {
+  const [global, offramp] = await Promise.all([getTransactionsEnabled(), getOfframpEnabled()]);
+  return global && offramp;
+}
+
+/**
+ * Update onramp (buy) enabled status.
+ */
+export async function updateOnrampEnabled(
+  enabled: boolean,
+  updatedBy?: string
+): Promise<PlatformSettings> {
+  const currentSettings = await getSettings();
+  const newSettings: PlatformSettings = {
+    ...currentSettings,
+    onrampEnabled: enabled,
+    updatedAt: new Date(),
+    updatedBy,
+  };
+  settings = newSettings;
+  global.__sendSettings = newSettings;
+  global.__sendSettingsCacheTime = Date.now();
+  await saveSettings(newSettings);
+  console.log(`[Settings] Onramp (buy) ${enabled ? 'enabled' : 'disabled'} by ${updatedBy || 'system'}`);
+  return { ...newSettings };
+}
+
+/**
+ * Update offramp (sell) enabled status.
+ */
+export async function updateOfframpEnabled(
+  enabled: boolean,
+  updatedBy?: string
+): Promise<PlatformSettings> {
+  const currentSettings = await getSettings();
+  const newSettings: PlatformSettings = {
+    ...currentSettings,
+    offrampEnabled: enabled,
+    updatedAt: new Date(),
+    updatedBy,
+  };
+  settings = newSettings;
+  global.__sendSettings = newSettings;
+  global.__sendSettingsCacheTime = Date.now();
+  await saveSettings(newSettings);
+  console.log(`[Settings] Offramp (sell) ${enabled ? 'enabled' : 'disabled'} by ${updatedBy || 'system'}`);
   return { ...newSettings };
 }
 

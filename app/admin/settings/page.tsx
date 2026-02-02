@@ -63,9 +63,27 @@ function EditAdminForm({ admin, availablePermissions, onSave, onCancel }: {
       </div>
       {role === "admin" && (
         <div>
-          <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-            Permissions
-          </label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+              Permissions (includes all settings tabs when &quot;Manage Settings&quot; is checked)
+            </label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setPermissions([...availablePermissions])}
+                className="text-xs text-primary hover:underline"
+              >
+                Select all
+              </button>
+              <button
+                type="button"
+                onClick={() => setPermissions([])}
+                className="text-xs text-slate-500 hover:underline"
+              >
+                Clear all
+              </button>
+            </div>
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             {availablePermissions.map((permission) => (
               <label key={permission} className="flex items-center gap-2">
@@ -158,7 +176,7 @@ export default function SettingsPage() {
   const [savingFeeTiers, setSavingFeeTiers] = useState(false);
   const [loadingFeeTiers, setLoadingFeeTiers] = useState(false);
 
-  // Available permissions
+  // Available permissions (all tabs including settings: Dashboard, Transactions, Payments, Users, Referrals, Token Distribution, Test Transfer, Settings)
   const availablePermissions = [
     "view_dashboard",
     "manage_transactions",
@@ -710,7 +728,7 @@ export default function SettingsPage() {
           Transaction Status
         </h2>
         <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-          Enable or disable all user transactions. When disabled, users will not be able to generate payment or complete transactions.
+          Enable or disable all user transactions across the app (onramp and offramp). When disabled, users cannot generate payment or complete any transactions anywhere.
         </p>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -785,7 +803,7 @@ export default function SettingsPage() {
         {!transactionsEnabled && (
           <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
             <p className="text-sm text-red-700 dark:text-red-300">
-              ⚠️ Transactions are currently disabled. Users cannot generate payments or complete transactions.
+              ⚠️ Transactions are currently disabled app-wide. Users cannot generate payments or complete any transactions (buy or sell).
             </p>
           </div>
         )}
@@ -1005,9 +1023,14 @@ export default function SettingsPage() {
             </h2>
             <button
               onClick={() => {
-                setShowAddAdminForm(!showAddAdminForm);
+                const opening = !showAddAdminForm;
+                setShowAddAdminForm(opening);
                 setAdminError(null);
                 setAdminSuccess(null);
+                if (opening) {
+                  setNewAdminRole("admin");
+                  setNewAdminPermissions([...availablePermissions]);
+                }
               }}
               className="bg-primary text-slate-900 font-bold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity text-sm"
             >
@@ -1049,9 +1072,12 @@ export default function SettingsPage() {
                 <select
                   value={newAdminRole}
                   onChange={(e) => {
-                    setNewAdminRole(e.target.value as "super_admin" | "admin");
-                    if (e.target.value === "super_admin") {
+                    const value = e.target.value as "super_admin" | "admin";
+                    setNewAdminRole(value);
+                    if (value === "super_admin") {
                       setNewAdminPermissions([]);
+                    } else {
+                      setNewAdminPermissions([...availablePermissions]);
                     }
                   }}
                   className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary"
@@ -1062,9 +1088,27 @@ export default function SettingsPage() {
               </div>
               {newAdminRole === "admin" && (
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-                    Permissions
-                  </label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-slate-700 dark:text-slate-300">
+                      Permissions (includes all settings tabs when &quot;Manage Settings&quot; is checked)
+                    </label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setNewAdminPermissions([...availablePermissions])}
+                        className="text-xs text-primary hover:underline"
+                      >
+                        Select all
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewAdminPermissions([])}
+                        className="text-xs text-slate-500 hover:underline"
+                      >
+                        Clear all
+                      </button>
+                    </div>
+                  </div>
                   <div className="space-y-2">
                     {availablePermissions.map((permission) => (
                       <label key={permission} className="flex items-center gap-2">

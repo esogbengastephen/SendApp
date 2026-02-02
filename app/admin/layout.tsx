@@ -1,13 +1,19 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { DEPOSIT_ACCOUNT } from "@/lib/constants";
 import AdminAuthGuard from "@/components/AdminAuthGuard";
 import WagmiProvider from "@/components/WagmiProvider";
 import PoweredBySEND from "@/components/PoweredBySEND";
 import ThemeToggle from "@/components/ThemeToggle";
 import { useAccount, useDisconnect } from "wagmi";
+import {
+  ADMIN_NAV_ITEMS,
+  canAccessRoute,
+  filterNavByPermission,
+} from "@/lib/admin-permissions";
 
 function AdminLayoutContent({
   children,
@@ -16,7 +22,51 @@ function AdminLayoutContent({
 }) {
   const { address } = useAccount();
   const { disconnect } = useDisconnect();
+  const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [role, setRole] = useState<"super_admin" | "admin" | undefined>(undefined);
+  const [permissions, setPermissions] = useState<string[]>([]);
+  const [loadingMe, setLoadingMe] = useState(true);
+
+  useEffect(() => {
+    if (!address) {
+      setRole(undefined);
+      setPermissions([]);
+      setLoadingMe(false);
+      return;
+    }
+    let cancelled = false;
+    setLoadingMe(true);
+    fetch("/api/admin/me", {
+      headers: { Authorization: `Bearer ${address}` },
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (data.success) {
+          setRole(data.role ?? "admin");
+          setPermissions(Array.isArray(data.permissions) ? data.permissions : []);
+        } else {
+          setRole("admin");
+          setPermissions([]);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRole("admin");
+          setPermissions([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingMe(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [address]);
+
+  const allowedNavItems = filterNavByPermission(ADMIN_NAV_ITEMS, role, permissions);
+  const canAccessCurrentPage = canAccessRoute(pathname ?? "", role, permissions);
 
   return (
     <div className="min-h-screen bg-background-light dark:bg-background-dark" style={{ backgroundColor: "var(--background-light)" }}>
@@ -140,134 +190,28 @@ function AdminLayoutContent({
             )}
 
             <nav className="space-y-1 sm:space-y-2">
-              <Link
-                href="/admin"
-                onClick={() => setSidebarOpen(false)}
-                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <span className="material-icons-outlined text-lg sm:text-xl">dashboard</span>
-                <span>Dashboard</span>
-              </Link>
-              <Link
-                href="/admin/onramp"
-                onClick={() => setSidebarOpen(false)}
-                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <span className="material-icons-outlined text-lg sm:text-xl">arrow_downward</span>
-                <span>Onramp</span>
-              </Link>
-              <Link
-                href="/admin/transactions"
-                onClick={() => setSidebarOpen(false)}
-                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <span className="material-icons-outlined text-lg sm:text-xl">receipt_long</span>
-                <span>All Transactions</span>
-              </Link>
-              <Link
-                href="/admin/payments"
-                onClick={() => setSidebarOpen(false)}
-                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <span className="material-icons-outlined text-lg sm:text-xl">payment</span>
-                <span>Payments</span>
-              </Link>
-              <Link
-                href="/admin/invoices"
-                onClick={() => setSidebarOpen(false)}
-                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <span className="material-icons-outlined text-lg sm:text-xl">description</span>
-                <span>Invoices</span>
-              </Link>
-              <Link
-                href="/admin/users"
-                onClick={() => setSidebarOpen(false)}
-                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <span className="material-icons-outlined text-lg sm:text-xl">people</span>
-                <span>Users</span>
-              </Link>
-              <Link
-                href="/admin/referrals"
-                onClick={() => setSidebarOpen(false)}
-                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <span className="material-icons-outlined text-lg sm:text-xl">group_add</span>
-                <span>Referrals</span>
-              </Link>
-              <Link
-                href="/admin/token-distribution"
-                onClick={() => setSidebarOpen(false)}
-                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <span className="material-icons-outlined text-lg sm:text-xl">account_balance_wallet</span>
-                <span className="whitespace-nowrap">Token Distribution</span>
-              </Link>
-              <Link
-                href="/admin/utility"
-                onClick={() => setSidebarOpen(false)}
-                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <span className="material-icons-outlined text-lg sm:text-xl">build</span>
-                <span>Utility</span>
-              </Link>
-              <Link
-                href="/admin/test-transfer"
-                onClick={() => setSidebarOpen(false)}
-                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <span className="material-icons-outlined text-lg sm:text-xl">send</span>
-                <span>Test Transfer</span>
-              </Link>
-              <Link
-                href="/admin/token-prices"
-                onClick={() => setSidebarOpen(false)}
-                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <span className="material-icons-outlined text-lg sm:text-xl">attach_money</span>
-                <span>Token Prices</span>
-              </Link>
-              <Link
-                href="/admin/price-action"
-                onClick={() => setSidebarOpen(false)}
-                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <span className="material-icons-outlined text-lg sm:text-xl">trending_up</span>
-                <span>Price Action</span>
-              </Link>
-              <Link
-                href="/admin/banners"
-                onClick={() => setSidebarOpen(false)}
-                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <span className="material-icons-outlined text-lg sm:text-xl">image</span>
-                <span>Banners</span>
-              </Link>
-              <Link
-                href="/admin/offramp"
-                onClick={() => setSidebarOpen(false)}
-                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <span className="material-icons-outlined text-lg sm:text-xl">arrow_upward</span>
-                <span>Offramp</span>
-              </Link>
-              <Link
-                href="/admin/kyc"
-                onClick={() => setSidebarOpen(false)}
-                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <span className="material-icons-outlined text-lg sm:text-xl">verified_user</span>
-                <span>KYC Management</span>
-              </Link>
-              <Link
-                href="/admin/settings"
-                onClick={() => setSidebarOpen(false)}
-                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-              >
-                <span className="material-icons-outlined text-lg sm:text-xl">settings</span>
-                <span>Settings</span>
-              </Link>
+              {loadingMe ? (
+                <div className="flex items-center gap-2 py-3 text-slate-500 dark:text-slate-400 text-sm">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary" />
+                  <span>Loading access...</span>
+                </div>
+              ) : (
+                allowedNavItems.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={() => setSidebarOpen(false)}
+                    className={`flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base transition-colors ${
+                      pathname === item.href
+                        ? "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium"
+                        : "text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    }`}
+                  >
+                    <span className="material-icons-outlined text-lg sm:text-xl">{item.icon}</span>
+                    <span className={item.label === "Token Distribution" ? "whitespace-nowrap" : ""}>{item.label}</span>
+                  </Link>
+                ))
+              )}
               {/* Theme Toggle */}
               <div className="mt-2 sm:mt-4" onClick={() => setSidebarOpen(false)}>
                 <ThemeToggle />
@@ -302,7 +246,25 @@ function AdminLayoutContent({
       </aside>
 
       {/* Main Content */}
-      <main className="lg:ml-72 xl:ml-80 p-4 sm:p-6 lg:p-8 pt-16 sm:pt-20 lg:pt-8 min-h-screen">{children}</main>
+      <main className="lg:ml-72 xl:ml-80 p-4 sm:p-6 lg:p-8 pt-16 sm:pt-20 lg:pt-8 min-h-screen">
+        {!loadingMe && pathname && !canAccessCurrentPage ? (
+          <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
+            <span className="material-icons-outlined text-6xl text-slate-400 dark:text-slate-500 mb-4">lock</span>
+            <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 mb-2">Access denied</h2>
+            <p className="text-slate-600 dark:text-slate-400 mb-4 max-w-md">
+              You don&apos;t have permission to view this page. Contact a super admin to request access.
+            </p>
+            <Link
+              href="/admin"
+              className="px-4 py-2 rounded-lg bg-primary text-slate-900 font-medium hover:opacity-90"
+            >
+              Back to Dashboard
+            </Link>
+          </div>
+        ) : (
+          children
+        )}
+      </main>
     </div>
   );
 }

@@ -9,7 +9,7 @@ import {
 } from "@/lib/transactions";
 import { distributeTokens } from "@/lib/token-distribution";
 import { notifyPaymentReceived, notifyTokensDistributed } from "@/lib/notifications";
-import { getExchangeRate, getTransactionsEnabled } from "@/lib/settings";
+import { getExchangeRate, getOnrampTransactionsEnabled } from "@/lib/settings";
 import { supabase, supabaseAdmin, updateReferralCountOnTransaction } from "@/lib/supabase";
 import { nanoid } from "nanoid";
 import { sendPaymentVerificationEmail, sendTokenDistributionEmail } from "@/lib/transaction-emails";
@@ -53,8 +53,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Check if transactions are enabled
-    const transactionsEnabled = await getTransactionsEnabled();
-    if (!transactionsEnabled) {
+    const onrampEnabled = await getOnrampTransactionsEnabled();
+    if (!onrampEnabled) {
       console.log("[Webhook] Transactions are disabled, ignoring webhook");
       return NextResponse.json(
         { success: false, error: "Transactions are currently disabled" },

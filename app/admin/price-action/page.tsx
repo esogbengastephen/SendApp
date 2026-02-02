@@ -28,10 +28,12 @@ export default function PriceActionPage() {
   } | null>(null);
   const [loadingCoingecko, setLoadingCoingecko] = useState(false);
   const [coingeckoError, setCoingeckoError] = useState<string | null>(null);
-  const [transactionsEnabled, setTransactionsEnabled] = useState(true);
+  const [onrampEnabled, setOnrampEnabled] = useState(true);
+  const [offrampEnabled, setOfframpEnabled] = useState(true);
   const [minimumPurchase, setMinimumPurchase] = useState<number>(3000);
   const [saving, setSaving] = useState(false);
-  const [savingTransactionsStatus, setSavingTransactionsStatus] = useState(false);
+  const [savingOnrampStatus, setSavingOnrampStatus] = useState(false);
+  const [savingOfframpStatus, setSavingOfframpStatus] = useState(false);
   const [profitNgnSend, setProfitNgnSend] = useState<string>("0");
   const [profitNgnUsdc, setProfitNgnUsdc] = useState<string>("0");
   const [profitNgnUsdt, setProfitNgnUsdt] = useState<string>("0");
@@ -81,7 +83,8 @@ export default function PriceActionPage() {
       });
       const data = await response.json();
       if (data.success && data.settings) {
-        setTransactionsEnabled(data.settings.transactionsEnabled !== false);
+        setOnrampEnabled(data.settings.onrampEnabled !== false);
+        setOfframpEnabled(data.settings.offrampEnabled !== false);
         setMinimumPurchase(data.settings.minimumPurchase ?? 3000);
         const ngnToSend = data.settings.exchangeRate;
         if (ngnToSend != null && Number(ngnToSend) > 0) {
@@ -142,6 +145,13 @@ export default function PriceActionPage() {
       fetchCoingeckoPrice();
       fetchAdminTokenPrices();
     }
+  }, [address]);
+
+  // Auto-refresh CoinGecko prices every 30 seconds so "Publish" always uses current rate + profit
+  useEffect(() => {
+    if (!address) return;
+    const interval = setInterval(() => fetchCoingeckoPrice(), 30000);
+    return () => clearInterval(interval);
   }, [address]);
 
   const publishCoingeckoPrice = async () => {
@@ -294,30 +304,57 @@ export default function PriceActionPage() {
     }
   };
 
-  const handleTransactionsToggle = async (newValue: boolean) => {
+  const handleOnrampToggle = async (newValue: boolean) => {
     if (!address) return;
-    setTransactionsEnabled(newValue);
-    setSavingTransactionsStatus(true);
+    setOnrampEnabled(newValue);
+    setSavingOnrampStatus(true);
     setError(null);
     try {
       const response = await fetch("/api/admin/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ transactionsEnabled: newValue, walletAddress: address }),
+        body: JSON.stringify({ onrampEnabled: newValue, walletAddress: address }),
       });
       const data = await response.json();
       if (data.success) {
         setSuccess(true);
         setTimeout(() => setSuccess(false), 3000);
       } else {
-        setError(data.error || "Failed to update transaction status");
-        setTransactionsEnabled(!newValue);
+        setError(data.error || "Failed to update onramp status");
+        setOnrampEnabled(!newValue);
       }
     } catch (err) {
-      setTransactionsEnabled(!newValue);
-      setError("Failed to update transaction status");
+      setOnrampEnabled(!newValue);
+      setError("Failed to update onramp status");
     } finally {
-      setSavingTransactionsStatus(false);
+      setSavingOnrampStatus(false);
+    }
+  };
+
+  const handleOfframpToggle = async (newValue: boolean) => {
+    if (!address) return;
+    setOfframpEnabled(newValue);
+    setSavingOfframpStatus(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ offrampEnabled: newValue, walletAddress: address }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setSuccess(true);
+        setTimeout(() => setSuccess(false), 3000);
+      } else {
+        setError(data.error || "Failed to update offramp status");
+        setOfframpEnabled(!newValue);
+      }
+    } catch (err) {
+      setOfframpEnabled(!newValue);
+      setError("Failed to update offramp status");
+    } finally {
+      setSavingOfframpStatus(false);
     }
   };
 
@@ -733,57 +770,110 @@ export default function PriceActionPage() {
         </div>
       </div>
 
-      {/* Transaction Status, Minimum Purchase (BUY & SELL) */}
-      <div className="grid grid-cols-1 lg:grid-cols-1 space-y-4">
-        {/* Transaction Status */}
+      {/* Onramp / Offramp transaction status (tab-specific) */}
+      {activeTab === "buy" && (
         <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
           <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 mb-3 sm:mb-4">
-            Transaction Status
+            Onramp transaction status
           </h2>
           <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-            Enable or disable all user transactions. When disabled, users will not be able to generate payment or complete transactions.
+            Enable or disable buy (onramp) only. When disabled, users cannot buy crypto with NGN. The global toggle in Settings affects all; this one affects only onramp.
           </p>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <label className="cursor-pointer">
                 <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                  transactionsEnabled ? "bg-primary" : "bg-slate-300 dark:bg-slate-600"
+                  onrampEnabled ? "bg-primary" : "bg-slate-300 dark:bg-slate-600"
                 }`}>
                   <input
                     type="checkbox"
-                    checked={transactionsEnabled}
-                    onChange={(e) => handleTransactionsToggle(e.target.checked)}
-                    disabled={savingTransactionsStatus || !address}
+                    checked={onrampEnabled}
+                    onChange={(e) => handleOnrampToggle(e.target.checked)}
+                    disabled={savingOnrampStatus || !address}
                     className="sr-only"
-                    aria-label="Toggle transactions on or off"
+                    aria-label="Toggle onramp on or off"
                   />
                   <span
                     className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      transactionsEnabled ? "translate-x-6" : "translate-x-1"
+                      onrampEnabled ? "translate-x-6" : "translate-x-1"
                     }`}
                   />
                 </div>
               </label>
               <div>
                 <span className={`text-sm font-medium ${
-                  transactionsEnabled ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+                  onrampEnabled ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
                 }`}>
-                  {transactionsEnabled ? "Transactions Enabled" : "Transactions Disabled"}
+                  {onrampEnabled ? "Onramp enabled" : "Onramp disabled"}
                 </span>
-                {savingTransactionsStatus && (
+                {savingOnrampStatus && (
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Saving...</p>
                 )}
               </div>
             </div>
           </div>
-          {!transactionsEnabled && (
+          {!onrampEnabled && (
             <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
               <p className="text-sm text-red-700 dark:text-red-300">
-                Transactions are currently disabled. Users cannot generate payments or complete transactions.
+                Buy (onramp) is disabled. Users cannot buy crypto with NGN until this is enabled (and global transactions in Settings are enabled).
               </p>
             </div>
           )}
         </div>
+      )}
+      {activeTab === "sell" && (
+        <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
+          <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 mb-3 sm:mb-4">
+            Offramp transaction status
+          </h2>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+            Enable or disable sell (offramp) only. When disabled, users cannot sell crypto for NGN. The global toggle in Settings affects all; this one affects only offramp.
+          </p>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <label className="cursor-pointer">
+                <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  offrampEnabled ? "bg-primary" : "bg-slate-300 dark:bg-slate-600"
+                }`}>
+                  <input
+                    type="checkbox"
+                    checked={offrampEnabled}
+                    onChange={(e) => handleOfframpToggle(e.target.checked)}
+                    disabled={savingOfframpStatus || !address}
+                    className="sr-only"
+                    aria-label="Toggle offramp on or off"
+                  />
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      offrampEnabled ? "translate-x-6" : "translate-x-1"
+                    }`}
+                  />
+                </div>
+              </label>
+              <div>
+                <span className={`text-sm font-medium ${
+                  offrampEnabled ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"
+                }`}>
+                  {offrampEnabled ? "Offramp enabled" : "Offramp disabled"}
+                </span>
+                {savingOfframpStatus && (
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Saving...</p>
+                )}
+              </div>
+            </div>
+          </div>
+          {!offrampEnabled && (
+            <div className="mt-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+              <p className="text-sm text-red-700 dark:text-red-300">
+                Sell (offramp) is disabled. Users cannot sell crypto for NGN until this is enabled (and global transactions in Settings are enabled).
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Minimum Purchase (BUY & SELL) */}
+      <div className="grid grid-cols-1 lg:grid-cols-1 space-y-4">
 
         {/* Minimum Purchase Amount */}
         <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">

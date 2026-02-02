@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSettings, updateExchangeRate, updateTransactionsEnabled, updateMinimumPurchase } from "@/lib/settings";
+import { getSettings, updateExchangeRate, updateTransactionsEnabled, updateMinimumPurchase, updateOnrampEnabled, updateOfframpEnabled } from "@/lib/settings";
 import { isAdminWallet } from "@/lib/supabase";
 
 /**
@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { exchangeRate, transactionsEnabled, minimumPurchase, walletAddress } = body;
+    const { exchangeRate, transactionsEnabled, onrampEnabled, offrampEnabled, minimumPurchase, walletAddress } = body;
 
     // Verify admin access
     if (!walletAddress) {
@@ -92,15 +92,29 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Update transactions enabled status if provided
+    // Update transactions enabled status (global – affects all) if provided
     if (transactionsEnabled !== undefined) {
       const enabled = transactionsEnabled === true || transactionsEnabled === "true";
-      console.log(`[Admin Settings] Updating transactions enabled to: ${enabled}`);
+      console.log(`[Admin Settings] Updating transactions (global) enabled to: ${enabled}`);
       
       await updateTransactionsEnabled(
         enabled,
         walletAddress.toLowerCase()
       );
+    }
+
+    // Update onramp (buy) enabled if provided
+    if (onrampEnabled !== undefined) {
+      const enabled = onrampEnabled === true || onrampEnabled === "true";
+      console.log(`[Admin Settings] Updating onramp enabled to: ${enabled}`);
+      await updateOnrampEnabled(enabled, walletAddress.toLowerCase());
+    }
+
+    // Update offramp (sell) enabled if provided
+    if (offrampEnabled !== undefined) {
+      const enabled = offrampEnabled === true || offrampEnabled === "true";
+      console.log(`[Admin Settings] Updating offramp enabled to: ${enabled}`);
+      await updateOfframpEnabled(enabled, walletAddress.toLowerCase());
     }
 
     // Update minimum purchase if provided
@@ -130,6 +144,8 @@ export async function PUT(request: NextRequest) {
       settings: {
         exchangeRate: updatedSettings.exchangeRate,
         transactionsEnabled: updatedSettings.transactionsEnabled !== false,
+        onrampEnabled: updatedSettings.onrampEnabled !== false,
+        offrampEnabled: updatedSettings.offrampEnabled !== false,
         minimumPurchase: updatedSettings.minimumPurchase || 3000,
         updatedAt: updatedSettings.updatedAt.toISOString(),
         updatedBy: updatedSettings.updatedBy,

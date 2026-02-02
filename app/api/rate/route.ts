@@ -25,11 +25,14 @@ export async function GET(request: NextRequest) {
     headers.set("X-Timestamp", new Date().toISOString());
     headers.set("Last-Modified", new Date().toUTCString());
 
+    // Effective onramp: buy flow is enabled only when global AND onramp are enabled
+    const transactionsEnabled = (settings.transactionsEnabled !== false) && (settings.onrampEnabled !== false);
+
     return NextResponse.json(
       {
         success: true,
         rate,
-        transactionsEnabled: settings.transactionsEnabled !== false,
+        transactionsEnabled,
         minimumPurchase: settings.minimumPurchase || 3000,
         currency: "NGN",
         token: "SEND",
@@ -46,11 +49,12 @@ export async function GET(request: NextRequest) {
     try {
       const settings = await getSettings();
       console.log(`[API Rate] Retry successful, returning rate: ${settings.exchangeRate}`);
+      const effectiveOnramp = (settings.transactionsEnabled !== false) && (settings.onrampEnabled !== false);
       return NextResponse.json(
         {
           success: true,
           rate: settings.exchangeRate,
-          transactionsEnabled: settings.transactionsEnabled !== false,
+          transactionsEnabled: effectiveOnramp,
           minimumPurchase: settings.minimumPurchase || 3000,
           currency: "NGN",
           token: "SEND",

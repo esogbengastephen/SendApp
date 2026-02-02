@@ -10,10 +10,19 @@ import { swapAndTransferToAdmin as baseSwap } from "@/lib/base-offramp-swap";
 import { swapAndTransferToAdmin as solanaSwap } from "@/lib/solana-offramp-swap";
 import { getSolanaWalletFromEncrypted } from "@/lib/solana-wallet";
 import { decryptWalletPrivateKey } from "@/lib/coinbase-smart-wallet";
+import { getOfframpTransactionsEnabled } from "@/lib/settings";
 import { Keypair } from "@solana/web3.js";
 
 export async function POST(request: NextRequest) {
   try {
+    const offrampEnabled = await getOfframpTransactionsEnabled();
+    if (!offrampEnabled) {
+      return NextResponse.json(
+        { success: false, error: "Sell (offramp) transactions are currently disabled. Please check back later." },
+        { status: 403 }
+      );
+    }
+
     const { transactionId } = await request.json();
 
     if (!transactionId) {

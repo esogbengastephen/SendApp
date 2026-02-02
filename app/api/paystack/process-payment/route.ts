@@ -5,7 +5,7 @@ import { createOrUpdateUser } from "@/lib/users";
 import { distributeTokens } from "@/lib/token-distribution";
 import { isValidWalletOrTag, isValidAmount } from "@/utils/validation";
 import { verifyPaymentForTransaction } from "@/lib/payment-verification";
-import { getExchangeRate, getTransactionsEnabled, getMinimumPurchase } from "@/lib/settings";
+import { getExchangeRate, getOnrampTransactionsEnabled, getMinimumPurchase } from "@/lib/settings";
 import { updateWalletStats } from "@/lib/supabase-users";
 import { sendPaymentVerificationEmail, sendTokenDistributionEmail } from "@/lib/transaction-emails";
 import { supabase, updateReferralCountOnTransaction } from "@/lib/supabase";
@@ -125,8 +125,8 @@ export async function POST(request: NextRequest) {
   /* COMMENTED OUT - Paystack code kept for reference
   try {
     // Check if transactions are enabled
-    const transactionsEnabled = await getTransactionsEnabled();
-    if (!transactionsEnabled) {
+    const onrampEnabled = await getOnrampTransactionsEnabled();
+    if (!onrampEnabled) {
       return NextResponse.json(
         {
           success: false,

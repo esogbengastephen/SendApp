@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { nanoid } from "nanoid";
 import { createTransaction, getTransaction, updateTransaction, calculateSendAmount } from "@/lib/transactions";
 import { createOrUpdateUser } from "@/lib/users";
-import { getExchangeRate, getTransactionsEnabled, getMinimumPurchase } from "@/lib/settings";
+import { getExchangeRate, getOnrampTransactionsEnabled, getMinimumPurchase } from "@/lib/settings";
 import {
   linkWalletToUser,
   getSupabaseUserByEmail,
@@ -29,13 +29,13 @@ function getUserFromSession(body: any): { userId?: string; email?: string } {
  */
 export async function POST(request: NextRequest) {
   try {
-    // Check if transactions are enabled
-    const transactionsEnabled = await getTransactionsEnabled();
-    if (!transactionsEnabled) {
+    // Check if onramp (buy) is enabled (global + onramp toggle)
+    const onrampEnabled = await getOnrampTransactionsEnabled();
+    if (!onrampEnabled) {
       return NextResponse.json(
         {
           success: false,
-          error: "Transactions are currently disabled. Please check back later.",
+          error: "Buy (onramp) transactions are currently disabled. Please check back later.",
         },
         { status: 403 }
       );
