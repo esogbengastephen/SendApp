@@ -229,6 +229,14 @@ function AdminLayoutContent({
                 <span>Token Prices</span>
               </Link>
               <Link
+                href="/admin/price-action"
+                onClick={() => setSidebarOpen(false)}
+                className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <span className="material-icons-outlined text-lg sm:text-xl">trending_up</span>
+                <span>Price Action</span>
+              </Link>
+              <Link
                 href="/admin/banners"
                 onClick={() => setSidebarOpen(false)}
                 className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2.5 sm:py-3 rounded-lg text-sm sm:text-base text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"

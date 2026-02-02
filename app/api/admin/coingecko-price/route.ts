@@ -4,6 +4,15 @@ import { isAdminWallet } from "@/lib/supabase";
 
 const COINGECKO_API_BASE = "https://api.coingecko.com/api/v3";
 
+function coinGeckoHeaders(): HeadersInit {
+  const headers: HeadersInit = { Accept: "application/json" };
+  const apiKey = process.env.COINGECKO_API_KEY;
+  if (apiKey) {
+    (headers as Record<string, string>)["x-cg-demo-api-key"] = apiKey;
+  }
+  return headers;
+}
+
 /**
  * GET - Fetch CoinGecko price for SEND token
  */
@@ -28,26 +37,36 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Fetch price from CoinGecko using contract address on Base network
+    // Fetch prices from CoinGecko: SEND (Base), USDC, USDT (simple/price)
     const contractAddress = SEND_TOKEN_ADDRESS.toLowerCase();
-    
-    try {
-      // Try to get price in USD first
-      const usdResponse = await fetch(
-        `${COINGECKO_API_BASE}/simple/token_price/base?contract_addresses=${contractAddress}&vs_currencies=usd`,
-        {
-          headers: {
-            "Accept": "application/json",
-          },
-        }
-      );
+    const headers = coinGeckoHeaders();
 
-      if (!usdResponse.ok) {
-        throw new Error(`CoinGecko API error: ${usdResponse.status}`);
+    try {
+      // Fetch SEND (Base), USDC, USDT and USD→NGN in parallel
+      const [sendResponse, stablecoinsResponse] = await Promise.all([
+        fetch(
+          `${COINGECKO_API_BASE}/simple/token_price/base?contract_addresses=${contractAddress}&vs_currencies=usd`,
+          { headers }
+        ),
+        fetch(
+          `${COINGECKO_API_BASE}/simple/price?ids=usd-coin,tether&vs_currencies=usd,ngn`,
+          { headers }
+        ),
+      ]);
+
+      if (sendResponse.status === 429 || stablecoinsResponse.status === 429) {
+        return NextResponse.json({
+          success: false,
+          error: "CoinGecko rate limit (429). Wait a minute and retry, or set COINGECKO_API_KEY in your environment for higher limits.",
+        }, { status: 429 });
       }
 
-      const usdData = await usdResponse.json();
-      const tokenData = usdData[contractAddress];
+      if (!sendResponse.ok) {
+        throw new Error(`CoinGecko API error: ${sendResponse.status}`);
+      }
+
+      const sendData = await sendResponse.json();
+      const tokenData = sendData[contractAddress];
 
       if (!tokenData || !tokenData.usd) {
         return NextResponse.json({
@@ -56,51 +75,54 @@ export async function GET(request: NextRequest) {
         }, { status: 404 });
       }
 
-      const usdPrice = tokenData.usd;
+      const sendUsd = tokenData.usd;
+      let usdToNgnRate = 1500;
+      let sendNgn: number | null = sendUsd * usdToNgnRate;
 
-      // Fetch USD to NGN conversion rate
-      let ngnPrice = null;
-      try {
-        const ngnResponse = await fetch(
-          `${COINGECKO_API_BASE}/simple/price?ids=usd-coin&vs_currencies=ngn`,
-          {
-            headers: {
-              "Accept": "application/json",
-            },
-          }
-        );
+      // Parse USDC/USDT and USD→NGN from stablecoins response
+      let usdcUsd: number | null = null;
+      let usdcNgn: number | null = null;
+      let usdtUsd: number | null = null;
+      let usdtNgn: number | null = null;
 
-        if (ngnResponse.ok) {
-          const ngnData = await ngnResponse.json();
-          // Use USDC price as reference for USD to NGN
-          // Or we can use a fixed rate or another API
-          // For now, let's use a common rate (you can update this)
-          const usdToNgnRate = ngnData["usd-coin"]?.ngn || 1500; // Fallback to ~1500 NGN per USD
-          ngnPrice = usdPrice * usdToNgnRate;
+      if (stablecoinsResponse.ok) {
+        const scData = await stablecoinsResponse.json();
+        const usdCoin = scData["usd-coin"];
+        const tether = scData["tether"];
+        if (usdCoin?.ngn != null) usdToNgnRate = usdCoin.ngn;
+        sendNgn = sendUsd * usdToNgnRate;
+        if (usdCoin?.usd != null) {
+          usdcUsd = usdCoin.usd;
+          usdcNgn = usdCoin.ngn ?? usdCoin.usd * usdToNgnRate;
         }
-      } catch (ngnError) {
-        console.error("Error fetching NGN conversion:", ngnError);
-        // Use fallback rate
-        const fallbackUsdToNgn = 1500;
-        ngnPrice = usdPrice * fallbackUsdToNgn;
+        if (tether?.usd != null) {
+          usdtUsd = tether.usd;
+          usdtNgn = tether.ngn ?? tether.usd * usdToNgnRate;
+        }
       }
 
       return NextResponse.json({
         success: true,
         price: {
-          usd: usdPrice,
-          ngn: ngnPrice,
+          usd: sendUsd,
+          ngn: sendNgn,
           contractAddress: SEND_TOKEN_ADDRESS,
           network: "base",
+          USDC: usdcUsd != null ? { usd: usdcUsd, ngn: usdcNgn } : null,
+          USDT: usdtUsd != null ? { usd: usdtUsd, ngn: usdtNgn } : null,
           timestamp: new Date().toISOString(),
         },
       });
     } catch (coingeckoError: any) {
       console.error("CoinGecko API error:", coingeckoError);
+      const message = coingeckoError.message || "Unknown error";
+      const is429 = String(message).includes("429");
       return NextResponse.json({
         success: false,
-        error: `Failed to fetch price from CoinGecko: ${coingeckoError.message}`,
-      }, { status: 500 });
+        error: is429
+          ? "CoinGecko rate limit (429). Wait a minute and retry, or set COINGECKO_API_KEY in your environment for higher limits."
+          : `Failed to fetch price from CoinGecko: ${message}`,
+      }, { status: is429 ? 429 : 500 });
     }
   } catch (error: any) {
     console.error("Error fetching CoinGecko price:", error);

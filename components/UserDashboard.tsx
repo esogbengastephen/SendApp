@@ -52,28 +52,28 @@ const services: Service[] = [
   { id: "gift-card-redeem", name: "Gift Card\nRedeem", icon: "card_giftcard", route: "/gift-card-redeem" },
 ];
 
-/** Token icon for price banner: round like the rest, clipped to circle; fallback when image fails */
+/** Token icon for price banner: round, compact; fallback when image fails */
 function TokenPriceIcon({ symbol }: { symbol: "SEND" | "USDC" | "USDT" }) {
   const [imgError, setImgError] = useState(false);
   const url = getTokenLogo(symbol);
-  const circleClass = "w-7 h-7 min-w-[28px] min-h-[28px] rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden bg-primary/10 dark:bg-primary/20 relative";
+  const circleClass = "w-5 h-5 min-w-[20px] min-h-[20px] rounded-full flex items-center justify-center flex-shrink-0 overflow-hidden bg-primary/10 dark:bg-primary/20 relative";
   if (!url) {
     return (
       <div className={circleClass}>
-        <span className="text-xs font-bold text-primary">$</span>
+        <span className="text-[10px] font-bold text-primary">$</span>
       </div>
     );
   }
   return (
     <div className={circleClass}>
       {imgError ? (
-        <span className="text-xs font-bold text-primary" aria-hidden="true">$</span>
+        <span className="text-[10px] font-bold text-primary" aria-hidden="true">$</span>
       ) : (
         <Image
           src={url}
           alt={symbol}
-          width={28}
-          height={28}
+          width={20}
+          height={20}
           className="absolute inset-0 rounded-full object-cover w-full h-full"
           unoptimized
           onError={() => setImgError(true)}
@@ -522,50 +522,50 @@ export default function UserDashboard() {
           </div>
         </div>
 
-        {/* Token Price Banner: white in light mode so blue isn't stacked; surface in dark */}
-        <div className="mb-4 bg-white dark:bg-ds-dark-surface-soft backdrop-blur-sm rounded-ds-lg border border-ds-border dark:border-white/10 overflow-hidden relative shadow-ds-soft">
-          <p className="text-[10px] font-bold text-ds-text-secondary uppercase tracking-tighter mb-1 px-4 pt-2">Token Price</p>
-          <div className="relative h-8 overflow-hidden">
+        {/* Token Price Banner: compact */}
+        <div className="mb-3 bg-white dark:bg-ds-dark-surface-soft backdrop-blur-sm rounded-ds-md border border-ds-border dark:border-white/10 overflow-hidden relative shadow-ds-soft">
+          <p className="text-[9px] font-bold text-ds-text-secondary uppercase tracking-tighter mb-0.5 px-3 pt-1.5">Token Price</p>
+          <div className="relative h-6 overflow-hidden">
             <div className="animate-marquee whitespace-nowrap flex items-center">
               {/* First set of prices */}
-              <div className="flex items-center gap-8 px-5 sm:px-6 inline-flex">
+              <div className="flex items-center gap-5 px-3 sm:px-4 inline-flex">
                 {tokenPrices.SEND && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <TokenPriceIcon symbol="SEND" />
-                    <span className="text-xs text-ds-text-primary font-medium whitespace-nowrap">1 SEND: {tokenPrices.SEND}</span>
+                    <span className="text-[10px] text-ds-text-primary font-medium whitespace-nowrap">1 SEND: {tokenPrices.SEND}</span>
                   </div>
                 )}
                 {tokenPrices.USDC && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <TokenPriceIcon symbol="USDC" />
-                    <span className="text-xs text-ds-text-primary font-medium whitespace-nowrap">1 USDC: {tokenPrices.USDC}</span>
+                    <span className="text-[10px] text-ds-text-primary font-medium whitespace-nowrap">1 USDC: {tokenPrices.USDC}</span>
                   </div>
                 )}
                 {tokenPrices.USDT && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <TokenPriceIcon symbol="USDT" />
-                    <span className="text-xs text-ds-text-primary font-medium whitespace-nowrap">1 USDT: {tokenPrices.USDT}</span>
+                    <span className="text-[10px] text-ds-text-primary font-medium whitespace-nowrap">1 USDT: {tokenPrices.USDT}</span>
                   </div>
                 )}
               </div>
               {/* Duplicate for seamless scrolling */}
-              <div className="flex items-center gap-8 px-5 sm:px-6 inline-flex">
+              <div className="flex items-center gap-5 px-3 sm:px-4 inline-flex">
                 {tokenPrices.SEND && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <TokenPriceIcon symbol="SEND" />
-                    <span className="text-xs text-ds-text-primary font-medium whitespace-nowrap">1 SEND: {tokenPrices.SEND}</span>
+                    <span className="text-[10px] text-ds-text-primary font-medium whitespace-nowrap">1 SEND: {tokenPrices.SEND}</span>
                   </div>
                 )}
                 {tokenPrices.USDC && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <TokenPriceIcon symbol="USDC" />
-                    <span className="text-xs text-ds-text-primary font-medium whitespace-nowrap">1 USDC: {tokenPrices.USDC}</span>
+                    <span className="text-[10px] text-ds-text-primary font-medium whitespace-nowrap">1 USDC: {tokenPrices.USDC}</span>
                   </div>
                 )}
                 {tokenPrices.USDT && (
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <TokenPriceIcon symbol="USDT" />
-                    <span className="text-xs text-ds-text-primary font-medium whitespace-nowrap">1 USDT: {tokenPrices.USDT}</span>
+                    <span className="text-[10px] text-ds-text-primary font-medium whitespace-nowrap">1 USDT: {tokenPrices.USDT}</span>
                   </div>
                 )}
               </div>
