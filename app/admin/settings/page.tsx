@@ -3,6 +3,7 @@
 import { useState, useEffect, Fragment } from "react";
 import { useAccount } from "wagmi";
 import { DEPOSIT_ACCOUNT } from "@/lib/constants";
+import { ALL_ADMIN_PERMISSIONS, getEffectivePermissions } from "@/lib/admin-permissions";
 
 // Edit Admin Form Component
 function EditAdminForm({ admin, availablePermissions, onSave, onCancel }: {
@@ -12,7 +13,7 @@ function EditAdminForm({ admin, availablePermissions, onSave, onCancel }: {
   onCancel: () => void;
 }) {
   const [role, setRole] = useState<"super_admin" | "admin">(admin.role || "admin");
-  const [permissions, setPermissions] = useState<string[]>(admin.permissions || []);
+  const [permissions, setPermissions] = useState<string[]>(() => getEffectivePermissions(admin.permissions || []));
   const [notes, setNotes] = useState(admin.notes || "");
   const [isActive, setIsActive] = useState(admin.is_active !== false);
 
@@ -176,17 +177,8 @@ export default function SettingsPage() {
   const [savingFeeTiers, setSavingFeeTiers] = useState(false);
   const [loadingFeeTiers, setLoadingFeeTiers] = useState(false);
 
-  // Available permissions (all tabs including settings: Dashboard, Transactions, Payments, Users, Referrals, Token Distribution, Test Transfer, Settings)
-  const availablePermissions = [
-    "view_dashboard",
-    "manage_transactions",
-    "verify_payments",
-    "manage_users",
-    "view_referrals",
-    "manage_token_distribution",
-    "test_transfers",
-    "manage_settings",
-  ];
+  // All grantable permissions (one per sidebar tab) – from admin-permissions
+  const availablePermissions = ALL_ADMIN_PERMISSIONS;
 
   // Fetch current settings on mount
   useEffect(() => {
