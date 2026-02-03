@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Modal from "@/components/Modal";
 
 interface Payment {
   reference: string;
@@ -21,6 +22,7 @@ export default function PaymentsPage() {
   const [loading, setLoading] = useState(true);
   const [verifying, setVerifying] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [selectedPayment, setSelectedPayment] = useState<Payment | null>(null);
 
   useEffect(() => {
     fetchPayments();
@@ -102,6 +104,55 @@ export default function PaymentsPage() {
         </p>
       </div>
 
+      <Modal
+        isOpen={!!selectedPayment}
+        onClose={() => setSelectedPayment(null)}
+        title="Payment details"
+        message={selectedPayment ? `${selectedPayment.source || "—"} • ${selectedPayment.status?.toUpperCase?.() || "—"}` : ""}
+        type="info"
+        txHash={selectedPayment?.txHash || undefined}
+        explorerUrl={selectedPayment?.txHash ? `https://basescan.org/tx/${selectedPayment.txHash}` : undefined}
+      >
+        {selectedPayment && (
+          <div className="space-y-2 text-sm">
+            <div className="flex items-start justify-between gap-3">
+              <span className="text-slate-500 dark:text-slate-400">Reference</span>
+              <span className="font-mono text-slate-900 dark:text-slate-100 text-right break-all">{selectedPayment.reference}</span>
+            </div>
+            {selectedPayment.transactionId && (
+              <div className="flex items-start justify-between gap-3">
+                <span className="text-slate-500 dark:text-slate-400">Transaction ID</span>
+                <span className="font-mono text-slate-900 dark:text-slate-100 text-right break-all">{selectedPayment.transactionId}</span>
+              </div>
+            )}
+            <div className="flex items-start justify-between gap-3">
+              <span className="text-slate-500 dark:text-slate-400">Customer</span>
+              <span className="text-slate-900 dark:text-slate-100 text-right break-all">{selectedPayment.customer || "—"}</span>
+            </div>
+            {selectedPayment.walletAddress && (
+              <div className="flex items-start justify-between gap-3">
+                <span className="text-slate-500 dark:text-slate-400">Wallet</span>
+                <span className="font-mono text-slate-900 dark:text-slate-100 text-right break-all">{selectedPayment.walletAddress}</span>
+              </div>
+            )}
+            <div className="flex items-start justify-between gap-3">
+              <span className="text-slate-500 dark:text-slate-400">Amount</span>
+              <span className="text-slate-900 dark:text-slate-100 text-right">₦{selectedPayment.amount.toLocaleString()}</span>
+            </div>
+            {selectedPayment.sendAmount && (
+              <div className="flex items-start justify-between gap-3">
+                <span className="text-slate-500 dark:text-slate-400">$SEND</span>
+                <span className="text-slate-900 dark:text-slate-100 text-right">{selectedPayment.sendAmount} $SEND</span>
+              </div>
+            )}
+            <div className="flex items-start justify-between gap-3">
+              <span className="text-slate-500 dark:text-slate-400">Created</span>
+              <span className="text-slate-900 dark:text-slate-100 text-right">{new Date(selectedPayment.createdAt).toLocaleString()}</span>
+            </div>
+          </div>
+        )}
+      </Modal>
+
       <div className="bg-white dark:bg-slate-900 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
         <div className="overflow-x-auto -mx-4 sm:mx-0">
           <div className="inline-block min-w-full align-middle">
@@ -110,6 +161,9 @@ export default function PaymentsPage() {
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
                   Reference
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
+                  Customer
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 dark:text-slate-400 uppercase">
                   Amount
@@ -131,13 +185,13 @@ export default function PaymentsPage() {
             <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
+                  <td colSpan={7} className="px-6 py-8 text-center text-slate-500">
                     Loading payments...
                   </td>
                 </tr>
               ) : fetchError ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center">
+                  <td colSpan={7} className="px-6 py-8 text-center">
                     <p className="text-slate-600 dark:text-slate-400 mb-2">{fetchError}</p>
                     <button
                       type="button"
@@ -150,7 +204,7 @@ export default function PaymentsPage() {
                 </tr>
               ) : payments.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
+                  <td colSpan={7} className="px-6 py-8 text-center text-slate-500">
                     No payments found
                   </td>
                 </tr>
@@ -166,6 +220,11 @@ export default function PaymentsPage() {
                           TX: {payment.transactionId.substring(0, 8)}...
                         </div>
                       )}
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm text-slate-900 dark:text-slate-100 break-all">
+                        {payment.customer || "—"}
+                      </div>
                     </td>
                     <td className="px-6 py-4">
                       <div className="text-sm font-medium text-slate-900 dark:text-slate-100">
@@ -198,6 +257,13 @@ export default function PaymentsPage() {
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex flex-col gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedPayment(payment)}
+                          className="text-primary hover:opacity-70 transition-opacity text-xs text-left"
+                        >
+                          View details
+                        </button>
                         {!payment.verified && payment.status === "success" && payment.source === "Paystack" && (
                           <button
                             onClick={() => handleVerifyPayment(payment.reference, payment.source)}

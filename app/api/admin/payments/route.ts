@@ -3,16 +3,14 @@ import { supabaseAdmin } from "@/lib/supabase";
 
 /**
  * Fetch all onramp payments from our database (Paystack + Flutterwave).
- * Uses transactions table as source of truth. Reads paystack_reference (and payment_reference if present)
- * plus metadata for Flutterwave tx_ref so both providers appear.
+ * Uses transactions table as source of truth. Reads payment_reference plus metadata for Flutterwave tx_ref.
  */
 export async function GET(request: NextRequest) {
   try {
-    // Select columns that exist in schema: paystack_reference is in migration 006; metadata in 025.
-    // Some deployments may have payment_reference; we use paystack_reference for compatibility.
+    // Select columns that exist: payment_reference (DB column), metadata (migration 025)
     const { data: allTransactions, error: txError } = await supabaseAdmin
       .from("transactions")
-      .select("id, transaction_id, user_id, wallet_address, paystack_reference, metadata, ngn_amount, send_amount, status, tx_hash, created_at")
+      .select("id, transaction_id, user_id, wallet_address, payment_reference, metadata, ngn_amount, send_amount, status, tx_hash, created_at")
       .order("created_at", { ascending: false })
       .limit(500);
 
@@ -41,7 +39,7 @@ export async function GET(request: NextRequest) {
 
     const meta = (m: unknown) => (m as { flutterwave_tx_ref?: string } | null)?.flutterwave_tx_ref;
     const payments = transactions.map((t) => {
-      const payRef = (t as { paystack_reference?: string | null }).paystack_reference;
+      const payRef = (t as { payment_reference?: string | null }).payment_reference;
       const ref = payRef || meta(t.metadata) || t.transaction_id || "";
       const statusLabel = t.status === "completed" ? "success" : t.status === "pending" ? "pending" : "failed";
       const isFlutterwave = (payRef && String(payRef).startsWith("FLW")) || !!meta(t.metadata);
