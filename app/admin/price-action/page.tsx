@@ -50,12 +50,17 @@ export default function PriceActionPage() {
   const lastAutoPublishRef = useRef<number>(0);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
 
-  // Exchange rates (admin-set) – for BUY & SELL
+  // Exchange rates (admin-set) – BUY (onramp)
   const [exchangeRate, setExchangeRate] = useState<string>(""); // 1 NGN = X $SEND
   const [sendToNgnRate, setSendToNgnRate] = useState<string>(""); // 1 $SEND = Y NGN
   const [usdcNgnRate, setUsdcNgnRate] = useState<string>(""); // 1 USDC = X NGN
   const [usdtNgnRate, setUsdtNgnRate] = useState<string>(""); // 1 USDT = X NGN
   const [savingExchangeRates, setSavingExchangeRates] = useState(false);
+  // Exchange rates (admin-set) – SELL (offramp)
+  const [sendToNgnSellRate, setSendToNgnSellRate] = useState<string>(""); // 1 $SEND = X NGN (sell)
+  const [usdcSellNgnRate, setUsdcSellNgnRate] = useState<string>(""); // 1 USDC = X NGN (sell)
+  const [usdtSellNgnRate, setUsdtSellNgnRate] = useState<string>(""); // 1 USDT = X NGN (sell)
+  const [savingSellRates, setSavingSellRates] = useState(false);
 
   useEffect(() => {
     const fetchPrices = async () => {
@@ -108,6 +113,15 @@ export default function PriceActionPage() {
         if (ngnToSend != null && Number(ngnToSend) > 0) {
           setExchangeRate(Number(ngnToSend).toFixed(5));
           setSendToNgnRate((1 / Number(ngnToSend)).toFixed(2));
+        }
+        if (data.settings.sendToNgnSell != null && Number(data.settings.sendToNgnSell) > 0) {
+          setSendToNgnSellRate(Number(data.settings.sendToNgnSell).toFixed(2));
+        }
+        if (data.settings.usdcSellPriceNgn != null && Number(data.settings.usdcSellPriceNgn) > 0) {
+          setUsdcSellNgnRate(Number(data.settings.usdcSellPriceNgn).toFixed(2));
+        }
+        if (data.settings.usdtSellPriceNgn != null && Number(data.settings.usdtSellPriceNgn) > 0) {
+          setUsdtSellNgnRate(Number(data.settings.usdtSellPriceNgn).toFixed(2));
         }
         setSettingsLoaded(true);
       }
@@ -426,6 +440,7 @@ export default function PriceActionPage() {
           USDC: pricesData.prices?.USDC ?? null,
           USDT: pricesData.prices?.USDT ?? null,
           pricesNGN: pricesData.pricesNGN,
+          pricesNGNSell: pricesData.pricesNGNSell,
           source: pricesData.source,
         });
       }
@@ -434,6 +449,49 @@ export default function PriceActionPage() {
       setError(err instanceof Error ? err.message : "Failed to save exchange rates");
     } finally {
       setSavingExchangeRates(false);
+    }
+  };
+
+  const saveSellExchangeRates = async () => {
+    if (!address) return;
+    setSavingSellRates(true);
+    setError(null);
+    try {
+      const sendToNgn = parseFloat(sendToNgnSellRate);
+      const usdc = parseFloat(usdcSellNgnRate);
+      const usdt = parseFloat(usdtSellNgnRate);
+      if (isNaN(sendToNgn) || sendToNgn <= 0) {
+        setError("Invalid SEND to NGN (sell) rate");
+        setSavingSellRates(false);
+        return;
+      }
+      const res = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sendToNgnSell: sendToNgn,
+          usdcSellPriceNgn: !isNaN(usdc) && usdc > 0 ? usdc : undefined,
+          usdtSellPriceNgn: !isNaN(usdt) && usdt > 0 ? usdt : undefined,
+          walletAddress: address,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        setError(data.error || "Failed to save sell exchange rates");
+        setSavingSellRates(false);
+        return;
+      }
+      setSuccess(true);
+      const pricesRes = await fetch("/api/token-prices");
+      const pricesData = await pricesRes.json();
+      if (pricesData.success) {
+        setLivePrices((prev) => (prev ? { ...prev, pricesNGNSell: pricesData.pricesNGNSell } : null));
+      }
+      setTimeout(() => setSuccess(false), 3000);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save sell exchange rates");
+    } finally {
+      setSavingSellRates(false);
     }
   };
 
@@ -781,195 +839,273 @@ export default function PriceActionPage() {
         </div>
       </div>
 
-      {/* Live Prices Card */}
-      <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
-        <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2">
-          <span className="material-icons-outlined text-primary">show_chart</span>
-          Live Token Prices
-        </h2>
+      {/* Live Token Prices – On Ramp only */}
+      {activeTab === "buy" && (
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+            <span className="material-icons-outlined text-primary">show_chart</span>
+            Live Token Prices (On Ramp)
+          </h2>
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
+                <p className="text-slate-600 dark:text-slate-400">Loading prices...</p>
+              </div>
+            </div>
+          ) : livePrices ? (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="p-4 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">SEND (USD)</p>
+                  <p className="text-xl font-bold text-slate-900 dark:text-slate-100">
+                    {livePrices.SEND != null ? `$${livePrices.SEND.toFixed(6)}` : "—"}
+                  </p>
+                  {livePrices.pricesNGN?.SEND != null && (
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">≈ ₦{livePrices.pricesNGN.SEND.toFixed(2)} NGN</p>
+                  )}
+                </div>
+                <div className="p-4 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">USDC (USD)</p>
+                  <p className="text-xl font-bold text-slate-900 dark:text-slate-100">
+                    {livePrices.USDC != null ? `$${livePrices.USDC.toFixed(4)}` : "—"}
+                  </p>
+                  {livePrices.pricesNGN?.USDC != null && (
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">≈ ₦{livePrices.pricesNGN.USDC.toFixed(2)} NGN</p>
+                  )}
+                </div>
+                <div className="p-4 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">USDT (USD)</p>
+                  <p className="text-xl font-bold text-slate-900 dark:text-slate-100">
+                    {livePrices.USDT != null ? `$${livePrices.USDT.toFixed(4)}` : "—"}
+                  </p>
+                  {livePrices.pricesNGN?.USDT != null && (
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">≈ ₦{livePrices.pricesNGN.USDT.toFixed(2)} NGN</p>
+                  )}
+                </div>
+              </div>
+              {livePrices?.source && (
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-4">
+                  Source: {livePrices.source}. Used for buy (onramp: NGN → crypto).
+                </p>
+              )}
+            </>
+          ) : null}
+        </div>
+      )}
 
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="text-center">
-              <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
-              <p className="text-slate-600 dark:text-slate-400">Loading prices...</p>
+      {/* Live Token Prices – Off Ramp only */}
+      {activeTab === "sell" && (
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-4 flex items-center gap-2">
+            <span className="material-icons-outlined text-primary">show_chart</span>
+            Live Token Prices (Off Ramp)
+          </h2>
+          {loading ? (
+            <div className="flex items-center justify-center py-12">
+              <div className="text-center">
+                <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
+                <p className="text-slate-600 dark:text-slate-400">Loading prices...</p>
+              </div>
             </div>
-          </div>
-        ) : livePrices ? (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="p-4 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">SEND (USD)</p>
-              <p className="text-xl font-bold text-slate-900 dark:text-slate-100">
-                {livePrices.SEND != null ? `$${livePrices.SEND.toFixed(6)}` : "—"}
-              </p>
-              {livePrices.pricesNGN?.SEND != null && (
-                <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                  ≈ ₦{livePrices.pricesNGN.SEND.toFixed(2)} NGN
+          ) : livePrices ? (
+            <>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="p-4 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">SEND (USD)</p>
+                  <p className="text-xl font-bold text-slate-900 dark:text-slate-100">
+                    {livePrices.SEND != null ? `$${livePrices.SEND.toFixed(6)}` : "—"}
+                  </p>
+                  {livePrices.pricesNGNSell?.SEND != null && (
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">≈ ₦{livePrices.pricesNGNSell.SEND.toFixed(2)} NGN (sell)</p>
+                  )}
+                </div>
+                <div className="p-4 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">USDC (USD)</p>
+                  <p className="text-xl font-bold text-slate-900 dark:text-slate-100">
+                    {livePrices.USDC != null ? `$${livePrices.USDC.toFixed(4)}` : "—"}
+                  </p>
+                  {livePrices.pricesNGNSell?.USDC != null && (
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">≈ ₦{livePrices.pricesNGNSell.USDC.toFixed(2)} NGN (sell)</p>
+                  )}
+                </div>
+                <div className="p-4 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
+                  <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">USDT (USD)</p>
+                  <p className="text-xl font-bold text-slate-900 dark:text-slate-100">
+                    {livePrices.USDT != null ? `$${livePrices.USDT.toFixed(4)}` : "—"}
+                  </p>
+                  {livePrices.pricesNGNSell?.USDT != null && (
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">≈ ₦{livePrices.pricesNGNSell.USDT.toFixed(2)} NGN (sell)</p>
+                  )}
+                </div>
+              </div>
+              {livePrices?.source && (
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-4">
+                  Source: {livePrices.source}. Used for sell (offramp: crypto → NGN).
                 </p>
               )}
-            </div>
-            <div className="p-4 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">USDC (USD)</p>
-              <p className="text-xl font-bold text-slate-900 dark:text-slate-100">
-                {livePrices.USDC != null ? `$${livePrices.USDC.toFixed(4)}` : "—"}
-              </p>
-              {livePrices.pricesNGN?.USDC != null && (
-                <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                  ≈ ₦{livePrices.pricesNGN.USDC.toFixed(2)} NGN
-                </p>
-              )}
-            </div>
-            <div className="p-4 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1">USDT (USD)</p>
-              <p className="text-xl font-bold text-slate-900 dark:text-slate-100">
-                {livePrices.USDT != null ? `$${livePrices.USDT.toFixed(4)}` : "—"}
-              </p>
-              {livePrices.pricesNGN?.USDT != null && (
-                <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">
-                  ≈ ₦{livePrices.pricesNGN.USDT.toFixed(2)} NGN
-                </p>
-              )}
-            </div>
-          </div>
-        ) : null}
+            </>
+          ) : null}
+        </div>
+      )}
 
-        {livePrices?.source && (
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-4">
-            Source: {livePrices.source}. Buy = onramp (NGN → crypto), Sell = offramp (crypto → NGN). After you publish buy and sell, both appear here.
+      {/* Exchange Rate (On Ramp only) – Admin set buy rates */}
+      {activeTab === "buy" && (
+        <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
+          <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 mb-3 sm:mb-4">
+            Exchange Rate (On Ramp)
+          </h2>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+            Set token exchange rates for BUY (Onramp). Used for NGN ↔ SEND, USDC, and USDT.
           </p>
-        )}
-      </div>
-
-      {/* Exchange Rate (BUY & SELL) – Admin set prices for SEND, USDC, USDT */}
-      <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
-        <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 mb-3 sm:mb-4">
-          Exchange Rate
-        </h2>
-        <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-          Set token exchange rates for {activeTab === "buy" ? "BUY (Onramp)" : "SELL (Offramp)"}. Used for NGN ↔ SEND, USDC, and USDT.
-        </p>
-        <div className="space-y-4">
-          {/* NGN to SEND Exchange Rate */}
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-              NGN to SEND Exchange Rate
-            </label>
-            <input
-              type="number"
-              step="0.00001"
-              min="0.00001"
-              value={exchangeRate}
-              onChange={(e) => {
-                const value = e.target.value;
-                setExchangeRate(value);
-                setError(null);
-                const ngnToSend = parseFloat(value);
-                if (!isNaN(ngnToSend) && ngnToSend > 0) {
-                  setSendToNgnRate((1 / ngnToSend).toFixed(2));
-                }
-              }}
-              placeholder="0.01754"
-              disabled={savingExchangeRates}
-              className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
-            />
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              1 NGN = {exchangeRate || "0"} $SEND
-            </p>
-          </div>
-
-          {/* $SEND to NGN Exchange Rate */}
-          <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-              $SEND to NGN Exchange Rate
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              min="0.01"
-              value={sendToNgnRate}
-              onChange={(e) => {
-                const value = e.target.value;
-                setSendToNgnRate(value);
-                setError(null);
-                const sendToNgn = parseFloat(value);
-                if (!isNaN(sendToNgn) && sendToNgn > 0) {
-                  setExchangeRate((1 / sendToNgn).toFixed(5));
-                }
-              }}
-              placeholder="57.01"
-              disabled={savingExchangeRates}
-              className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
-            />
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              1 $SEND = {sendToNgnRate || "0"} NGN
-            </p>
-          </div>
-
-          {/* USDC to NGN Exchange Rate */}
-          <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-              USDC to NGN Exchange Rate
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              min="0.01"
-              value={usdcNgnRate}
-              onChange={(e) => {
-                setUsdcNgnRate(e.target.value);
-                setError(null);
-              }}
-              placeholder="1500"
-              disabled={savingExchangeRates}
-              className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
-            />
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              1 USDC = {usdcNgnRate || "0"} NGN
-            </p>
-          </div>
-
-          {/* USDT to NGN Exchange Rate */}
-          <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
-              USDT to NGN Exchange Rate
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              min="0.01"
-              value={usdtNgnRate}
-              onChange={(e) => {
-                setUsdtNgnRate(e.target.value);
-                setError(null);
-              }}
-              placeholder="1500"
-              disabled={savingExchangeRates}
-              className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
-            />
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              1 USDT = {usdtNgnRate || "0"} NGN
-            </p>
-          </div>
-
-          <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
-            <button
-              type="button"
-              onClick={saveExchangeRates}
-              disabled={savingExchangeRates || !address || !exchangeRate || parseFloat(exchangeRate) <= 0}
-              className="bg-primary text-slate-900 font-bold px-6 py-3 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-            >
-              {savingExchangeRates ? (
-                <>
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-slate-900"></div>
-                  Saving...
-                </>
-              ) : (
-                "Save Exchange Rates"
-              )}
-            </button>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">NGN to SEND Exchange Rate</label>
+              <input
+                type="number"
+                step="0.00001"
+                min="0.00001"
+                value={exchangeRate}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setExchangeRate(value);
+                  setError(null);
+                  const ngnToSend = parseFloat(value);
+                  if (!isNaN(ngnToSend) && ngnToSend > 0) setSendToNgnRate((1 / ngnToSend).toFixed(2));
+                }}
+                placeholder="0.01754"
+                disabled={savingExchangeRates}
+                className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">1 NGN = {exchangeRate || "0"} $SEND</p>
+            </div>
+            <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">$SEND to NGN Exchange Rate</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={sendToNgnRate}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setSendToNgnRate(value);
+                  setError(null);
+                  const sendToNgn = parseFloat(value);
+                  if (!isNaN(sendToNgn) && sendToNgn > 0) setExchangeRate((1 / sendToNgn).toFixed(5));
+                }}
+                placeholder="57.01"
+                disabled={savingExchangeRates}
+                className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">1 $SEND = {sendToNgnRate || "0"} NGN</p>
+            </div>
+            <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">USDC to NGN Exchange Rate</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={usdcNgnRate}
+                onChange={(e) => { setUsdcNgnRate(e.target.value); setError(null); }}
+                placeholder="1500"
+                disabled={savingExchangeRates}
+                className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">1 USDC = {usdcNgnRate || "0"} NGN</p>
+            </div>
+            <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">USDT to NGN Exchange Rate</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={usdtNgnRate}
+                onChange={(e) => { setUsdtNgnRate(e.target.value); setError(null); }}
+                placeholder="1500"
+                disabled={savingExchangeRates}
+                className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">1 USDT = {usdtNgnRate || "0"} NGN</p>
+            </div>
+            <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+              <button
+                type="button"
+                onClick={saveExchangeRates}
+                disabled={savingExchangeRates || !address || !exchangeRate || parseFloat(exchangeRate) <= 0}
+                className="bg-primary text-slate-900 font-bold px-6 py-3 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {savingExchangeRates ? (<><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-slate-900"></div> Saving...</>) : "Save Exchange Rates"}
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+      {/* Exchange Rate (Off Ramp only) – Admin set sell rates */}
+      {activeTab === "sell" && (
+        <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
+          <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 mb-3 sm:mb-4">
+            Exchange Rate (Off Ramp)
+          </h2>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+            Set token exchange rates for SELL (Offramp). Used when users sell crypto for NGN (1 SEND = X NGN, etc.).
+          </p>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">$SEND to NGN (Sell)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={sendToNgnSellRate}
+                onChange={(e) => { setSendToNgnSellRate(e.target.value); setError(null); }}
+                placeholder="46.71"
+                disabled={savingSellRates}
+                className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">1 $SEND = {sendToNgnSellRate || "0"} NGN</p>
+            </div>
+            <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">USDC to NGN (Sell)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={usdcSellNgnRate}
+                onChange={(e) => { setUsdcSellNgnRate(e.target.value); setError(null); }}
+                placeholder="1470"
+                disabled={savingSellRates}
+                className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">1 USDC = {usdcSellNgnRate || "0"} NGN</p>
+            </div>
+            <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">USDT to NGN (Sell)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0.01"
+                value={usdtSellNgnRate}
+                onChange={(e) => { setUsdtSellNgnRate(e.target.value); setError(null); }}
+                placeholder="1470"
+                disabled={savingSellRates}
+                className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">1 USDT = {usdtSellNgnRate || "0"} NGN</p>
+            </div>
+            <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
+              <button
+                type="button"
+                onClick={saveSellExchangeRates}
+                disabled={savingSellRates || !address || !sendToNgnSellRate || parseFloat(sendToNgnSellRate) <= 0}
+                className="bg-primary text-slate-900 font-bold px-6 py-3 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              >
+                {savingSellRates ? (<><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-slate-900"></div> Saving...</>) : "Save Sell Exchange Rates"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Onramp / Offramp transaction status (tab-specific) */}
       {activeTab === "buy" && (

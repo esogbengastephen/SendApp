@@ -111,12 +111,12 @@ export default function NotificationBell() {
 
   // Set up real-time subscription with WebSocket error handling
   useEffect(() => {
-    fetchNotifications();
+    fetchNotifications().catch(() => {});
 
     const user = getUserFromStorage();
     if (!user?.id) {
-      // Poll for updates every 30 seconds as fallback
-      const interval = setInterval(fetchNotifications, 30000);
+      // Poll for updates every 30 seconds as fallback; .catch() prevents unhandled rejection on "Failed to fetch"
+      const interval = setInterval(() => fetchNotifications().catch(() => {}), 30000);
       return () => clearInterval(interval);
     }
 
@@ -162,7 +162,7 @@ export default function NotificationBell() {
             },
             (payload) => {
               // New notification received
-              fetchNotifications();
+              fetchNotifications().catch(() => {});
               
               // Play sound
               if (audioRef.current) {
@@ -181,7 +181,7 @@ export default function NotificationBell() {
               filter: `user_id=eq.${user.id}`,
             },
             () => {
-              fetchNotifications();
+              fetchNotifications().catch(() => {});
             }
           )
           .subscribe((status) => {
@@ -219,9 +219,9 @@ export default function NotificationBell() {
     const subscriptionSuccess = setupRealtimeSubscription();
     
     // Always set up polling as fallback (or primary if realtime fails)
-    // Use shorter interval if realtime is not available
+    // Use shorter interval if realtime is not available; .catch() prevents unhandled rejection on "Failed to fetch"
     const pollInterval = subscriptionSuccess && realtimeEnabled ? 60000 : 30000; // 60s if realtime works, 30s if not
-    interval = setInterval(fetchNotifications, pollInterval);
+    interval = setInterval(() => fetchNotifications().catch(() => {}), pollInterval);
     
     return () => {
       if (channel) {

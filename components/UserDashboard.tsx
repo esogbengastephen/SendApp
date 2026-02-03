@@ -50,6 +50,7 @@ const services: Service[] = [
   { id: "tv-sub", name: "TV\nSub", icon: "tv", route: "/tv-sub" },
   { id: "buy-electricity", name: "Electricity", icon: "bolt", route: "/buy-electricity" },
   { id: "gift-card-redeem", name: "Gift Card\nRedeem", icon: "card_giftcard", route: "/gift-card-redeem" },
+  { id: "flip-lend", name: "Flip\nLend", icon: "savings", route: "/flip-lend" },
 ];
 
 /** Token icon for price banner: round, compact; fallback when image fails */
@@ -219,36 +220,24 @@ export default function UserDashboard() {
         fetchTokenPrices(),
         fetchAllTransactions(currentUser.id),
       ]).catch((error) => {
-        console.error("Error loading dashboard data:", error);
+        console.warn("Dashboard data load error:", error?.message ?? error);
       });
       
-      // Refresh prices every 30 seconds
+      // Refresh prices every 30 seconds; .catch() prevents unhandled rejection on "Failed to fetch"
       const priceInterval = setInterval(() => {
-        try {
-          fetchTokenPrices();
-        } catch (e) {
-          console.warn("Error in price refresh interval:", e);
-        }
+        fetchTokenPrices().catch(() => {});
       }, 30000);
       
-      // Refresh wallet balances every 60 seconds
+      // Refresh wallet balances every 60 seconds; .catch() prevents unhandled rejection on "Failed to fetch"
       const balanceInterval = setInterval(() => {
-        try {
-          if (currentUser) {
-            fetchWalletBalances(currentUser.id);
-          }
-        } catch (e) {
-          console.warn("Error in balance refresh interval:", e);
+        if (currentUser) {
+          fetchWalletBalances(currentUser.id).catch(() => {});
         }
       }, 60000);
       
       return () => {
-        try {
-          clearInterval(priceInterval);
-          clearInterval(balanceInterval);
-        } catch (e) {
-          console.warn("Error clearing intervals:", e);
-        }
+        clearInterval(priceInterval);
+        clearInterval(balanceInterval);
       };
     } catch (error) {
       console.error("Error in UserDashboard useEffect:", error);
@@ -643,6 +632,7 @@ export default function UserDashboard() {
             <ServiceButton icon="tv" label={"TV\nSub"} comingSoon />
             <ServiceButton icon="bolt" label={"Electricity"} comingSoon />
             <ServiceButton icon="card_giftcard" label={"Gift Card\nRedeem"} comingSoon />
+            <ServiceButton icon="savings" label={"Flip\nLend"} comingSoon />
           </div>
         </div>
 
