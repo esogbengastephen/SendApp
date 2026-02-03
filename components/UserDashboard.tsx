@@ -805,66 +805,45 @@ export default function UserDashboard() {
                 </span>
               </button>
 
-              <button
-                onClick={() => handleCryptoOptionClick("BASE")}
-                className="w-full p-4 rounded-xl bg-primary/10 hover:bg-primary/20 border-2 border-primary/30 hover:border-primary/50 transition-all flex items-center justify-between group"
+              <div
+                className="w-full p-4 rounded-xl bg-gray-100 dark:bg-slate-700/50 border-2 border-gray-200 dark:border-slate-600 flex items-center justify-between opacity-75 cursor-not-allowed"
+                aria-disabled="true"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-secondary/20 flex items-center justify-center overflow-hidden">
-                    {/* Base Logo */}
+                  <div className="w-10 h-10 rounded-lg bg-gray-200 dark:bg-slate-600 flex items-center justify-center overflow-hidden">
                     <Image
                       src="https://res.cloudinary.com/dshqnkjqb/image/upload/v1766979509/108554348_rdxd9x.png"
                       alt="BASE"
                       width={40}
                       height={40}
-                      className="rounded-lg"
+                      className="rounded-lg opacity-70"
                       unoptimized
-                      onError={(e) => {
-                        // Fallback to icon if image fails
-                        (e.target as HTMLImageElement).style.display = 'none';
-                        const parent = (e.target as HTMLImageElement).parentElement;
-                        if (parent) {
-                          parent.innerHTML = '<span class="material-icons-outlined text-secondary">account_balance</span>';
-                        }
-                      }}
                     />
                   </div>
-                  <span className="text-lg font-semibold text-gray-900 dark:text-white">BASE</span>
+                  <span className="text-lg font-semibold text-gray-500 dark:text-gray-400">BASE</span>
                 </div>
-                <span className="material-icons-outlined text-gray-600 dark:text-white/40 group-hover:text-primary transition-colors">
-                  arrow_forward
-                </span>
-              </button>
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Coming soon</span>
+              </div>
 
-              <button
-                onClick={() => handleCryptoOptionClick("SOLANA")}
-                className="w-full p-4 rounded-xl bg-primary/10 hover:bg-primary/20 border-2 border-primary/30 hover:border-primary/50 transition-all flex items-center justify-between group"
+              <div
+                className="w-full p-4 rounded-xl bg-gray-100 dark:bg-slate-700/50 border-2 border-gray-200 dark:border-slate-600 flex items-center justify-between opacity-75 cursor-not-allowed"
+                aria-disabled="true"
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-secondary/20 flex items-center justify-center overflow-hidden">
+                  <div className="w-10 h-10 rounded-lg bg-gray-200 dark:bg-slate-600 flex items-center justify-center overflow-hidden">
                     <Image
                       src="https://assets.coingecko.com/coins/images/4128/small/solana.png"
                       alt="SOLANA"
                       width={40}
                       height={40}
-                      className="rounded-lg"
+                      className="rounded-lg opacity-70"
                       unoptimized
-                      onError={(e) => {
-                        // Fallback to icon if image fails
-                        (e.target as HTMLImageElement).style.display = 'none';
-                        const parent = (e.target as HTMLImageElement).parentElement;
-                        if (parent) {
-                          parent.innerHTML = '<span class="material-icons-outlined text-secondary">account_balance_wallet</span>';
-                        }
-                      }}
                     />
                   </div>
-                  <span className="text-lg font-semibold text-gray-900 dark:text-white">SOLANA</span>
+                  <span className="text-lg font-semibold text-gray-500 dark:text-gray-400">SOLANA</span>
                 </div>
-                <span className="material-icons-outlined text-gray-600 dark:text-white/40 group-hover:text-primary transition-colors">
-                  arrow_forward
-                </span>
-              </button>
+                <span className="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide">Coming soon</span>
+              </div>
             </div>
           </div>
         </div>
