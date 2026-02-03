@@ -14,6 +14,7 @@ export default function PriceActionPage() {
     USDC: number | null;
     USDT: number | null;
     pricesNGN?: Record<string, number | null>;
+    pricesNGNSell?: Record<string, number | null>;
     source?: string;
   } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -67,6 +68,7 @@ export default function PriceActionPage() {
             USDC: data.prices?.USDC ?? null,
             USDT: data.prices?.USDT ?? null,
             pricesNGN: data.pricesNGN,
+            pricesNGNSell: data.pricesNGNSell,
             source: data.source,
           });
         } else {
@@ -833,7 +835,7 @@ export default function PriceActionPage() {
 
         {livePrices?.source && (
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-4">
-            Source: {livePrices.source}
+            Source: {livePrices.source}. Buy = onramp (NGN → crypto), Sell = offramp (crypto → NGN). After you publish buy and sell, both appear here.
           </p>
         )}
       </div>

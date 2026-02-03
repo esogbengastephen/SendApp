@@ -35,13 +35,28 @@ export async function GET(request: NextRequest) {
       USDT: null,
     };
 
-    // Step 0: Use admin dashboard SEND→NGN rate for the moving banner (1 SEND = 1/exchangeRate NGN)
+    // Step 0: Use admin dashboard rates (buy: exchangeRate; sell: sendToNgnSell, usdcSellPriceNgn, usdtSellPriceNgn)
+    const pricesNGNSell: { SEND: number | null; USDC: number | null; USDT: number | null } = {
+      SEND: null,
+      USDC: null,
+      USDT: null,
+    };
     try {
       const settings = await getSettings();
       const ngnToSend = settings.exchangeRate;
       if (ngnToSend && ngnToSend > 0) {
         pricesNGN.SEND = 1 / ngnToSend;
         prices.SEND = pricesNGN.SEND / 1500; // Approximate USD for compatibility
+      }
+      // Sell rates (offramp) – different from buy after admin publishes
+      if (settings.sendToNgnSell != null && settings.sendToNgnSell > 0) {
+        pricesNGNSell.SEND = settings.sendToNgnSell;
+      }
+      if (settings.usdcSellPriceNgn != null && settings.usdcSellPriceNgn > 0) {
+        pricesNGNSell.USDC = settings.usdcSellPriceNgn;
+      }
+      if (settings.usdtSellPriceNgn != null && settings.usdtSellPriceNgn > 0) {
+        pricesNGNSell.USDT = settings.usdtSellPriceNgn;
       }
     } catch (settingsError) {
       console.warn("Token prices: could not load admin exchange rate, will use DB/CoinGecko for SEND:", settingsError);
@@ -182,6 +197,7 @@ export async function GET(request: NextRequest) {
       success: true,
       prices,
       pricesNGN,
+      pricesNGNSell: pricesNGNSell.SEND != null || pricesNGNSell.USDC != null || pricesNGNSell.USDT != null ? pricesNGNSell : undefined,
       usdToNgnRate: 1500, // Default rate
       timestamp: new Date().toISOString(),
       source: pricesNGN.SEND || pricesNGN.USDC || pricesNGN.USDT ? "database" : "coingecko",
@@ -226,6 +242,7 @@ export async function GET(request: NextRequest) {
             USDT: fallbackPricesNGN.USDT ? fallbackPricesNGN.USDT / 1500 : null,
           },
           pricesNGN: fallbackPricesNGN,
+          pricesNGNSell: undefined,
           usdToNgnRate: 1500,
           timestamp: new Date().toISOString(),
           source: "database",
