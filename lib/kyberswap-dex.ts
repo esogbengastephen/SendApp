@@ -184,7 +184,8 @@ export async function tryKyberSellUsdc(usdcAmountHuman: string): Promise<KyberSw
       error: quote.success ? "KyberSwap no amountOut" : `KyberSwap: ${quote.error}`,
     };
   }
-  const build = await buildKyberSwapTx(quote.routeSummary, poolAddress, poolAddress, 150);
+  const slippageBps = parseFloat(usdcAmountHuman) > 15 ? 250 : 150;
+  const build = await buildKyberSwapTx(quote.routeSummary, poolAddress, poolAddress, slippageBps);
   if (!build) return { success: false, error: "KyberSwap build tx failed" };
   try {
     await ensureKyberUsdcAllowance(poolAddress, BigInt(usdcWei));

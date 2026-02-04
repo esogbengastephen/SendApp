@@ -137,11 +137,49 @@ export async function distributeTokens(
     }
 
     if (amountToSend === sendAmount && !testSwapAmount) {
-      // Try one swap: sell first; if it succeeds, skip buy path (no double swap).
       let lastSwapError: string | undefined;
       let swapSucceeded = false;
       const usdcNeeded = await getUsdcAmountNeededForSend(sendAmount);
-      if (usdcNeeded && parseFloat(usdcNeeded) > 0) {
+      const useChunkFirst = sendNum > 400;
+      const maxChunkSend = useChunkFirst ? 200 : 400;
+      const maxChunks = 8;
+      const minChunkSend = 50;
+      const chunkSlippageMultiplier = sendNum > 300 ? 1.2 : 1.15;
+
+      const runChunkedSwap = async (): Promise<boolean> => {
+        const chunkCount = sendNum <= minChunkSend ? 1 : Math.min(maxChunks, Math.max(2, Math.ceil(sendNum / maxChunkSend)));
+        const chunkSendVal = (sendNum / chunkCount).toFixed(6);
+        console.log(`[Token Distribution] Chunked swap: ${chunkCount} chunks of ~${chunkSendVal} SEND (${Math.round((chunkSlippageMultiplier - 1) * 100)}% buffer per chunk).`);
+        let chunkSendAcc = 0;
+        for (let c = 0; c < chunkCount && chunkSendAcc < sendNum; c++) {
+          const remaining = (sendNum - chunkSendAcc).toFixed(6);
+          const chunkAmount = c < chunkCount - 1 ? chunkSendVal : remaining;
+          const usdcForChunk = await getUsdcAmountNeededForSend(chunkAmount);
+          if (!usdcForChunk || parseFloat(usdcForChunk) <= 0) continue;
+          const usdcChunkWithBuffer = (parseFloat(usdcForChunk) * chunkSlippageMultiplier).toFixed(6);
+          const chunkResult = await swapUsdcToSendBySellingUsdc(usdcChunkWithBuffer);
+          if (chunkResult.success && chunkResult.sendAmountReceived) {
+            chunkSendAcc += parseFloat(chunkResult.sendAmountReceived);
+            totalSendReceivedFromSwaps += parseFloat(chunkResult.sendAmountReceived);
+            console.log(`[Token Distribution] Chunk ${c + 1}/${chunkCount}: received ${chunkResult.sendAmountReceived} SEND (total: ${chunkSendAcc.toFixed(6)}).`);
+          } else {
+            console.warn(`[Token Distribution] Chunk ${c + 1} failed:`, chunkResult.error);
+            break;
+          }
+        }
+        if (chunkSendAcc >= sendNum) {
+          amountToSend = sendAmount;
+          return true;
+        }
+        return false;
+      };
+
+      if (useChunkFirst) {
+        swapSucceeded = await runChunkedSwap();
+        if (!swapSucceeded) lastSwapError = "Chunked swap did not reach full amount.";
+      }
+
+      if (!swapSucceeded && amountToSend === sendAmount && !useChunkFirst && usdcNeeded && parseFloat(usdcNeeded) > 0) {
         const usdcNum = parseFloat(usdcNeeded);
         // Use larger slippage buffer for large orders (e.g. 1078+ SEND) to avoid single-swap failure
         const slippageMultiplier = sendNum > 300 ? 1.12 : 1.05; // 12% for large, 5% for normal
@@ -171,32 +209,8 @@ export async function distributeTokens(
           }
         } else {
           lastSwapError = buySwapResult.error ?? "Buy path failed (no error message).";
-          // Chunked swap fallback: when single full swap fails, try smaller chunks (e.g. 1078 → 3× ~360 SEND)
-          const maxChunks = 5;
-          const minChunkSend = 50;
-          const chunkCount = sendNum <= minChunkSend ? 1 : Math.min(maxChunks, Math.max(2, Math.ceil(sendNum / 400)));
-          const chunkSend = (sendNum / chunkCount).toFixed(6);
-          console.log(`[Token Distribution] Single swap failed. Trying chunked swap: ${chunkCount} chunks of ~${chunkSend} SEND.`);
-          let chunkSendAcc = 0;
-          for (let c = 0; c < chunkCount && chunkSendAcc < sendNum; c++) {
-            const remaining = (sendNum - chunkSendAcc).toFixed(6);
-            const chunkAmount = c < chunkCount - 1 ? chunkSend : remaining;
-            const usdcForChunk = await getUsdcAmountNeededForSend(chunkAmount);
-            if (!usdcForChunk || parseFloat(usdcForChunk) <= 0) continue;
-            const usdcChunkWithBuffer = (parseFloat(usdcForChunk) * 1.15).toFixed(6); // 15% buffer per chunk
-            const chunkResult = await swapUsdcToSendBySellingUsdc(usdcChunkWithBuffer);
-            if (chunkResult.success && chunkResult.sendAmountReceived) {
-              chunkSendAcc += parseFloat(chunkResult.sendAmountReceived);
-              totalSendReceivedFromSwaps += parseFloat(chunkResult.sendAmountReceived);
-              console.log(`[Token Distribution] Chunk ${c + 1}/${chunkCount}: received ${chunkResult.sendAmountReceived} SEND (total: ${chunkSendAcc.toFixed(6)}).`);
-            } else {
-              console.warn(`[Token Distribution] Chunk ${c + 1} failed:`, chunkResult.error);
-              break;
-            }
-          }
-          if (chunkSendAcc >= sendNum) {
-            swapSucceeded = true;
-            amountToSend = sendAmount;
+          if (!useChunkFirst) {
+            swapSucceeded = await runChunkedSwap();
           }
           if (!swapSucceeded) {
             if (!usdcNeeded || parseFloat(usdcNeeded) <= 0) {
@@ -216,8 +230,8 @@ export async function distributeTokens(
                 lastSwapError = fallbackSell.error ?? lastSwapError ?? "Sell fallback failed (no error message).";
               }
             } else {
-              const err = `Could not get ${sendAmount} SEND. Sell failed. Buy: ${buySwapResult.error ?? "unknown"}.`;
-              console.error("[Token Distribution] Sell and buy paths failed:", buySwapResult.error);
+              const err = `Could not get ${sendAmount} SEND. ${lastSwapError ?? "unknown"}.`;
+              console.error("[Token Distribution] Swap paths failed:", lastSwapError);
               await updateTransaction(transactionId, { status: "pending", errorMessage: err });
               return {
                 success: false,
