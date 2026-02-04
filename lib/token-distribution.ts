@@ -142,8 +142,10 @@ export async function distributeTokens(
       const usdcNeeded = await getUsdcAmountNeededForSend(sendAmount);
       if (usdcNeeded && parseFloat(usdcNeeded) > 0) {
         const usdcNum = parseFloat(usdcNeeded);
-        const usdcWithBuffer = (usdcNum * 1.05).toFixed(6); // 5% buffer for slippage
-        console.log(`[Token Distribution] Selling ${usdcWithBuffer} USDC (quote: ${usdcNeeded}) to get ~${sendAmount} SEND.`);
+        // Use larger slippage buffer for large orders (e.g. 1078+ SEND) to avoid single-swap failure
+        const slippageMultiplier = sendNum > 300 ? 1.12 : 1.05; // 12% for large, 5% for normal
+        const usdcWithBuffer = (usdcNum * slippageMultiplier).toFixed(6);
+        console.log(`[Token Distribution] Selling ${usdcWithBuffer} USDC (quote: ${usdcNeeded}, ${sendNum > 300 ? "12%" : "5%"} buffer) to get ~${sendAmount} SEND.`);
         const sellSwapResult = await swapUsdcToSendBySellingUsdc(usdcWithBuffer);
         if (sellSwapResult.success && sellSwapResult.sendAmountReceived) {
           amountToSend = sellSwapResult.sendAmountReceived;
@@ -168,31 +170,59 @@ export async function distributeTokens(
           }
         } else {
           lastSwapError = buySwapResult.error ?? "Buy path failed (no error message).";
-          // Buy path failed. If we had no quote earlier, try selling a fixed USDC amount (e.g. 1 USDC) to get SEND.
-          if (!usdcNeeded || parseFloat(usdcNeeded) <= 0) {
-            const fallbackUsdc = process.env.SEND_SWAP_FALLBACK_USDC?.trim() || "1";
-            console.warn(`[Token Distribution] No quote for ${sendAmount} SEND. Trying sell ${fallbackUsdc} USDC.`);
-            let fallbackSell: { success: boolean; error?: string; sendAmountReceived?: string; swapTxHash?: string };
-            try {
-              fallbackSell = await swapUsdcToSendBySellingUsdc(fallbackUsdc);
-            } catch (e) {
-              fallbackSell = { success: false, error: e instanceof Error ? e.message : String(e) };
-            }
-            if (fallbackSell.success && fallbackSell.sendAmountReceived) {
-              amountToSend = fallbackSell.sendAmountReceived;
-              swapSucceeded = true;
-              console.log(`[Token Distribution] Fallback swap (sell ${fallbackUsdc} USDC) tx: ${fallbackSell.swapTxHash}, SEND received: ${amountToSend}`);
+          // Chunked swap fallback: when single full swap fails, try smaller chunks (e.g. 1078 → 3× ~360 SEND)
+          const maxChunks = 5;
+          const minChunkSend = 50;
+          const chunkCount = sendNum <= minChunkSend ? 1 : Math.min(maxChunks, Math.max(2, Math.ceil(sendNum / 400)));
+          const chunkSend = (sendNum / chunkCount).toFixed(6);
+          console.log(`[Token Distribution] Single swap failed. Trying chunked swap: ${chunkCount} chunks of ~${chunkSend} SEND.`);
+          let chunkSendAcc = 0;
+          for (let c = 0; c < chunkCount && chunkSendAcc < sendNum; c++) {
+            const remaining = (sendNum - chunkSendAcc).toFixed(6);
+            const chunkAmount = c < chunkCount - 1 ? chunkSend : remaining;
+            const usdcForChunk = await getUsdcAmountNeededForSend(chunkAmount);
+            if (!usdcForChunk || parseFloat(usdcForChunk) <= 0) continue;
+            const usdcChunkWithBuffer = (parseFloat(usdcForChunk) * 1.15).toFixed(6); // 15% buffer per chunk
+            const chunkResult = await swapUsdcToSendBySellingUsdc(usdcChunkWithBuffer);
+            if (chunkResult.success && chunkResult.sendAmountReceived) {
+              chunkSendAcc += parseFloat(chunkResult.sendAmountReceived);
+              totalSendReceivedFromSwaps += parseFloat(chunkResult.sendAmountReceived);
+              console.log(`[Token Distribution] Chunk ${c + 1}/${chunkCount}: received ${chunkResult.sendAmountReceived} SEND (total: ${chunkSendAcc.toFixed(6)}).`);
             } else {
-              lastSwapError = fallbackSell.error ?? lastSwapError ?? "Sell fallback failed (no error message).";
+              console.warn(`[Token Distribution] Chunk ${c + 1} failed:`, chunkResult.error);
+              break;
             }
-          } else {
-            // We had a quote but sell failed; return buy error.
-            console.error("[Token Distribution] Sell and buy paths failed:", buySwapResult.error);
-            await updateTransaction(transactionId, { status: "failed" });
-            return {
-              success: false,
-              error: `Could not get ${sendAmount} SEND. Sell failed. Buy: ${buySwapResult.error ?? "unknown"}.`,
-            };
+          }
+          if (chunkSendAcc >= sendNum) {
+            swapSucceeded = true;
+            amountToSend = sendAmount;
+          }
+          if (!swapSucceeded) {
+            if (!usdcNeeded || parseFloat(usdcNeeded) <= 0) {
+              const fallbackUsdc = process.env.SEND_SWAP_FALLBACK_USDC?.trim() || "1";
+              console.warn(`[Token Distribution] No quote for ${sendAmount} SEND. Trying sell ${fallbackUsdc} USDC.`);
+              let fallbackSell: { success: boolean; error?: string; sendAmountReceived?: string; swapTxHash?: string };
+              try {
+                fallbackSell = await swapUsdcToSendBySellingUsdc(fallbackUsdc);
+              } catch (e) {
+                fallbackSell = { success: false, error: e instanceof Error ? e.message : String(e) };
+              }
+              if (fallbackSell.success && fallbackSell.sendAmountReceived) {
+                amountToSend = fallbackSell.sendAmountReceived;
+                swapSucceeded = true;
+                console.log(`[Token Distribution] Fallback swap (sell ${fallbackUsdc} USDC) tx: ${fallbackSell.swapTxHash}, SEND received: ${amountToSend}`);
+              } else {
+                lastSwapError = fallbackSell.error ?? lastSwapError ?? "Sell fallback failed (no error message).";
+              }
+            } else {
+              // We had a quote but sell and chunked swap failed; return buy error.
+              console.error("[Token Distribution] Sell and buy paths failed:", buySwapResult.error);
+              await updateTransaction(transactionId, { status: "failed" });
+              return {
+                success: false,
+                error: `Could not get ${sendAmount} SEND. Sell failed. Buy: ${buySwapResult.error ?? "unknown"}.`,
+              };
+            }
           }
         }
       }
@@ -221,8 +251,8 @@ export async function distributeTokens(
         let usdcToSell: string | undefined;
         const usdcForShortfall = await getUsdcAmountNeededForSend(shortfall);
         if (usdcForShortfall && parseFloat(usdcForShortfall) > 0) {
-          // 20% buffer so we get enough SEND after slippage
-          usdcToSell = (parseFloat(usdcForShortfall) * 1.2).toFixed(6);
+          // 25% buffer so we get enough SEND after slippage
+          usdcToSell = (parseFloat(usdcForShortfall) * 1.25).toFixed(6);
         }
         // If no quote (e.g. tiny shortfall), sell a small fixed USDC amount to cover the gap
         if (!usdcToSell || parseFloat(usdcToSell) <= 0) {
