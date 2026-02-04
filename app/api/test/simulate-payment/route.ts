@@ -96,16 +96,14 @@ export async function POST(request: NextRequest) {
         });
       } else {
         console.error(`[TEST] Token distribution failed:`, distributionResult.error);
-        
-        // Update transaction to failed
         await supabase
           .from("transactions")
-          .update({ 
-            status: "failed",
-            error_message: distributionResult.error
+          .update({
+            status: "pending",
+            error_message: distributionResult.error,
           })
           .eq("transaction_id", transactionId);
-        
+
         return NextResponse.json({
           success: false,
           error: "Token distribution failed",
@@ -114,12 +112,11 @@ export async function POST(request: NextRequest) {
       }
     } catch (distError: any) {
       console.error("[TEST] Distribution error:", distError);
-      
       await supabase
         .from("transactions")
-        .update({ 
-          status: "failed",
-          error_message: distError.message
+        .update({
+          status: "pending",
+          error_message: distError.message,
         })
         .eq("transaction_id", transactionId);
       

@@ -1,6 +1,6 @@
 /**
  * Base Network On-Ramp Swap Utility
- * Swaps USDC → SEND on Base. Uses Aerodrome router first (direct DEX); then Paraswap, 0x, USDC→WETH→SEND.
+ * Swaps USDC → SEND on Base. Uses KyberSwap first; then Aerodrome, Paraswap, OKX, 0x; fallback USDC→WETH→SEND.
  * Liquidity pool holds USDC, swaps to SEND, then sends to user.
  */
 
@@ -12,6 +12,8 @@ import {
   tryAerodromeSellUsdc,
   getAerodromeUsdcNeededForSend,
 } from "./aerodrome-swap";
+import { tryOkxBuySend, tryOkxSellUsdc } from "./okx-dex-swap";
+import { tryKyberSellUsdc, tryKyberBuySend } from "./kyberswap-dex";
 
 const USDC_ADDRESS_BASE = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const USDC_DECIMALS = 6;
@@ -645,10 +647,29 @@ export async function getUsdcAmountNeededForSend(sendAmountHuman: string): Promi
 }
 
 /**
- * Swap USDC → SEND by buying exactly sendAmount SEND. Aerodrome first, then Paraswap → 0x → USDC→WETH→SEND.
+ * Swap USDC → SEND by buying exactly sendAmount SEND. KyberSwap first, then Aerodrome → Paraswap → OKX → 0x → USDC→WETH→SEND.
  */
 export async function swapUsdcToSend(sendAmountHuman: string): Promise<SwapUsdcToSendResult> {
   const poolAddress = getWalletClient().account.address;
+  const sendNum = parseFloat(sendAmountHuman);
+  const tryOkxEarly = !Number.isNaN(sendNum) && sendNum > 300;
+
+  try {
+    console.log(`[Base OnRamp Swap] Trying KyberSwap first to buy ${sendAmountHuman} SEND`);
+    const usdcNeeded = await getUsdcAmountNeededForSend(sendAmountHuman);
+    if (usdcNeeded && parseFloat(usdcNeeded) > 0) {
+      const usdcWithBuffer = (parseFloat(usdcNeeded) * 1.12).toFixed(6);
+      const kyberOut = await tryKyberBuySend(sendAmountHuman, usdcWithBuffer);
+      if (kyberOut.success) {
+        console.log(`[Base OnRamp Swap] KyberSwap swap successful: ${kyberOut.swapTxHash}`);
+        return kyberOut;
+      }
+      console.warn("[Base OnRamp Swap] KyberSwap failed:", kyberOut.error);
+    }
+  } catch (e) {
+    console.warn("[Base OnRamp Swap] KyberSwap failed:", (e as Error)?.message);
+  }
+
   try {
     console.log(`[Base OnRamp Swap] Trying Aerodrome to buy ${sendAmountHuman} SEND`);
     const out = await tryAerodromeBuySend(sendAmountHuman);
@@ -658,8 +679,32 @@ export async function swapUsdcToSend(sendAmountHuman: string): Promise<SwapUsdcT
     }
     console.warn("[Base OnRamp Swap] Aerodrome failed:", out.error);
   } catch (e) {
-    console.warn("[Base OnRamp Swap] Aerodrome failed, trying Paraswap:", (e as Error)?.message);
+    console.warn("[Base OnRamp Swap] Aerodrome failed:", (e as Error)?.message);
   }
+
+  if (tryOkxEarly) {
+    try {
+      console.log(`[Base OnRamp Swap] Trying OKX DEX (large order) to buy ${sendAmountHuman} SEND`);
+      let okxOut = await tryOkxBuySend(sendAmountHuman);
+      if (okxOut.success) {
+        console.log(`[Base OnRamp Swap] OKX swap successful: ${okxOut.swapTxHash}`);
+        return okxOut;
+      }
+      console.warn("[Base OnRamp Swap] OKX exactOut failed:", okxOut.error, "- trying OKX exactIn with quoted USDC");
+      const usdcNeeded = await getUsdcAmountNeededForSend(sendAmountHuman);
+      if (usdcNeeded && parseFloat(usdcNeeded) > 0) {
+        const usdcWithBuffer = (parseFloat(usdcNeeded) * 1.12).toFixed(6);
+        okxOut = await tryOkxSellUsdc(usdcWithBuffer);
+        if (okxOut.success) {
+          console.log(`[Base OnRamp Swap] OKX exactIn swap successful: ${okxOut.swapTxHash}`);
+          return okxOut;
+        }
+      }
+    } catch (e) {
+      console.warn("[Base OnRamp Swap] OKX failed:", (e as Error)?.message);
+    }
+  }
+
   try {
     console.log(`[Base OnRamp Swap] Trying Paraswap to buy ${sendAmountHuman} SEND`);
     const out = await tryParaswapBuySend(sendAmountHuman, poolAddress);
@@ -668,7 +713,29 @@ export async function swapUsdcToSend(sendAmountHuman: string): Promise<SwapUsdcT
       return out;
     }
   } catch (e) {
-    console.warn("[Base OnRamp Swap] Paraswap failed, trying 0x:", (e as Error)?.message);
+    console.warn("[Base OnRamp Swap] Paraswap failed:", (e as Error)?.message);
+  }
+  if (!tryOkxEarly) {
+    try {
+      console.log(`[Base OnRamp Swap] Trying OKX DEX to buy ${sendAmountHuman} SEND`);
+      let okxOut = await tryOkxBuySend(sendAmountHuman);
+      if (okxOut.success) {
+        console.log(`[Base OnRamp Swap] OKX swap successful: ${okxOut.swapTxHash}`);
+        return okxOut;
+      }
+      console.warn("[Base OnRamp Swap] OKX exactOut failed:", okxOut.error, "- trying OKX exactIn with quoted USDC");
+      const usdcNeeded = await getUsdcAmountNeededForSend(sendAmountHuman);
+      if (usdcNeeded && parseFloat(usdcNeeded) > 0) {
+        const usdcWithBuffer = (parseFloat(usdcNeeded) * 1.12).toFixed(6);
+        okxOut = await tryOkxSellUsdc(usdcWithBuffer);
+        if (okxOut.success) {
+          console.log(`[Base OnRamp Swap] OKX exactIn swap successful: ${okxOut.swapTxHash}`);
+          return okxOut;
+        }
+      }
+    } catch (e) {
+      console.warn("[Base OnRamp Swap] OKX failed, trying 0x:", (e as Error)?.message);
+    }
   }
   try {
     const sendWei = parseUnits(sendAmountHuman, SEND_DECIMALS).toString();
@@ -693,13 +760,24 @@ export async function swapUsdcToSend(sendAmountHuman: string): Promise<SwapUsdcT
 }
 
 /**
- * Swap a fixed amount of USDC → SEND (e.g. 1 USDC). Aerodrome first, then Paraswap → 0x → USDC→WETH→SEND.
+ * Swap a fixed amount of USDC → SEND (e.g. 1 USDC). KyberSwap first, then Aerodrome → Paraswap → OKX → 0x → USDC→WETH→SEND.
  */
 export async function swapUsdcToSendBySellingUsdc(
   usdcAmountHuman: string
 ): Promise<SwapUsdcToSendResult> {
   const poolAddress = getWalletClient().account.address;
   let paraswapError: string | undefined;
+  try {
+    console.log(`[Base OnRamp Swap] Trying KyberSwap first to sell ${usdcAmountHuman} USDC → SEND`);
+    const kyberOut = await tryKyberSellUsdc(usdcAmountHuman);
+    if (kyberOut.success) {
+      console.log(`[Base OnRamp Swap] KyberSwap swap received: ${kyberOut.sendAmountReceived} SEND`);
+      return kyberOut;
+    }
+    console.warn("[Base OnRamp Swap] KyberSwap failed:", kyberOut.error);
+  } catch (e) {
+    console.warn("[Base OnRamp Swap] KyberSwap failed:", (e as Error)?.message);
+  }
   try {
     console.log(`[Base OnRamp Swap] Trying Aerodrome to sell ${usdcAmountHuman} USDC → SEND`);
     const out = await tryAerodromeSellUsdc(usdcAmountHuman);
@@ -721,7 +799,18 @@ export async function swapUsdcToSendBySellingUsdc(
     paraswapError = out.error;
   } catch (e) {
     paraswapError = e instanceof Error ? e.message : String(e);
-    console.warn("[Base OnRamp Swap] Paraswap failed, trying 0x:", paraswapError);
+    console.warn("[Base OnRamp Swap] Paraswap failed, trying OKX:", paraswapError);
+  }
+  try {
+    console.log(`[Base OnRamp Swap] Trying OKX DEX to sell ${usdcAmountHuman} USDC → SEND`);
+    const okxOut = await tryOkxSellUsdc(usdcAmountHuman);
+    if (okxOut.success) {
+      console.log(`[Base OnRamp Swap] OKX swap received: ${okxOut.sendAmountReceived} SEND`);
+      return okxOut;
+    }
+    console.warn("[Base OnRamp Swap] OKX failed:", okxOut.error);
+  } catch (e) {
+    console.warn("[Base OnRamp Swap] OKX failed, trying 0x:", (e as Error)?.message);
   }
   try {
     const usdcWei = parseUnits(usdcAmountHuman, USDC_DECIMALS).toString();

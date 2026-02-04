@@ -378,9 +378,8 @@ export async function POST(request: NextRequest) {
             });
           } else {
             console.error(`❌ [Webhook] Token distribution failed: ${distributionResult.error}`);
-            // Update transaction status to show distribution failed
             await updateTransaction(transactionId, {
-              status: "failed",
+              status: "pending",
               errorMessage: distributionResult.error,
             });
             return NextResponse.json({
@@ -392,7 +391,7 @@ export async function POST(request: NextRequest) {
         } catch (distError: any) {
           console.error(`❌ [Webhook] Token distribution error:`, distError);
           await updateTransaction(transactionId, {
-            status: "failed",
+            status: "pending",
             errorMessage: distError.message,
           });
           return NextResponse.json({
@@ -545,6 +544,10 @@ export async function POST(request: NextRequest) {
           });
         } else {
           console.error(`Token distribution failed: ${distributionResult.error}`);
+          await updateTransaction(transaction.transactionId, {
+            status: "pending",
+            errorMessage: distributionResult.error,
+          });
           return NextResponse.json({
             success: true,
             message: "Payment verified but token distribution failed",
@@ -553,6 +556,10 @@ export async function POST(request: NextRequest) {
         }
       } catch (distError: any) {
         console.error("Error during token distribution:", distError);
+        await updateTransaction(transaction.transactionId, {
+          status: "pending",
+          errorMessage: distError.message,
+        });
         return NextResponse.json({
           success: true,
           message: "Payment verified but token distribution encountered an error",

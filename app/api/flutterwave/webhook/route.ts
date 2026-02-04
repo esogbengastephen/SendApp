@@ -467,6 +467,7 @@ export async function POST(request: NextRequest) {
             const errMsg = distributionResult?.error ?? "All distribution attempts failed";
             console.error(`[Flutterwave Webhook] ❌ Token distribution failed: ${errMsg}`);
             console.error(`[Flutterwave Webhook] Distribution error details:`, distributionResult);
+            await updateTransaction(transactionId, { status: "pending", errorMessage: errMsg });
             return NextResponse.json(
               {
                 success: false,
@@ -479,6 +480,10 @@ export async function POST(request: NextRequest) {
         } catch (distError: any) {
           console.error(`[Flutterwave Webhook] ❌ Token distribution exception:`, distError);
           console.error(`[Flutterwave Webhook] Exception stack:`, distError.stack);
+          await updateTransaction(transactionId, {
+            status: "pending",
+            errorMessage: distError?.message ?? "Token distribution error",
+          });
           return NextResponse.json(
             {
               success: false,

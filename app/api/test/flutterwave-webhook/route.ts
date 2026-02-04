@@ -158,10 +158,8 @@ export async function POST(request: NextRequest) {
 
     if (!distributionResult.success) {
       console.error(`[Test Webhook] ❌ Token distribution failed: ${distributionResult.error}`);
-      
-      // Update transaction with error
       await updateTransaction(transaction.transactionId, {
-        status: "failed",
+        status: "pending",
         errorMessage: distributionResult.error || "Token distribution failed",
       });
 
