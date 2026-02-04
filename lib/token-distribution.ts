@@ -31,7 +31,7 @@ function getRecipientAddress(walletAddress: string): string {
  * - Keep a small amount of SEND in the pool as fallback: when swap is unavailable (no route, API down, etc.)
  *   we transfer SEND directly from the pool to the user.
  *
- * Flow: swap USDC→SEND (Paraswap/0x) → transfer SEND to user; if swap fails, fall back to direct SEND transfer.
+ * Flow: swap USDC→SEND (KyberSwap/Aerodrome/Paraswap/0x) → transfer SEND to user; if swap fails, send from pool SEND balance when sufficient.
  *
  * Production: webhooks pass the equivalent SEND the user paid for (from admin “price exchange”). We swap USDC
  * for that amount of SEND. We check pool SEND balance: if it equals or exceeds the user’s amount we send exactly
@@ -241,15 +241,23 @@ export async function distributeTokens(
           }
         }
       }
-      // Only report failure when we really failed (no swap succeeded) and still need SEND.
+      // When all swaps failed, try sending from pool SEND balance (admin liquidity fallback).
       if (!swapSucceeded && amountToSend === sendAmount) {
-        const details = (lastSwapError && lastSwapError.trim()) ? lastSwapError : "No route or quote (Aerodrome/Paraswap/0x all failed).";
-        const err = `Could not swap for ${sendAmount} SEND. ${details} Add liquidity to the USDC–SEND pool on Aerodrome if the pool is empty.`;
-        await updateTransaction(transactionId, { status: "pending", errorMessage: err });
-        return {
-          success: false,
-          error: err,
-        };
+        const poolAddress = getLiquidityPoolAddress();
+        const poolBalanceNum = parseFloat(await getTokenBalance(poolAddress));
+        if (poolBalanceNum >= sendNum) {
+          console.log(`[Token Distribution] Swap failed; using pool SEND fallback. Pool has ${poolBalanceNum.toFixed(6)} SEND, sending ${sendAmount} to user.`);
+          amountToSend = sendAmount;
+          // Fall through to top-up check and transfer (pool has enough, so no top-up needed).
+        } else {
+          const details = (lastSwapError && lastSwapError.trim()) ? lastSwapError : "No route or quote.";
+          const err = `Could not swap for ${sendAmount} SEND. ${details} Pool has ${poolBalanceNum.toFixed(6)} SEND (need ${sendAmount}). Add SEND to the liquidity pool to fulfill orders when swap is unavailable.`;
+          await updateTransaction(transactionId, { status: "pending", errorMessage: err });
+          return {
+            success: false,
+            error: err,
+          };
+        }
       }
     }
 
@@ -292,13 +300,19 @@ export async function distributeTokens(
         console.log(`[Token Distribution] Swap received ${totalSendReceivedFromSwaps.toFixed(6)} SEND >= ${sendAmount}; sending user amount.`);
         amountToSend = sendAmount;
       } else if (poolBalanceNum < sendNum) {
-        const err = `Insufficient SEND: pool has ${poolBalanceNum.toFixed(6)} SEND, need ${sendAmount}. Please try again or contact support.`;
-        console.error(`[Token Distribution] After ${topUpCount} top-up(s), pool has ${poolBalanceNum.toFixed(6)} SEND, swap received ${totalSendReceivedFromSwaps.toFixed(6)} SEND, need ${sendAmount}.`);
-        await updateTransaction(transactionId, { status: "pending", errorMessage: err });
-        return {
-          success: false,
-          error: err,
-        };
+        const recheckPool = parseFloat(await getTokenBalance(poolAddress));
+        if (recheckPool >= sendNum) {
+          console.log(`[Token Distribution] Top-up failed but pool has enough SEND (${recheckPool.toFixed(6)}). Sending ${sendAmount} from pool.`);
+          amountToSend = sendAmount;
+        } else {
+          const err = `Insufficient SEND: pool has ${recheckPool.toFixed(6)} SEND, need ${sendAmount}. Add SEND to the liquidity pool or try again.`;
+          console.error(`[Token Distribution] After ${topUpCount} top-up(s), pool has ${recheckPool.toFixed(6)} SEND, need ${sendAmount}.`);
+          await updateTransaction(transactionId, { status: "pending", errorMessage: err });
+          return {
+            success: false,
+            error: err,
+          };
+        }
       } else {
         amountToSend = sendAmount; // pool balance says we have enough
       }
