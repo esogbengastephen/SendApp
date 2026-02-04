@@ -84,9 +84,21 @@ export async function distributeTokens(
     // Otherwise use production path (buy/sell exact sendAmount) even when sending to test address (e.g. simulate 600 NGN → 10.94 SEND).
     const testSwapAmount = (process.env.SEND_SWAP_TEST_AMOUNT?.trim() ?? "") || "";
     const useSellUsdcFirst = process.env.SEND_SWAP_SELL_USDC?.trim();
+    const poolOnlyMode = process.env.SEND_USE_POOL_ONLY?.trim() === "1" || process.env.SEND_SWAP_DISABLED?.trim() === "1";
 
+    if (poolOnlyMode) {
+      const poolAddress = getLiquidityPoolAddress();
+      const poolBalanceNum = parseFloat(await getTokenBalance(poolAddress));
+      if (poolBalanceNum >= sendNum) {
+        console.log(`[Token Distribution] Pool-only mode (SEND_USE_POOL_ONLY/SEND_SWAP_DISABLED): sending ${sendAmount} SEND from pool (balance: ${poolBalanceNum.toFixed(6)}).`);
+        amountToSend = sendAmount;
+      } else {
+        const err = `Pool-only mode: insufficient SEND. Pool has ${poolBalanceNum.toFixed(6)} SEND, need ${sendAmount}. Add SEND to the liquidity pool.`;
+        await updateTransaction(transactionId, { status: "pending", errorMessage: err });
+        return { success: false, error: err };
+      }
+    } else if (usdcAmountToSell && parseFloat(usdcAmountToSell) > 0) {
     // Production: use the amount the user sent (converted to USDC). Sell that much USDC → SEND, send to user.
-    if (usdcAmountToSell && parseFloat(usdcAmountToSell) > 0) {
       console.log(`[Token Distribution] Production: selling ${usdcAmountToSell} USDC (user amount) → SEND.`);
       const sellSwapResult = await swapUsdcToSendBySellingUsdc(usdcAmountToSell);
       if (sellSwapResult.success && sellSwapResult.sendAmountReceived) {
@@ -136,7 +148,7 @@ export async function distributeTokens(
       }
     }
 
-    if (amountToSend === sendAmount && !testSwapAmount) {
+    if (!poolOnlyMode && amountToSend === sendAmount && !testSwapAmount) {
       let lastSwapError: string | undefined;
       let swapSucceeded = false;
       const usdcNeeded = await getUsdcAmountNeededForSend(sendAmount);
@@ -261,8 +273,8 @@ export async function distributeTokens(
       }
     }
 
-    // 2) Top-ups only when one swap gave less than sendAmount. Skip if we already got enough (avoid double swap).
-    if (!testSwapAmount && !Number.isNaN(sendNum) && sendNum > 0 && totalSendReceivedFromSwaps < sendNum) {
+    // 2) Top-ups only when one swap gave less than sendAmount. Skip when pool-only mode (no swap).
+    if (!poolOnlyMode && !testSwapAmount && !Number.isNaN(sendNum) && sendNum > 0 && totalSendReceivedFromSwaps < sendNum) {
       const poolAddress = getLiquidityPoolAddress();
       let poolBalanceNum = parseFloat(await getTokenBalance(poolAddress));
       const maxTopUps = 1; // at most one top-up to cover shortfall from slippage

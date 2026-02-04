@@ -106,6 +106,7 @@ Optional:
 - KyberSwap Aggregator (on-ramp fallback): No API key. USDC→SEND tries KyberSwap after Paraswap. Optional `KYBERSWAP_CLIENT_ID`. Test: GET `/api/test-kyberswap?amount=31`.
 - OKX DEX (on-ramp fallback): `OKX_API_KEY`, `OKX_SECRET_KEY`, `OKX_API_PASSPHRASE`, optional `OKX_PROJECT_ID` from OKX Web3 Build. When set, USDC→SEND tries OKX after Paraswap/KyberSwap. Test: GET `/api/test-okx-swap?mode=quote`.
 - `NGN_PER_USD` - Optional; only used if swap is configured to sell a fixed USDC amount. Production uses the admin “price exchange” (1 NGN = X $SEND) to get the equivalent SEND the user paid for, then swaps USDC for that much SEND.
+- **Pool-only mode:** `SEND_USE_POOL_ONLY=1` or `SEND_SWAP_DISABLED=1` — disables all USDC→SEND swaps; users receive SEND only from the liquidity pool balance. Add SEND to the pool wallet to fulfill orders.
 
 ## Development
 
