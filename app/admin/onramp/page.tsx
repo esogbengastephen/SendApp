@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useAccount } from "wagmi";
 
 interface OnrampTransaction {
   id: string;
@@ -134,8 +135,11 @@ function SendRoutesCheckCard() {
 }
 
 export default function OnrampTransactionsPage() {
+  const { address } = useAccount();
   const [transactions, setTransactions] = useState<OnrampTransaction[]>([]);
   const [loading, setLoading] = useState(true);
+  const [resolvingId, setResolvingId] = useState<string | null>(null);
+  const [resolveError, setResolveError] = useState<string | null>(null);
   const [filters, setFilters] = useState({
     status: "",
   });
@@ -173,6 +177,35 @@ export default function OnrampTransactionsPage() {
       console.error("Error fetching transactions:", error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleManualResolve = async (tx: OnrampTransaction) => {
+    if (!address) {
+      setResolveError("Connect wallet to resolve");
+      return;
+    }
+    setResolveError(null);
+    setResolvingId(tx.transaction_id);
+    try {
+      const res = await fetch("/api/admin/onramp/resolve", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${address}`,
+        },
+        body: JSON.stringify({ transactionId: tx.transaction_id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setResolveError(data.error || data.message || "Failed to resolve");
+        return;
+      }
+      await fetchTransactions();
+    } catch (e) {
+      setResolveError(e instanceof Error ? e.message : "Network error");
+    } finally {
+      setResolvingId(null);
     }
   };
 
@@ -286,6 +319,12 @@ export default function OnrampTransactionsPage() {
         </div>
       </div>
 
+      {resolveError && (
+        <div className="bg-card-light dark:bg-card-dark p-3 rounded-xl border border-error text-error text-sm">
+          {resolveError}
+        </div>
+      )}
+
       {/* Transactions Table */}
       <div className="bg-card-light dark:bg-card-dark rounded-xl shadow-lg border border-light-grey dark:border-medium-grey overflow-hidden">
         <div className="overflow-x-auto">
@@ -387,6 +426,17 @@ export default function OnrampTransactionsPage() {
                     </td>
                     <td className="px-4 py-4">
                       <div className="flex flex-col gap-1">
+                        {(tx.status === "pending" || tx.status === "failed") && (
+                          <button
+                            type="button"
+                            onClick={() => handleManualResolve(tx)}
+                            disabled={!address || resolvingId === tx.transaction_id}
+                            className="text-xs font-medium px-2 py-1 rounded border border-light-grey dark:border-medium-grey text-text-primary dark:text-text-primary-dark hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
+                            style={{ borderColor: COLORS.primary, color: COLORS.primary }}
+                          >
+                            {resolvingId === tx.transaction_id ? "Resolving…" : "Manual resolved"}
+                          </button>
+                        )}
                         {tx.tx_hash && (
                           <a
                             href={`https://basescan.org/tx/${tx.tx_hash}`}
