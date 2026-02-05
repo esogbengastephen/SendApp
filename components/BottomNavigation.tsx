@@ -19,8 +19,6 @@ export default function BottomNavigation() {
       setActiveTab("upload"); // Could be "receive" if we add it
     } else if (pathname === "/history" || pathname.startsWith("/history")) {
       setActiveTab("history");
-    } else if (pathname === "/chart" || pathname.startsWith("/chart")) {
-      setActiveTab("chart");
     } else if (pathname === "/banners" || pathname.startsWith("/banners")) {
       setActiveTab("www");
     } else if (pathname === "/settings" || pathname.startsWith("/settings")) {
@@ -56,7 +54,7 @@ export default function BottomNavigation() {
                 activeTab === "home" ? "10%" :
                 activeTab === "history" ? "30%" :
                 activeTab === "upload" ? "50%" :
-                activeTab === "chart" ? "70%" : "90%"
+                activeTab === "support" ? "70%" : "90%"
               } - 1.75rem)`,
               transform: "translateY(-50%)",
               zIndex: 20,
@@ -67,13 +65,13 @@ export default function BottomNavigation() {
               {activeTab === "home" ? "home" :
                activeTab === "history" ? "history" :
                activeTab === "upload" ? "arrow_upward" :
-               activeTab === "chart" ? "show_chart" : "language"}
+               activeTab === "support" ? "headset_mic" : "language"}
             </span>
             <span className="text-[8px] font-bold text-secondary relative z-10 mt-0.5 uppercase tracking-tight">
               {activeTab === "home" ? "Home" :
                activeTab === "history" ? "History" :
                activeTab === "upload" ? "Send" :
-               activeTab === "chart" ? "Chart" : "More"}
+               activeTab === "support" ? "Support" : "More"}
             </span>
           </div>
 
@@ -117,18 +115,20 @@ export default function BottomNavigation() {
               </span>
             </button>
 
-            <button
-              onClick={() => handleNavigation("chart", "/chart")}
+            <a
+              href="https://t.me/Flippayofficial"
+              target="_blank"
+              rel="noopener noreferrer"
               className={`relative z-30 flex flex-col items-center justify-center ${transitionClass}`}
-              aria-label="Chart"
+              aria-label="Support"
             >
-              <span className={`material-icons-outlined text-xl ${transitionClass} ${activeTab === "chart" ? "opacity-0" : inactiveClass}`}>
-                show_chart
+              <span className={`material-icons-outlined text-xl ${transitionClass} ${activeTab === "support" ? "opacity-0" : inactiveClass}`}>
+                headset_mic
               </span>
-              <span className={`text-[8px] font-semibold mt-0.5 uppercase tracking-tight ${transitionClass} ${activeTab === "chart" ? "opacity-0" : inactiveClass}`}>
-                Chart
+              <span className={`text-[8px] font-semibold mt-0.5 uppercase tracking-tight ${transitionClass} ${activeTab === "support" ? "opacity-0" : inactiveClass}`}>
+                Support
               </span>
-            </button>
+            </a>
 
             <button
               onClick={() => handleNavigation("www", "/banners")}

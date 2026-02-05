@@ -110,6 +110,10 @@ export default function UserDashboard() {
   const [allTransactions, setAllTransactions] = useState<any[]>([]);
   const [loadingTransactions, setLoadingTransactions] = useState(false);
 
+  // Crypto to Naira: hide "Coming soon" and allow access for specific emails
+  const CRYPTO_TO_NAIRA_ALLOWED_EMAILS = ["esogbengastephen@gmail.com", "flippayhq@gmail.com"];
+  const canUseCryptoToNaira = CRYPTO_TO_NAIRA_ALLOWED_EMAILS.includes((user?.email ?? userProfile?.email ?? "").toLowerCase());
+
   // Helper function to extract first name from email
   const getFirstNameFromEmail = (email: string | undefined | null): string => {
     if (!email) return "User";
@@ -622,7 +626,13 @@ export default function UserDashboard() {
         <div className="mt-ds-7 bg-white dark:bg-ds-dark-surface rounded-ds-xl p-ds-5 shadow-ds-soft border border-ds-border dark:border-white/5">
           <h3 className="text-[10px] font-bold text-ds-text-secondary mb-4 px-1 uppercase tracking-wider">Services</h3>
           <div className="grid grid-cols-4 gap-ds-4">
-            <ServiceButton icon="currency_exchange" label={"Crypto\nto Naira"} useCustomIcon comingSoon />
+            <ServiceButton
+              icon="currency_exchange"
+              label={"Crypto\nto Naira"}
+              useCustomIcon
+              comingSoon={!canUseCryptoToNaira}
+              onClick={canUseCryptoToNaira ? () => handleServiceClick(services[0]) : undefined}
+            />
             <ServiceButton icon="swap_vert" label={"Naira\nto Crypto"} useCustomIcon onClick={() => handleServiceClick(services[1])} />
             <ServiceButton icon="receipt_long" label={"Generate\nInvoice"} comingSoon />
             <ServiceButton icon="trending_up" label={"Create\nPrediction"} comingSoon />
