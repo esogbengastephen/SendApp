@@ -572,49 +572,47 @@ export default function UserDashboard() {
             <div className="min-w-0">
               <WalletCard 
                 label="NGN"
-              currency="NGN"
-              amount={`₦ ${(dashboardData?.balance.ngn || 0).toLocaleString()}`}
-              isHidden={!showNGNBalance}
-              onToggleVisibility={() => setShowNGNBalance(!showNGNBalance)}
-              accountNumber={dashboardData?.user.accountNumber || undefined}
-              icon="account_balance_wallet"
+                currency="NGN"
+                amount={`₦ ${(dashboardData?.balance.ngn || 0).toLocaleString()}`}
+                isHidden={!showNGNBalance}
+                onToggleVisibility={() => setShowNGNBalance(!showNGNBalance)}
+                accountNumber={dashboardData?.user.accountNumber || undefined}
+                icon="account_balance_wallet"
+                comingSoon
               />
             </div>
             <div className="min-w-0">
               <WalletCard 
                 label="Crypto"
-              currency="Crypto"
-              amount={loadingBalances && cachedTotalCryptoUSD === null
-                ? "Loading..." 
-                : `$ ${(totalCryptoUSD || cachedTotalCryptoUSD || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-              }
-              isHidden={!showCryptoBalance}
-              onToggleVisibility={() => setShowCryptoBalance(!showCryptoBalance)}
-              onViewAssets={() => setShowAssetsModal(true)}
-              icon="currency_bitcoin"
+                currency="Crypto"
+                amount={loadingBalances && cachedTotalCryptoUSD === null
+                  ? "Loading..." 
+                  : `$ ${(totalCryptoUSD || cachedTotalCryptoUSD || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                }
+                isHidden={!showCryptoBalance}
+                onToggleVisibility={() => setShowCryptoBalance(!showCryptoBalance)}
+                onViewAssets={() => setShowAssetsModal(true)}
+                icon="currency_bitcoin"
+                comingSoon
               />
             </div>
           </div>
 
           <div className="grid grid-cols-2 gap-4 px-2">
-            <button 
-              onClick={() => router.push("/send")}
-              className="flex flex-col items-center gap-1 group"
-            >
-              <div className="w-10 h-10 rounded-ds-md bg-ds-primary text-secondary flex items-center justify-center shadow-ds-soft group-active:scale-[0.98] transition-transform duration-motion-fast ease-standard">
+            <div className="flex flex-col items-center gap-1 opacity-70 pointer-events-none cursor-not-allowed">
+              <div className="w-10 h-10 rounded-ds-md bg-ds-primary text-secondary flex items-center justify-center shadow-ds-soft">
                 <span className="material-icons-round text-lg transform -rotate-45">arrow_upward</span>
               </div>
               <span className="text-[10px] font-bold text-ds-text-primary uppercase tracking-wide">Send</span>
-            </button>
-            <button 
-              onClick={() => router.push("/receive")}
-              className="flex flex-col items-center gap-1 group"
-            >
-              <div className="w-10 h-10 rounded-ds-md bg-ds-primary text-secondary flex items-center justify-center shadow-ds-soft group-active:scale-[0.98] transition-transform duration-motion-fast ease-standard">
+              <span className="text-[9px] text-ds-text-muted uppercase tracking-wide">Coming soon</span>
+            </div>
+            <div className="flex flex-col items-center gap-1 opacity-70 pointer-events-none cursor-not-allowed">
+              <div className="w-10 h-10 rounded-ds-md bg-ds-primary text-secondary flex items-center justify-center shadow-ds-soft">
                 <span className="material-icons-round text-lg rotate-135" style={{ transform: 'matrix(-0.707107, 0.707107, -0.707107, -0.707107, 0, 0) rotate(45deg)' }}>arrow_downward</span>
               </div>
               <span className="text-[10px] font-bold text-ds-text-primary uppercase tracking-wide">Receive</span>
-            </button>
+              <span className="text-[9px] text-ds-text-muted uppercase tracking-wide">Coming soon</span>
+            </div>
           </div>
 
           <div className="absolute -bottom-5 left-1/2 transform -translate-x-1/2 w-12 h-6 bg-ds-primary rounded-b-full flex items-center justify-center shadow-ds-soft z-20">
