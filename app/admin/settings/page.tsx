@@ -144,9 +144,11 @@ export default function SettingsPage() {
   const [sendToNgnRate, setSendToNgnRate] = useState("45"); // SEND to NGN (1 SEND = Y NGN)
   const [transactionsEnabled, setTransactionsEnabled] = useState(true);
   const [minimumPurchase, setMinimumPurchase] = useState<number>(3000);
+  const [minimumOfframpSEND, setMinimumOfframpSEND] = useState<number>(1);
   const [saving, setSaving] = useState(false);
   const [savingTransactionsStatus, setSavingTransactionsStatus] = useState(false);
   const [savingMinimumPurchase, setSavingMinimumPurchase] = useState(false);
+  const [savingMinimumOfframp, setSavingMinimumOfframp] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -243,7 +245,7 @@ export default function SettingsPage() {
     }
   };
 
-  // Save minimum purchase
+  // Save minimum purchase (onramp)
   const saveMinimumPurchase = async () => {
     if (!address) return;
     setSavingMinimumPurchase(true);
@@ -259,7 +261,7 @@ export default function SettingsPage() {
 
       const data = await response.json();
       if (data.success) {
-        setAdminSuccess("Minimum purchase amount updated successfully!");
+        setAdminSuccess("Minimum purchase (onramp) updated successfully!");
         setTimeout(() => setAdminSuccess(null), 3000);
       } else {
         setAdminError(data.error || "Failed to update minimum purchase");
@@ -270,6 +272,34 @@ export default function SettingsPage() {
       setTimeout(() => setAdminError(null), 3000);
     } finally {
       setSavingMinimumPurchase(false);
+    }
+  };
+
+  const saveMinimumOfframp = async () => {
+    if (!address) return;
+    setSavingMinimumOfframp(true);
+    try {
+      const response = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          minimumOfframpSEND: parseFloat(minimumOfframpSEND.toString()),
+          walletAddress: address,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setAdminSuccess("Minimum sell (offramp) updated successfully!");
+        setTimeout(() => setAdminSuccess(null), 3000);
+      } else {
+        setAdminError(data.error || "Failed to update minimum sell");
+        setTimeout(() => setAdminError(null), 3000);
+      }
+    } catch (error) {
+      setAdminError("Failed to update minimum sell");
+      setTimeout(() => setAdminError(null), 3000);
+    } finally {
+      setSavingMinimumOfframp(false);
     }
   };
 
@@ -550,8 +580,9 @@ export default function SettingsPage() {
         setSendToNgnRate(calculatedSendToNgn);
         // Set transactions enabled status
         setTransactionsEnabled(data.settings.transactionsEnabled !== false);
-        // Set minimum purchase
+        // Set minimum purchase (onramp) and minimum offramp
         setMinimumPurchase(data.settings.minimumPurchase || 3000);
+        setMinimumOfframpSEND(data.settings.minimumOfframpSEND ?? 1);
       }
     } catch (err: any) {
       console.error("Failed to fetch settings:", err);
@@ -801,13 +832,13 @@ export default function SettingsPage() {
         )}
       </div>
 
-      {/* Minimum Purchase Amount */}
+      {/* Minimum Purchase (Onramp) */}
       <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
         <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 mb-3 sm:mb-4">
-          Minimum Purchase Amount
+          Minimum Purchase (Onramp)
         </h2>
         <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-          Set the minimum amount users must purchase in NGN to proceed with a transaction.
+          Set the minimum NGN amount users must spend when buying crypto (Naira to Crypto).
         </p>
         <div className="space-y-4">
           <div>
@@ -824,7 +855,7 @@ export default function SettingsPage() {
               placeholder="3000"
             />
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              Users must purchase at least ₦{minimumPurchase.toLocaleString()} to proceed with a transaction.
+              Users must purchase at least ₦{minimumPurchase.toLocaleString()} to proceed with a buy transaction.
             </p>
           </div>
           <button
@@ -839,6 +870,49 @@ export default function SettingsPage() {
               </>
             ) : (
               "Save Minimum Purchase"
+            )}
+          </button>
+        </div>
+      </div>
+
+      {/* Minimum Sell (Offramp) */}
+      <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
+        <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 mb-3 sm:mb-4">
+          Minimum Sell (Offramp)
+        </h2>
+        <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+          Set the minimum $SEND amount users must sell when converting crypto to Naira (Crypto to Naira).
+        </p>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+              Minimum Sell ($SEND)
+            </label>
+            <input
+              type="number"
+              value={minimumOfframpSEND}
+              onChange={(e) => setMinimumOfframpSEND(parseFloat(e.target.value) || 1)}
+              min="0.01"
+              step="0.1"
+              className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary"
+              placeholder="1"
+            />
+            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+              Users must sell at least {minimumOfframpSEND} $SEND to proceed with a sell transaction.
+            </p>
+          </div>
+          <button
+            onClick={saveMinimumOfframp}
+            disabled={savingMinimumOfframp || !address || minimumOfframpSEND <= 0}
+            className="bg-primary text-slate-900 font-bold px-6 py-3 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+          >
+            {savingMinimumOfframp ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-slate-900"></div>
+                Saving...
+              </>
+            ) : (
+              "Save Minimum Sell"
             )}
           </button>
         </div>

@@ -32,9 +32,11 @@ export default function PriceActionPage() {
   const [onrampEnabled, setOnrampEnabled] = useState(true);
   const [offrampEnabled, setOfframpEnabled] = useState(true);
   const [minimumPurchase, setMinimumPurchase] = useState<number>(3000);
+  const [minimumOfframpSEND, setMinimumOfframpSEND] = useState<number>(1);
   const [saving, setSaving] = useState(false);
   const [savingOnrampStatus, setSavingOnrampStatus] = useState(false);
   const [savingOfframpStatus, setSavingOfframpStatus] = useState(false);
+  const [savingMinimumOfframp, setSavingMinimumOfframp] = useState(false);
   const [profitNgnSend, setProfitNgnSend] = useState<string>("0");
   const [profitNgnUsdc, setProfitNgnUsdc] = useState<string>("0");
   const [profitNgnUsdt, setProfitNgnUsdt] = useState<string>("0");
@@ -42,12 +44,14 @@ export default function PriceActionPage() {
   const [profitNgnUsdcSell, setProfitNgnUsdcSell] = useState<string>("0");
   const [profitNgnUsdtSell, setProfitNgnUsdtSell] = useState<string>("0");
   const [coingeckoAutoPublish, setCoingeckoAutoPublish] = useState(false);
+  const [coingeckoAutoPublishSell, setCoingeckoAutoPublishSell] = useState(false);
   const [savingProfit, setSavingProfit] = useState(false);
   const [savingMinimumPurchase, setSavingMinimumPurchase] = useState(false);
   const [success, setSuccess] = useState(false);
   const profitSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const profitSellSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastAutoPublishRef = useRef<number>(0);
+  const lastAutoPublishSellRef = useRef<number>(0);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
 
   // Exchange rates (admin-set) – BUY (onramp)
@@ -102,6 +106,7 @@ export default function PriceActionPage() {
         setOnrampEnabled(data.settings.onrampEnabled !== false);
         setOfframpEnabled(data.settings.offrampEnabled !== false);
         setMinimumPurchase(data.settings.minimumPurchase ?? 3000);
+        setMinimumOfframpSEND(data.settings.minimumOfframpSEND ?? 1);
         setProfitNgnSend(String(data.settings.profitNgnSend ?? 0));
         setProfitNgnUsdc(String(data.settings.profitNgnUsdc ?? 0));
         setProfitNgnUsdt(String(data.settings.profitNgnUsdt ?? 0));
@@ -109,6 +114,7 @@ export default function PriceActionPage() {
         setProfitNgnUsdcSell(String(data.settings.profitNgnUsdcSell ?? 0));
         setProfitNgnUsdtSell(String(data.settings.profitNgnUsdtSell ?? 0));
         setCoingeckoAutoPublish(data.settings.coingeckoAutoPublish === true);
+        setCoingeckoAutoPublishSell(data.settings.coingeckoAutoPublishSell === true);
         const ngnToSend = data.settings.exchangeRate;
         if (ngnToSend != null && Number(ngnToSend) > 0) {
           setExchangeRate(Number(ngnToSend).toFixed(5));
@@ -251,7 +257,7 @@ export default function PriceActionPage() {
     };
   }, [address, settingsLoaded, profitNgnSendSell, profitNgnUsdcSell, profitNgnUsdtSell]);
 
-  // Auto-publish CoinGecko + profit every 30s when coingeckoAutoPublish is on (with safeguards)
+  // Auto-publish buy: every 30s when coingeckoAutoPublish is on
   useEffect(() => {
     if (!address || !coingeckoAutoPublish) return;
     const interval = setInterval(async () => {
@@ -263,6 +269,19 @@ export default function PriceActionPage() {
     }, 30000);
     return () => clearInterval(interval);
   }, [address, coingeckoAutoPublish, coingeckoPrice, saving, profitNgnSend, profitNgnUsdc, profitNgnUsdt]);
+
+  // Auto-publish sell (offramp): every 30s when coingeckoAutoPublishSell is on – offramp has its own toggle
+  useEffect(() => {
+    if (!address || !coingeckoAutoPublishSell) return;
+    const interval = setInterval(async () => {
+      if (!coingeckoPrice || saving) return;
+      const now = Date.now();
+      if (now - lastAutoPublishSellRef.current < 25000) return;
+      lastAutoPublishSellRef.current = now;
+      await publishCoingeckoPriceSell();
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [address, coingeckoAutoPublishSell, coingeckoPrice, saving, profitNgnSendSell, profitNgnUsdcSell, profitNgnUsdtSell]);
 
   const publishCoingeckoPrice = async () => {
     if (!address || !coingeckoPrice) return;
@@ -384,6 +403,33 @@ export default function PriceActionPage() {
       setError(err instanceof Error ? err.message : "Failed to save minimum purchase");
     } finally {
       setSavingMinimumPurchase(false);
+    }
+  };
+
+  const saveMinimumOfframp = async () => {
+    if (!address) return;
+    setSavingMinimumOfframp(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          minimumOfframpSEND: Number(minimumOfframpSEND),
+          walletAddress: address,
+        }),
+      });
+      const data = await response.json();
+      if (data.success) {
+        setSuccess(true);
+        setTimeout(() => setSuccess(false), 3000);
+      } else {
+        setError(data.error || "Failed to save minimum sell");
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to save minimum sell");
+    } finally {
+      setSavingMinimumOfframp(false);
     }
   };
 
@@ -543,6 +589,27 @@ export default function PriceActionPage() {
     }
   };
 
+  const handleCoingeckoAutoPublishSellToggle = async (newValue: boolean) => {
+    if (!address) return;
+    setCoingeckoAutoPublishSell(newValue);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ coingeckoAutoPublishSell: newValue, walletAddress: address }),
+      });
+      const data = await response.json();
+      if (!data.success) {
+        setError(data.error || "Failed to update offramp auto-publish");
+        setCoingeckoAutoPublishSell(!newValue);
+      }
+    } catch (err) {
+      setCoingeckoAutoPublishSell(!newValue);
+      setError("Failed to update offramp auto-publish");
+    }
+  };
+
   const handleOfframpToggle = async (newValue: boolean) => {
     if (!address) return;
     setOfframpEnabled(newValue);
@@ -649,7 +716,13 @@ export default function PriceActionPage() {
           {coingeckoAutoPublish && (
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-green-200 dark:bg-green-900/40 text-green-800 dark:text-green-200">
               <span className="material-icons-outlined text-sm">autorenew</span>
-              Auto-publish: every 30s
+              Auto-publish (buy): every 30s
+            </span>
+          )}
+          {coingeckoAutoPublishSell && (
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded-full bg-green-200 dark:bg-green-900/40 text-green-800 dark:text-green-200">
+              <span className="material-icons-outlined text-sm">autorenew</span>
+              Auto-publish (sell): every 30s
             </span>
           )}
           {savingProfit && (
@@ -788,27 +861,32 @@ export default function PriceActionPage() {
                 </div>
               </div>
 
-              {activeTab === "buy" && (
-                <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
-                  <div>
-                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Auto-publish CoinGecko + buy profit every 30s</p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">When on, buy rates are published automatically every 30s.</p>
-                  </div>
-                  <label className="cursor-pointer">
-                    <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${coingeckoAutoPublish ? "bg-primary" : "bg-slate-300 dark:bg-slate-600"}`}>
-                      <input
-                        type="checkbox"
-                        checked={coingeckoAutoPublish}
-                        onChange={(e) => handleCoingeckoAutoPublishToggle(e.target.checked)}
-                        disabled={!address}
-                        className="sr-only"
-                        aria-label="Toggle auto-publish on or off"
-                      />
-                      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${coingeckoAutoPublish ? "translate-x-6" : "translate-x-1"}`} />
-                    </div>
-                  </label>
+              {/* Auto-publish toggle – Buy tab: buy only; Sell tab: offramp (sell) has its own */}
+              <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800">
+                <div>
+                  <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                    {activeTab === "buy" ? "Auto-publish CoinGecko + buy profit every 30s" : "Auto-publish CoinGecko + sell profit every 30s"}
+                  </p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    {activeTab === "buy"
+                      ? "When on, buy rates are published automatically every 30s."
+                      : "When on, sell (offramp) rates are published automatically every 30s."}
+                  </p>
                 </div>
-              )}
+                <label className="cursor-pointer">
+                  <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${activeTab === "buy" ? (coingeckoAutoPublish ? "bg-primary" : "bg-slate-300 dark:bg-slate-600") : (coingeckoAutoPublishSell ? "bg-primary" : "bg-slate-300 dark:bg-slate-600")}`}>
+                    <input
+                      type="checkbox"
+                      checked={activeTab === "buy" ? coingeckoAutoPublish : coingeckoAutoPublishSell}
+                      onChange={(e) => (activeTab === "buy" ? handleCoingeckoAutoPublishToggle(e.target.checked) : handleCoingeckoAutoPublishSellToggle(e.target.checked))}
+                      disabled={!address}
+                      className="sr-only"
+                      aria-label={activeTab === "buy" ? "Toggle buy auto-publish" : "Toggle sell (offramp) auto-publish"}
+                    />
+                    <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${(activeTab === "buy" ? coingeckoAutoPublish : coingeckoAutoPublishSell) ? "translate-x-6" : "translate-x-1"}`} />
+                  </div>
+                </label>
+              </div>
 
               <button
                 onClick={activeTab === "buy" ? publishCoingeckoPrice : publishCoingeckoPriceSell}
@@ -831,6 +909,7 @@ export default function PriceActionPage() {
                   ? "Overwrites buy exchange rate and token buy prices with CoinGecko + buy profit."
                   : "Overwrites sell rates (1 SEND = X NGN, etc.) with CoinGecko + sell profit."}
                 {activeTab === "buy" && coingeckoAutoPublish && " Auto-publish is on: buy rates update every 30s."}
+                {activeTab === "sell" && coingeckoAutoPublishSell && " Auto-publish is on: sell (offramp) rates update every 30s."}
               </p>
             </div>
           ) : (
@@ -1041,15 +1120,35 @@ export default function PriceActionPage() {
         </div>
       )}
 
-      {/* Exchange Rate (Off Ramp only) – Admin set sell rates */}
+      {/* Off Ramp only – Admin set sell rates + auto-publish */}
       {activeTab === "sell" && (
         <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
-          <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 mb-3 sm:mb-4">
-            Exchange Rate (Off Ramp)
-          </h2>
-          <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-            Set token exchange rates for SELL (Offramp). Used when users sell crypto for NGN (1 SEND = X NGN, etc.).
-          </p>
+          {/* Auto-publish toggle for offramp only (its own setting) */}
+          <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 mb-4">
+            <div>
+              <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Auto-publish CoinGecko + sell profit every 30s</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">When on, sell (offramp) rates are published automatically every 30s.</p>
+            </div>
+            <label className="cursor-pointer">
+              <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${coingeckoAutoPublishSell ? "bg-primary" : "bg-slate-300 dark:bg-slate-600"}`}>
+                <input
+                  type="checkbox"
+                  checked={coingeckoAutoPublishSell}
+                  onChange={(e) => handleCoingeckoAutoPublishSellToggle(e.target.checked)}
+                  disabled={!address}
+                  className="sr-only"
+                  aria-label="Toggle offramp auto-publish on or off"
+                />
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${coingeckoAutoPublishSell ? "translate-x-6" : "translate-x-1"}`} />
+              </div>
+            </label>
+          </div>
+
+          {coingeckoAutoPublishSell && (
+            <p className="text-xs text-primary dark:text-primary font-medium mb-3">
+              Auto-publish is on: these sell rates are also updated every 30s from CoinGecko + sell profit.
+            </p>
+          )}
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">$SEND to NGN (Sell)</label>
@@ -1209,16 +1308,14 @@ export default function PriceActionPage() {
         </div>
       )}
 
-      {/* Minimum Purchase (BUY & SELL) */}
+      {/* Minimum Purchase (Onramp) & Minimum Sell (Offramp) */}
       <div className="grid grid-cols-1 lg:grid-cols-1 space-y-4">
-
-        {/* Minimum Purchase Amount */}
         <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
           <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 mb-3 sm:mb-4">
-            Minimum Purchase Amount
+            Minimum Purchase (Onramp)
           </h2>
           <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
-            Set the minimum amount users must purchase in NGN to proceed with a transaction.
+            Set the minimum NGN amount users must spend when buying crypto (Naira to Crypto).
           </p>
           <div className="space-y-4">
             <div>
@@ -1235,7 +1332,7 @@ export default function PriceActionPage() {
                 placeholder="3000"
               />
               <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                Users must purchase at least ₦{minimumPurchase.toLocaleString()} to proceed with a transaction.
+                Users must purchase at least ₦{minimumPurchase.toLocaleString()} to proceed with a buy transaction.
               </p>
             </div>
             <button
@@ -1250,6 +1347,47 @@ export default function PriceActionPage() {
                 </>
               ) : (
                 "Save Minimum Purchase"
+              )}
+            </button>
+          </div>
+        </div>
+        <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
+          <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 mb-3 sm:mb-4">
+            Minimum Sell (Offramp)
+          </h2>
+          <p className="text-sm text-slate-600 dark:text-slate-400 mb-4">
+            Set the minimum $SEND amount users must sell when converting crypto to Naira (Crypto to Naira).
+          </p>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                Minimum Sell ($SEND)
+              </label>
+              <input
+                type="number"
+                value={minimumOfframpSEND}
+                onChange={(e) => setMinimumOfframpSEND(parseFloat(e.target.value) || 1)}
+                min={0.01}
+                step={0.1}
+                className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary"
+                placeholder="1"
+              />
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                Users must sell at least {minimumOfframpSEND} $SEND to proceed with a sell transaction.
+              </p>
+            </div>
+            <button
+              onClick={saveMinimumOfframp}
+              disabled={savingMinimumOfframp || !address || minimumOfframpSEND <= 0}
+              className="bg-primary text-slate-900 font-bold px-6 py-3 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            >
+              {savingMinimumOfframp ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-slate-900"></div>
+                  Saving...
+                </>
+              ) : (
+                "Save Minimum Sell"
               )}
             </button>
           </div>

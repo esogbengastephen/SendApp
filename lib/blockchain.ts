@@ -1,4 +1,4 @@
-import { createWalletClient, createPublicClient, http, formatUnits, parseUnits } from "viem";
+import { createWalletClient, createPublicClient, http, formatUnits, parseUnits, getAddress } from "viem";
 import { base } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { defineChain } from "viem";
@@ -133,13 +133,26 @@ export async function getNextNonce(): Promise<number> {
 }
 
 /**
+ * Normalize to a viem-compatible Base address (0x + 40 hex, checksummed).
+ * Handles Coinbase SDK WalletAddress string: "WalletAddress{ addressId: '0x...', ... }"
+ */
+export function normalizeBaseAddress(address: string): `0x${string}` {
+  if (!address || typeof address !== "string") throw new Error("Invalid address");
+  const trimmed = address.trim();
+  const match = trimmed.match(/0x[a-fA-F0-9]{40}/);
+  if (!match) throw new Error(`No valid 0x address found in: ${trimmed.slice(0, 80)}`);
+  return getAddress(match[0]) as `0x${string}`;
+}
+
+/**
  * Get token balance for an address
  */
 export async function getTokenBalance(address: string): Promise<string> {
   try {
     const publicClient = getPublicClient();
-    
-    console.log(`[getTokenBalance] Checking balance for: ${address}`);
+    const normalizedAddress = normalizeBaseAddress(address);
+
+    console.log(`[getTokenBalance] Checking balance for: ${normalizedAddress}`);
     console.log(`[getTokenBalance] Token contract: ${SEND_TOKEN_ADDRESS}`);
     console.log(`[getTokenBalance] RPC URL: ${BASE_RPC_URL}`);
     
@@ -157,7 +170,7 @@ export async function getTokenBalance(address: string): Promise<string> {
       address: SEND_TOKEN_ADDRESS as `0x${string}`,
       abi: ERC20_ABI,
       functionName: "balanceOf",
-      args: [address as `0x${string}`],
+      args: [normalizedAddress],
     })) as bigint;
 
     console.log(`[getTokenBalance] Raw balance (wei): ${balance.toString()}`);

@@ -9,6 +9,8 @@ interface PlatformSettings {
   onrampEnabled: boolean;
   offrampEnabled: boolean;
   minimumPurchase: number;
+  /** Minimum $SEND to sell for offramp (crypto → NGN). Default 1. */
+  minimumOfframpSEND?: number;
   /** Buy profit margins in NGN (onramp: NGN → crypto) */
   profitNgnSend?: number;
   profitNgnUsdc?: number;
@@ -21,8 +23,10 @@ interface PlatformSettings {
   sendToNgnSell?: number;
   usdcSellPriceNgn?: number;
   usdtSellPriceNgn?: number;
-  /** When true, CoinGecko + profit is auto-published every 30s */
+  /** When true, CoinGecko + buy profit is auto-published every 30s (onramp) */
   coingeckoAutoPublish?: boolean;
+  /** When true, CoinGecko + sell profit is auto-published every 30s (offramp) */
+  coingeckoAutoPublishSell?: boolean;
   updatedAt: Date;
   updatedBy?: string;
 }
@@ -64,6 +68,7 @@ async function loadSettings(): Promise<PlatformSettings> {
         onrampEnabled: true,
         offrampEnabled: true,
         minimumPurchase: 3000,
+        minimumOfframpSEND: 1,
         profitNgnSend: 0,
         profitNgnUsdc: 0,
         profitNgnUsdt: 0,
@@ -71,6 +76,7 @@ async function loadSettings(): Promise<PlatformSettings> {
         profitNgnUsdcSell: 0,
         profitNgnUsdtSell: 0,
         coingeckoAutoPublish: false,
+        coingeckoAutoPublishSell: false,
         updatedAt: new Date(),
         updatedBy: "system",
       };
@@ -86,20 +92,22 @@ async function loadSettings(): Promise<PlatformSettings> {
             onrampEnabled: defaultSettings.onrampEnabled,
             offrampEnabled: defaultSettings.offrampEnabled,
             minimumPurchase: defaultSettings.minimumPurchase,
+            minimumOfframpSEND: defaultSettings.minimumOfframpSEND ?? 1,
             profitNgnSend: defaultSettings.profitNgnSend ?? 0,
             profitNgnUsdc: defaultSettings.profitNgnUsdc ?? 0,
             profitNgnUsdt: defaultSettings.profitNgnUsdt ?? 0,
             profitNgnSendSell: defaultSettings.profitNgnSendSell ?? 0,
             profitNgnUsdcSell: defaultSettings.profitNgnUsdcSell ?? 0,
             profitNgnUsdtSell: defaultSettings.profitNgnUsdtSell ?? 0,
-            coingeckoAutoPublish: defaultSettings.coingeckoAutoPublish ?? false,
-            updatedAt: defaultSettings.updatedAt.toISOString(),
-            updatedBy: defaultSettings.updatedBy,
-          },
-          updated_by: "system",
-        }, {
-          onConflict: "setting_key",
-        });
+        coingeckoAutoPublish: defaultSettings.coingeckoAutoPublish ?? false,
+        coingeckoAutoPublishSell: defaultSettings.coingeckoAutoPublishSell ?? false,
+        updatedAt: defaultSettings.updatedAt.toISOString(),
+        updatedBy: defaultSettings.updatedBy,
+      },
+      updated_by: "system",
+    }, {
+      onConflict: "setting_key",
+    });
 
       if (insertError) {
         console.error("[Settings] Error creating default settings:", insertError);
@@ -127,6 +135,7 @@ async function loadSettings(): Promise<PlatformSettings> {
         onrampEnabled: value.onrampEnabled !== undefined ? value.onrampEnabled : true,
         offrampEnabled: value.offrampEnabled !== undefined ? value.offrampEnabled : true,
         minimumPurchase: value.minimumPurchase !== undefined ? value.minimumPurchase : 3000,
+        minimumOfframpSEND: value.minimumOfframpSEND !== undefined ? Number(value.minimumOfframpSEND) : 1,
         profitNgnSend: value.profitNgnSend !== undefined ? Number(value.profitNgnSend) : 0,
         profitNgnUsdc: value.profitNgnUsdc !== undefined ? Number(value.profitNgnUsdc) : 0,
         profitNgnUsdt: value.profitNgnUsdt !== undefined ? Number(value.profitNgnUsdt) : 0,
@@ -137,6 +146,7 @@ async function loadSettings(): Promise<PlatformSettings> {
         usdcSellPriceNgn: value.usdcSellPriceNgn !== undefined ? Number(value.usdcSellPriceNgn) : undefined,
         usdtSellPriceNgn: value.usdtSellPriceNgn !== undefined ? Number(value.usdtSellPriceNgn) : undefined,
         coingeckoAutoPublish: value.coingeckoAutoPublish === true,
+        coingeckoAutoPublishSell: value.coingeckoAutoPublishSell === true,
         updatedAt: value.updatedAt ? new Date(value.updatedAt) : new Date(),
         updatedBy: value.updatedBy,
       };
@@ -158,6 +168,7 @@ async function loadSettings(): Promise<PlatformSettings> {
       onrampEnabled: true,
       offrampEnabled: true,
       minimumPurchase: 3000,
+      minimumOfframpSEND: 1,
       profitNgnSend: 0,
       profitNgnUsdc: 0,
       profitNgnUsdt: 0,
@@ -165,6 +176,7 @@ async function loadSettings(): Promise<PlatformSettings> {
       profitNgnUsdcSell: 0,
       profitNgnUsdtSell: 0,
       coingeckoAutoPublish: false,
+      coingeckoAutoPublishSell: false,
       updatedAt: new Date(),
     };
   }
@@ -185,6 +197,7 @@ async function saveSettings(settings: PlatformSettings): Promise<void> {
           onrampEnabled: settings.onrampEnabled,
           offrampEnabled: settings.offrampEnabled,
           minimumPurchase: settings.minimumPurchase,
+          minimumOfframpSEND: settings.minimumOfframpSEND ?? 1,
           profitNgnSend: settings.profitNgnSend ?? 0,
           profitNgnUsdc: settings.profitNgnUsdc ?? 0,
           profitNgnUsdt: settings.profitNgnUsdt ?? 0,
@@ -195,6 +208,7 @@ async function saveSettings(settings: PlatformSettings): Promise<void> {
           usdcSellPriceNgn: settings.usdcSellPriceNgn,
           usdtSellPriceNgn: settings.usdtSellPriceNgn,
           coingeckoAutoPublish: settings.coingeckoAutoPublish ?? false,
+          coingeckoAutoPublishSell: settings.coingeckoAutoPublishSell ?? false,
           updatedAt: settings.updatedAt.toISOString(),
           updatedBy: settings.updatedBy,
         },
@@ -310,6 +324,7 @@ export async function updateExchangeRate(
     onrampEnabled: currentSettings.onrampEnabled !== false,
     offrampEnabled: currentSettings.offrampEnabled !== false,
     minimumPurchase: currentSettings.minimumPurchase || 3000,
+    minimumOfframpSEND: currentSettings.minimumOfframpSEND ?? 1,
     updatedAt: new Date(),
     updatedBy,
   };
@@ -358,6 +373,7 @@ export async function updateTransactionsEnabled(
     ...currentSettings,
     transactionsEnabled: enabled,
     minimumPurchase: currentSettings.minimumPurchase || 3000,
+    minimumOfframpSEND: currentSettings.minimumOfframpSEND ?? 1,
     updatedAt: new Date(),
     updatedBy,
   };
@@ -475,18 +491,58 @@ export async function updateMinimumPurchase(
   const newSettings: PlatformSettings = {
     ...currentSettings,
     minimumPurchase: amount,
+    minimumOfframpSEND: currentSettings.minimumOfframpSEND ?? 1,
     updatedAt: new Date(),
     updatedBy,
   };
-  
+
   settings = newSettings;
   global.__sendSettings = newSettings;
   global.__sendSettingsCacheTime = Date.now();
-  
+
   await saveSettings(newSettings);
 
   console.log(`[Settings] Minimum purchase updated: ${currentSettings.minimumPurchase || 3000} -> ${amount} by ${updatedBy || 'system'}`);
   
+  return { ...newSettings };
+}
+
+/**
+ * Get minimum offramp sell amount ($SEND).
+ */
+export async function getMinimumOfframpSEND(): Promise<number> {
+  const loadedSettings = await getSettings();
+  return loadedSettings.minimumOfframpSEND ?? 1;
+}
+
+/**
+ * Update minimum offramp sell amount ($SEND).
+ */
+export async function updateMinimumOfframpSEND(
+  amount: number,
+  updatedBy?: string
+): Promise<PlatformSettings> {
+  if (amount <= 0) {
+    throw new Error("Minimum offramp amount must be greater than 0");
+  }
+
+  const currentSettings = await getSettings();
+
+  const newSettings: PlatformSettings = {
+    ...currentSettings,
+    minimumOfframpSEND: amount,
+    updatedAt: new Date(),
+    updatedBy,
+  };
+
+  settings = newSettings;
+  global.__sendSettings = newSettings;
+  global.__sendSettingsCacheTime = Date.now();
+
+  await saveSettings(newSettings);
+
+  console.log(`[Settings] Minimum offramp SEND updated: ${currentSettings.minimumOfframpSEND ?? 1} -> ${amount} by ${updatedBy || "system"}`);
+
   return { ...newSettings };
 }
 
@@ -593,7 +649,7 @@ export async function updateSellRates(
 }
 
 /**
- * Get CoinGecko auto-publish setting (publish CoinGecko + profit every 30s when enabled).
+ * Get CoinGecko auto-publish setting for buy (onramp).
  */
 export async function getCoingeckoAutoPublish(): Promise<boolean> {
   const s = await getSettings();
@@ -601,7 +657,7 @@ export async function getCoingeckoAutoPublish(): Promise<boolean> {
 }
 
 /**
- * Update CoinGecko auto-publish (when true, publish CoinGecko + profit every 30s).
+ * Update CoinGecko auto-publish for buy (when true, publish buy rates every 30s).
  */
 export async function updateCoingeckoAutoPublish(
   enabled: boolean,
@@ -618,6 +674,36 @@ export async function updateCoingeckoAutoPublish(
   global.__sendSettings = newSettings;
   global.__sendSettingsCacheTime = Date.now();
   await saveSettings(newSettings);
-  console.log(`[Settings] CoinGecko auto-publish ${enabled ? 'enabled' : 'disabled'} by ${updatedBy || 'system'}`);
+  console.log(`[Settings] CoinGecko auto-publish (buy) ${enabled ? 'enabled' : 'disabled'} by ${updatedBy || 'system'}`);
+  return { ...newSettings };
+}
+
+/**
+ * Get CoinGecko auto-publish setting for sell (offramp).
+ */
+export async function getCoingeckoAutoPublishSell(): Promise<boolean> {
+  const s = await getSettings();
+  return s.coingeckoAutoPublishSell === true;
+}
+
+/**
+ * Update CoinGecko auto-publish for sell (when true, publish sell/offramp rates every 30s).
+ */
+export async function updateCoingeckoAutoPublishSell(
+  enabled: boolean,
+  updatedBy?: string
+): Promise<PlatformSettings> {
+  const currentSettings = await getSettings();
+  const newSettings: PlatformSettings = {
+    ...currentSettings,
+    coingeckoAutoPublishSell: enabled,
+    updatedAt: new Date(),
+    updatedBy,
+  };
+  settings = newSettings;
+  global.__sendSettings = newSettings;
+  global.__sendSettingsCacheTime = Date.now();
+  await saveSettings(newSettings);
+  console.log(`[Settings] CoinGecko auto-publish (sell/offramp) ${enabled ? 'enabled' : 'disabled'} by ${updatedBy || 'system'}`);
   return { ...newSettings };
 }

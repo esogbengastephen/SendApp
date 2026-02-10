@@ -107,7 +107,7 @@ Optional:
 - OKX DEX (on-ramp fallback): `OKX_API_KEY`, `OKX_SECRET_KEY`, `OKX_API_PASSPHRASE`, optional `OKX_PROJECT_ID` from OKX Web3 Build. When set, USDC→SEND tries OKX after Paraswap/KyberSwap. Test: GET `/api/test-okx-swap?mode=quote`.
 - `NGN_PER_USD` - Optional; only used if swap is configured to sell a fixed USDC amount. Production uses the admin “price exchange” (1 NGN = X $SEND) to get the equivalent SEND the user paid for, then swaps USDC for that much SEND.
 - **Pool-only mode:** `SEND_USE_POOL_ONLY=1` or `SEND_SWAP_DISABLED=1` — disables all USDC→SEND swaps; users receive SEND only from the liquidity pool balance. Add SEND to the pool wallet to fulfill orders.
-- **Off-ramp (Crypto to Naira, SEND):** `MONIEPOINT_API_KEY`, `MONIEPOINT_SECRET_KEY` (or `MONNIFY_API_KEY`, `MONNIFY_SECRET_KEY`) for bank account verification and future Naira payouts. Optional: `MONIEPOINT_BASE_URL` (default: sandbox in dev, api.monnify.com in prod). `OFFRAMP_DEPOSIT_ENCRYPTION_SECRET` (or `ENCRYPTION_SECRET`) to encrypt dedicated deposit wallet keys. Optional: `OFFRAMP_POOL_PRIVATE_KEY` for the admin wallet that receives SEND when sweeping from user deposit addresses.
+- **Off-ramp (Crypto to Naira, SEND):** Deposit = **Coinbase Smart Wallet** (CDP); sweep is **Paymaster-sponsored** (no EOA gas funding). Set **COINBASE_API_KEY_NAME**, **COINBASE_API_KEY_PRIVATE_KEY**, **COINBASE_APP_ID**, and **COINBASE_BUNDLER_RPC_URL** (CDP Portal → Paymaster → Base mainnet endpoint). Bank verification and Naira payouts use **Flutterwave**. Optional: `OFFRAMP_POOL_PRIVATE_KEY` for the treasury that receives SEND (default: liquidity pool); `OFFRAMP_CRON_SECRET` for cron; `OFFRAMP_MIN_SEND_SWEEP` (default `0.01`).
 
 ## Development
 

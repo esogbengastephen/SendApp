@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSettings, updateExchangeRate, updateTransactionsEnabled, updateMinimumPurchase, updateOnrampEnabled, updateOfframpEnabled, updateProfitMargins, updateProfitMarginsSell, updateSellRates, updateCoingeckoAutoPublish } from "@/lib/settings";
+import { getSettings, updateExchangeRate, updateTransactionsEnabled, updateMinimumPurchase, updateMinimumOfframpSEND, updateOnrampEnabled, updateOfframpEnabled, updateProfitMargins, updateProfitMarginsSell, updateSellRates, updateCoingeckoAutoPublish, updateCoingeckoAutoPublishSell } from "@/lib/settings";
 import { isAdminWallet } from "@/lib/supabase";
 
 /**
@@ -37,6 +37,7 @@ export async function GET(request: NextRequest) {
         onrampEnabled: settings.onrampEnabled !== false,
         offrampEnabled: settings.offrampEnabled !== false,
         minimumPurchase: settings.minimumPurchase || 3000,
+        minimumOfframpSEND: settings.minimumOfframpSEND ?? 1,
         profitNgnSend: settings.profitNgnSend ?? 0,
         profitNgnUsdc: settings.profitNgnUsdc ?? 0,
         profitNgnUsdt: settings.profitNgnUsdt ?? 0,
@@ -47,6 +48,7 @@ export async function GET(request: NextRequest) {
         usdcSellPriceNgn: settings.usdcSellPriceNgn,
         usdtSellPriceNgn: settings.usdtSellPriceNgn,
         coingeckoAutoPublish: settings.coingeckoAutoPublish === true,
+        coingeckoAutoPublishSell: settings.coingeckoAutoPublishSell === true,
         updatedAt: settings.updatedAt.toISOString(),
         updatedBy: settings.updatedBy,
       },
@@ -66,7 +68,7 @@ export async function GET(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json();
-    const { exchangeRate, transactionsEnabled, onrampEnabled, offrampEnabled, minimumPurchase, profitNgnSend, profitNgnUsdc, profitNgnUsdt, profitNgnSendSell, profitNgnUsdcSell, profitNgnUsdtSell, sendToNgnSell, usdcSellPriceNgn, usdtSellPriceNgn, coingeckoAutoPublish, walletAddress } = body;
+    const { exchangeRate, transactionsEnabled, onrampEnabled, offrampEnabled, minimumPurchase, minimumOfframpSEND, profitNgnSend, profitNgnUsdc, profitNgnUsdt, profitNgnSendSell, profitNgnUsdcSell, profitNgnUsdtSell, sendToNgnSell, usdcSellPriceNgn, usdtSellPriceNgn, coingeckoAutoPublish, coingeckoAutoPublishSell, walletAddress } = body;
 
     // Verify admin access
     if (!walletAddress) {
@@ -160,15 +162,20 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Update CoinGecko auto-publish (every 30s) if provided
+    // Update CoinGecko auto-publish for buy (every 30s) if provided
     if (coingeckoAutoPublish !== undefined) {
       const enabled = coingeckoAutoPublish === true || coingeckoAutoPublish === "true";
       await updateCoingeckoAutoPublish(enabled, walletAddress.toLowerCase());
     }
 
-    // Update minimum purchase if provided
+    // Update CoinGecko auto-publish for sell/offramp (every 30s) if provided
+    if (coingeckoAutoPublishSell !== undefined) {
+      const enabled = coingeckoAutoPublishSell === true || coingeckoAutoPublishSell === "true";
+      await updateCoingeckoAutoPublishSell(enabled, walletAddress.toLowerCase());
+    }
+
+    // Update minimum purchase (onramp) if provided
     if (minimumPurchase !== undefined) {
-      // Validate minimum purchase
       const minPurchaseValue = parseFloat(minimumPurchase);
       if (isNaN(minPurchaseValue) || minPurchaseValue <= 0) {
         return NextResponse.json(
@@ -176,13 +183,21 @@ export async function PUT(request: NextRequest) {
           { status: 400 }
         );
       }
+      console.log(`[Admin Settings] Updating minimum purchase (onramp) to: ${minPurchaseValue}`);
+      await updateMinimumPurchase(minPurchaseValue, walletAddress.toLowerCase());
+    }
 
-      console.log(`[Admin Settings] Updating minimum purchase to: ${minPurchaseValue}`);
-      
-      await updateMinimumPurchase(
-        minPurchaseValue,
-        walletAddress.toLowerCase()
-      );
+    // Update minimum offramp sell ($SEND) if provided
+    if (minimumOfframpSEND !== undefined) {
+      const minOfframpValue = parseFloat(minimumOfframpSEND);
+      if (isNaN(minOfframpValue) || minOfframpValue <= 0) {
+        return NextResponse.json(
+          { success: false, error: "Invalid minimum offramp. Must be a positive number." },
+          { status: 400 }
+        );
+      }
+      console.log(`[Admin Settings] Updating minimum offramp SEND to: ${minOfframpValue}`);
+      await updateMinimumOfframpSEND(minOfframpValue, walletAddress.toLowerCase());
     }
 
     // Return updated settings
@@ -196,6 +211,7 @@ export async function PUT(request: NextRequest) {
         onrampEnabled: updatedSettings.onrampEnabled !== false,
         offrampEnabled: updatedSettings.offrampEnabled !== false,
         minimumPurchase: updatedSettings.minimumPurchase || 3000,
+        minimumOfframpSEND: updatedSettings.minimumOfframpSEND ?? 1,
         profitNgnSend: updatedSettings.profitNgnSend ?? 0,
         profitNgnUsdc: updatedSettings.profitNgnUsdc ?? 0,
         profitNgnUsdt: updatedSettings.profitNgnUsdt ?? 0,
@@ -206,6 +222,7 @@ export async function PUT(request: NextRequest) {
         usdcSellPriceNgn: updatedSettings.usdcSellPriceNgn,
         usdtSellPriceNgn: updatedSettings.usdtSellPriceNgn,
         coingeckoAutoPublish: updatedSettings.coingeckoAutoPublish === true,
+        coingeckoAutoPublishSell: updatedSettings.coingeckoAutoPublishSell === true,
         updatedAt: updatedSettings.updatedAt.toISOString(),
         updatedBy: updatedSettings.updatedBy,
       },

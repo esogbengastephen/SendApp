@@ -21,8 +21,8 @@ const FLUTTERWAVE_USE_TEST_MODE = process.env.FLUTTERWAVE_USE_TEST_MODE !== unde
 // IMPORTANT: v4 API is NOT available in test/sandbox environment
 // - Test mode: Always use v3 API (even if v4 credentials are set)
 // - Production mode: Use v4 if credentials available AND not forced to v3, otherwise v3
-// Force v3 by setting FLUTTERWAVE_FORCE_V3=true (useful if v4 credentials are invalid)
-const FORCE_V3 = process.env.FLUTTERWAVE_FORCE_V3 === "true";
+// Force v3 only: set FLUTTERWAVE_FORCE_V3=true (uses FLUTTERWAVE_SECRET_KEY, ignores v4 credentials)
+const FORCE_V3 = process.env.FLUTTERWAVE_FORCE_V3 === "true" || process.env.FLUTTERWAVE_USE_V3 === "true";
 const USE_V4_API = !FLUTTERWAVE_USE_TEST_MODE && isV4Configured() && !FORCE_V3;
 
 // API Base URLs
@@ -470,9 +470,9 @@ export async function verifyBankAccount(accountNumber: string, bankCode: string)
     // Provide helpful error message for test mode limitations
     let userFriendlyError = errorMessage;
     if (FLUTTERWAVE_USE_TEST_MODE && bankCode !== "044") {
-      userFriendlyError = `Account verification in test mode only supports Access Bank (044). For other banks, please use production mode or contact support. Original error: ${errorMessage}`;
-    } else if (errorMessage.toLowerCase().includes("invalid") || errorMessage.toLowerCase().includes("not found")) {
-      userFriendlyError = `Invalid account number or bank code. Please verify the account number and selected bank are correct.`;
+      userFriendlyError = `Account verification in test/sandbox mode only supports Access Bank (044). Please select Access Bank and use a valid Access Bank test account number, or switch to production mode for other banks.`;
+    } else if (errorMessage.toLowerCase().includes("invalid") || errorMessage.toLowerCase().includes("not found") || errorMessage.toLowerCase().includes("incorrect")) {
+      userFriendlyError = `Account could not be verified. Check that the account number and bank (e.g. OPay) are correct. In test mode only Access Bank (044) is supported.`;
     }
     
     return {
@@ -488,14 +488,20 @@ export async function verifyBankAccount(accountNumber: string, bankCode: string)
     let errorMessage = "Failed to verify account";
     
     if (error.response?.data?.message) {
-      errorMessage = error.response.data.message;
+      const apiMsg = error.response.data.message;
+      if (FLUTTERWAVE_USE_TEST_MODE && bankCode !== "044") {
+        errorMessage = `Account verification in test/sandbox only supports Access Bank (044). Select Access Bank or use production. (${apiMsg})`;
+      } else if (/invalid account|invalid account number|not found/i.test(apiMsg)) {
+        errorMessage = "Account could not be verified. Check account number and bank. In test mode only Access Bank (044) works.";
+      } else {
+        errorMessage = apiMsg;
+      }
     } else if (error.response?.status === 401) {
       errorMessage = "Authentication failed. Please check your API credentials.";
     } else if (error.response?.status === 400) {
       const apiError = error.response.data?.message || "Invalid account number or bank code";
-      // Provide helpful context for test mode
       if (FLUTTERWAVE_USE_TEST_MODE && bankCode !== "044") {
-        errorMessage = `Account verification in test mode only supports Access Bank (044). For other banks, please use production mode. Original error: ${apiError}`;
+        errorMessage = `Account verification in test mode only supports Access Bank (044). For other banks use production. (${apiError})`;
       } else {
         errorMessage = apiError;
       }
