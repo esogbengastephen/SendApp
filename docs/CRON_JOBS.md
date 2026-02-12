@@ -35,14 +35,14 @@ Runs the same sweep + payout as process-payouts. Use either **process-payouts** 
 
 ---
 
-## 3. Cleanup: pending transactions
+## 3. Cleanup: pending transactions (smart)
 
 - **URL:** `https://YOUR_APP.vercel.app/api/admin/cleanup-pending`
 - **Method:** POST
 - **Schedule:** Daily (e.g. `0 0 * * *` = midnight UTC)
-- **Auth:** None required (optional: add `CRON_SECRET` later if you add checks to this route)
+- **Auth:** If `CRON_SECRET` is set, add header: `Authorization: Bearer <CRON_SECRET>`
 
-Deletes pending NGN→crypto transactions whose `expires_at` has passed (e.g. 1-hour expiry).
+For each pending transaction past `expires_at`: (1) If there is a payment reference, verifies with Flutterwave or Paystack that payment was received. (2) If payment was received, tries to distribute tokens (idempotent; no double spend). (3) If payment was not received or there is no reference, deletes the pending transaction. This recovers paid-but-undelivered orders when the webhook was missed.
 
 ---
 
