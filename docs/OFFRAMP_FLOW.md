@@ -138,7 +138,7 @@ flowchart LR
 - **Paymaster (required):** `COINBASE_BUNDLER_RPC_URL` — CDP Portal → Paymaster → Base mainnet endpoint. Add the **SEND token contract** (`NEXT_PUBLIC_SEND_TOKEN_ADDRESS` or default) to the Paymaster allowlist so the sweep UserOperation is sponsored.
 - **Sell rate:** In admin → platform settings, set **SEND sell rate** (1 SEND = X NGN). If not set, buy `exchangeRate` is used.
 - **Pool:** SEND is swept to the wallet from `OFFRAMP_POOL_PRIVATE_KEY` if set, else `LIQUIDITY_POOL_PRIVATE_KEY`.
-- **Cron:** Something must call `POST /api/offramp/process-payouts` every few minutes (e.g. 5). Optional: `OFFRAMP_CRON_SECRET`; `OFFRAMP_MIN_SEND_SWEEP` (default `0.01`).
+- **Cron:** Something must call `POST /api/offramp/process-payouts` (or `POST /api/offramp/monitor-wallets`, same logic) every few minutes (e.g. 5). Optional: `OFFRAMP_CRON_SECRET`; `OFFRAMP_MIN_SEND_SWEEP` (default `0.01`).
 
 ### Running the cron outside Vercel (Fly.io, Railway, or free cron services)
 
