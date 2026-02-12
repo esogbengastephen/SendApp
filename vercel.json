@@ -1,6 +1,1 @@
-{
-  "crons": [
-    { "path": "/api/admin/cleanup-pending", "schedule": "0 0 * * *" },
-    { "path": "/api/offramp/process-payouts", "schedule": "*/5 * * * *" }
-  ]
-}
+{}
