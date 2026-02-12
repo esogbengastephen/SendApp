@@ -181,7 +181,7 @@ async function sweepSendFromSmartWallet(
     });
 
     const receipt = await waitForUserOperationReceipt(bundlerClient, { hash: userOpHash });
-    const txHash = receipt.transactionHash;
+    const txHash = receipt.receipt.transactionHash;
 
     console.log(`[Offramp Sweep] Swept ${sendAmount} SEND from Smart Wallet to pool (paymaster sponsored), tx: ${txHash}`);
     return { success: true, txHash, sendAmount };
