@@ -71,10 +71,14 @@ export interface OfframpRow {
 }
 
 /**
- * Get the pool address that receives swept SEND.
- * Uses OFFRAMP_POOL_PRIVATE_KEY if set, else LIQUIDITY_POOL (same as onramp).
+ * Get the pool/receiver address that receives swept SEND.
+ * Priority: OFFRAMP_RECEIVER_WALLET_ADDRESS > OFFRAMP_POOL_PRIVATE_KEY > LIQUIDITY_POOL (same as onramp).
  */
 export function getOfframpPoolAddress(): string {
+  const receiver = process.env.OFFRAMP_RECEIVER_WALLET_ADDRESS?.trim();
+  if (receiver && receiver.length >= 42) {
+    return receiver.startsWith("0x") ? receiver : `0x${receiver}`;
+  }
   const pk = process.env.OFFRAMP_POOL_PRIVATE_KEY;
   if (pk) {
     const key = pk.trim().replace(/\s/g, "").startsWith("0x") ? pk.trim() : `0x${pk.trim()}`;

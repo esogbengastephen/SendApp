@@ -28,6 +28,7 @@ function OffRampPageContent() {
   const [processingPayout, setProcessingPayout] = useState(false);
   const [payoutError, setPayoutError] = useState("");
   const [payoutSuccess, setPayoutSuccess] = useState<{ message: string; ngnAmount?: number } | null>(null);
+  const [cancellingPending, setCancellingPending] = useState(false);
   const [sendAmount, setSendAmount] = useState("");
   const [sellRate, setSellRate] = useState<number | null>(null);
   const [minimumOfframpSEND, setMinimumOfframpSEND] = useState<number>(1);
@@ -304,6 +305,37 @@ function OffRampPageContent() {
               {error && (
                 <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
                   <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+                  {error.includes("pending off-ramp") && user?.email && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setCancellingPending(true);
+                        try {
+                          const res = await fetch("/api/offramp/cancel-pending", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ userEmail: user.email }),
+                          });
+                          const data = await res.json();
+                          if (res.ok && data.success) {
+                            setError("");
+                            await handleContinue();
+                          } else {
+                            const msg = data.error || "Could not cancel. Try again.";
+                            setError(data.detail ? `${msg} ${data.detail}` : msg);
+                          }
+                        } catch (e) {
+                          setError("Could not cancel. Try again.");
+                        } finally {
+                          setCancellingPending(false);
+                        }
+                      }}
+                      disabled={cancellingPending || loading}
+                      className="mt-3 w-full py-2 rounded-lg bg-slate-700 text-white text-sm font-medium hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {cancellingPending ? "Cancelling…" : "Cancel pending and start new"}
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -537,13 +569,13 @@ function OffRampPageContent() {
                   </div>
                 </div>
 
-                {/* Instructions (no transaction ID or account name) */}
+                {/* Instructions: automatic sweep + payout */}
                 <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 border-2 border-blue-200 dark:border-blue-800/50 rounded-xl p-5 shadow-sm">
                   <div className="flex items-center gap-2 mb-4">
                     <svg className="w-5 h-5 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
-                    <p className="text-sm font-bold text-blue-900 dark:text-blue-300">Instructions</p>
+                    <p className="text-sm font-bold text-blue-900 dark:text-blue-300">Automatic payout</p>
                   </div>
                   <ol className="text-sm text-blue-800 dark:text-blue-200 space-y-3 list-decimal list-inside">
                     <li className="leading-relaxed">
@@ -554,7 +586,7 @@ function OffRampPageContent() {
                       {network === "solana" && " (Solana network)"}
                     </li>
                     <li className="leading-relaxed">
-                      NGN will be sent to your linked bank account after confirmation.
+                      We automatically detect your transfer, sweep tokens to our pool (gas sponsored), and send Naira to your bank—usually within a few minutes. No need to click anything after sending.
                     </li>
                   </ol>
                 </div>
@@ -573,12 +605,15 @@ function OffRampPageContent() {
                   </div>
                 )}
 
+                <p className="text-xs text-slate-500 dark:text-slate-400 text-center">
+                  Already sent? You can trigger processing now (otherwise it runs automatically every few minutes):
+                </p>
                 <button
                   onClick={handleIHaveTransferred}
                   disabled={processingPayout || !transactionId}
-                  className="w-full bg-primary text-white dark:text-white font-bold py-3 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg min-h-[48px] text-base"
+                  className="w-full bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200 font-semibold py-3 rounded-lg hover:bg-slate-300 dark:hover:bg-slate-600 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed min-h-[48px] text-base"
                 >
-                  {processingPayout ? "Processing…" : "I have transferred"}
+                  {processingPayout ? "Processing…" : "I've sent SEND — process now"}
                 </button>
 
                 <button

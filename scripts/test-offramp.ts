@@ -10,8 +10,10 @@
  */
 
 import * as dotenv from "dotenv";
-import { resolve } from "path";
+import { resolve, dirname } from "path";
+import { fileURLToPath } from "url";
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: resolve(__dirname, "../.env.local") });
 
 const BASE = process.env.OFFRAMP_TEST_BASE_URL || "http://localhost:3000";

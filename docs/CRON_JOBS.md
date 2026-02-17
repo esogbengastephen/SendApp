@@ -20,7 +20,7 @@ Set the same secrets in cron-job.org when adding the `Authorization: Bearer <sec
 - **Schedule:** Every 5 minutes (e.g. `*/5 * * * *`)
 - **Auth:** If `OFFRAMP_CRON_SECRET` is set, add header: `Authorization: Bearer <OFFRAMP_CRON_SECRET>`
 
-Sweeps SEND from user deposit wallets to the pool and pays Naira via Flutterwave for pending off-ramps.
+**Automatic flow:** When a user sends SEND to their deposit address (Smart Wallet), this cron runs every 5 minutes, sweeps SEND to the admin off-ramp pool (gas sponsored by Paymaster), and sends Naira to the user’s bank via Flutterwave. No manual “I have transferred” needed—set up this cron so payouts happen automatically.
 
 ---
 

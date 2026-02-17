@@ -2,6 +2,8 @@
 
 This document explains how the **SEND → Naira** off-ramp works: user gets a **dedicated deposit address**, sends **SEND** there (no swap), and receives **Naira** in their bank account.
 
+**Automatic flow:** User sends SEND → cron runs every few minutes → SEND is swept to the admin pool (Paymaster sponsors gas) → Flutterwave sends Naira to the user’s bank. No user action after sending is required; the “I’ve sent SEND — process now” button is optional for users who don’t want to wait for the next cron run.
+
 ---
 
 ## Overview
@@ -135,10 +137,30 @@ flowchart LR
 
 ## Env / cron for sweep + payout
 
-- **Paymaster (required):** `COINBASE_BUNDLER_RPC_URL` — CDP Portal → Paymaster → Base mainnet endpoint. Add the **SEND token contract** (`NEXT_PUBLIC_SEND_TOKEN_ADDRESS` or default) to the Paymaster allowlist so the sweep UserOperation is sponsored.
+- **Paymaster (required):** `COINBASE_BUNDLER_RPC_URL` — CDP Portal → Paymaster → Base mainnet endpoint. Add the **SEND token contract** to the Paymaster allowlist (see below) so the sweep UserOperation is sponsored.
 - **Sell rate:** In admin → platform settings, set **SEND sell rate** (1 SEND = X NGN). If not set, buy `exchangeRate` is used.
-- **Pool:** SEND is swept to the wallet from `OFFRAMP_POOL_PRIVATE_KEY` if set, else `LIQUIDITY_POOL_PRIVATE_KEY`.
+- **Pool:** SEND is swept to: `OFFRAMP_RECEIVER_WALLET_ADDRESS` if set (exact address), else the wallet from `OFFRAMP_POOL_PRIVATE_KEY`, else `LIQUIDITY_POOL_PRIVATE_KEY`.
 - **Cron:** Something must call `POST /api/offramp/process-payouts` (or `POST /api/offramp/monitor-wallets`, same logic) every few minutes (e.g. 5). Optional: `OFFRAMP_CRON_SECRET`; `OFFRAMP_MIN_SEND_SWEEP` (default `0.01`).
+
+### Adding SEND token to the Paymaster allowlist
+
+The off-ramp sweep calls the SEND token’s `transfer(address,uint256)` so the Paymaster will only sponsor that call if the SEND contract and function are allowlisted.
+
+1. Open the [CDP Portal](https://portal.cdp.coinbase.com/) and sign in.
+2. Go to **Onchain Tools** → **[Bundler and Paymaster](https://portal.cdp.coinbase.com/products/bundler-and-paymaster)**.
+3. In the top-right, set the network to **Base Mainnet** (not Base Sepolia).
+4. Open the **Configuration** tab.
+5. Under the contract allowlist, click **Add** (or **Enable Paymaster** then add a contract).
+6. **Contract address:** Use your SEND token address.  
+   - If you use the app default: `0xEab49138BA2Ea6dd776220fE26b7b8E446638956`  
+   - If you set `NEXT_PUBLIC_SEND_TOKEN_ADDRESS` in env, use that value instead.
+7. **Function:** Add the ERC-20 transfer function so the Paymaster can sponsor the sweep:
+   - Function signature: `transfer(address,uint256)`  
+   (Some UIs ask for the full signature; use that exact string.)
+8. Save. Ensure Paymaster is **enabled** (toggle on).
+9. Copy your **Paymaster/Bundler endpoint URL** (Base Mainnet) and set it as `COINBASE_BUNDLER_RPC_URL` in your app env.
+
+If the function is not allowlisted, the Paymaster will reject the UserOperation and the sweep will fail with a policy/allowlist error.
 
 ### Running the cron outside Vercel (Fly.io, Railway, or free cron services)
 
