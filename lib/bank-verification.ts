@@ -62,7 +62,7 @@ export async function verifyBankAccount(
         console.log("[Bank Verification] Paystack resolved:", paystack.data.accountName);
         return { success: true, data: paystack.data, provider: "paystack" };
       }
-      console.log("[Bank Verification] Paystack fallback failed:", paystack.error);
+      console.log("[Bank Verification] Paystack fallback failed:", !paystack.success && "error" in paystack ? paystack.error : "unknown");
     }
     const err = addLiveHint(flw.error || nibssResult.error, (flw as any).isTestMode);
     return {
@@ -83,7 +83,7 @@ export async function verifyBankAccount(
       console.log("[Bank Verification] Paystack resolved:", paystack.data.accountName);
       return { success: true, data: paystack.data, provider: "paystack" };
     }
-    console.log("[Bank Verification] Paystack fallback failed:", paystack.error);
+    console.log("[Bank Verification] Paystack fallback failed:", !paystack.success && "error" in paystack ? paystack.error : "unknown");
   }
   const err = addLiveHint(flw.error || "Verification failed", (flw as any).isTestMode);
   return {
