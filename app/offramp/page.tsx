@@ -7,6 +7,11 @@ import BottomNavigation from "@/components/BottomNavigation";
 import { QRCodeSVG } from "qrcode.react";
 import { NIGERIAN_BANKS } from "@/lib/nigerian-banks";
 
+interface BankOption {
+  code: string;
+  name: string;
+}
+
 function OffRampPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -32,20 +37,22 @@ function OffRampPageContent() {
   const [sendAmount, setSendAmount] = useState("");
   const [sellRate, setSellRate] = useState<number | null>(null);
   const [minimumOfframpSEND, setMinimumOfframpSEND] = useState<number>(1);
+  const [banksList, setBanksList] = useState<BankOption[]>(NIGERIAN_BANKS);
+  const [loadingBanks, setLoadingBanks] = useState(false);
 
   const isSendFlow = networkType === "send";
   const sendAmountNum = parseFloat(sendAmount) || 0;
   const ngnAmount = sellRate != null && sellRate > 0 ? sendAmountNum * sellRate : 0;
   const meetsMinimumSell = sendAmountNum >= minimumOfframpSEND;
   const filteredBanks = bankSearchQuery.trim()
-    ? NIGERIAN_BANKS.filter(
+    ? banksList.filter(
         (b) =>
           b.name.toLowerCase().includes(bankSearchQuery.toLowerCase()) ||
           b.code.includes(bankSearchQuery)
       )
-    : NIGERIAN_BANKS;
+    : banksList;
   const selectedBankName = selectedBankCode
-    ? NIGERIAN_BANKS.find((b) => b.code === selectedBankCode)?.name ?? ""
+    ? banksList.find((b) => b.code === selectedBankCode)?.name ?? ""
     : "";
 
   useEffect(() => {
@@ -108,6 +115,20 @@ function OffRampPageContent() {
     return () => { cancelled = true; };
   }, []);
 
+  // Fetch bank list from Flutterwave so codes match API (verification + payout)
+  useEffect(() => {
+    setLoadingBanks(true);
+    fetch("/api/flutterwave/banks")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.success && Array.isArray(data?.data?.banks) && data.data.banks.length > 0) {
+          setBanksList(data.data.banks);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoadingBanks(false));
+  }, []);
+
   // Close bank dropdown on outside click
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -133,6 +154,7 @@ function OffRampPageContent() {
         body: JSON.stringify({
           accountNumber: accountNumber.trim().replace(/\D/g, "").slice(0, 10),
           bankCode: selectedBankCode,
+          bankName: selectedBankName || undefined,
         }),
       });
       const data = await res.json();
@@ -171,6 +193,7 @@ function OffRampPageContent() {
           body: JSON.stringify({
             accountNumber: accountNumber.trim().replace(/\D/g, "").slice(0, 10),
             bankCode: selectedBankCode,
+            bankName: selectedBankName || undefined,
             userEmail: user?.email,
             network: "base",
           }),
@@ -243,12 +266,16 @@ function OffRampPageContent() {
     setPayoutError("");
     setPayoutSuccess(null);
     setProcessingPayout(true);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 90_000); // 90s: sweep + Paymaster can be slow
     try {
       const res = await fetch("/api/offramp/trigger-payout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ transactionId, userEmail: user.email }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
       const data = await res.json();
       if (data.success) {
         setPayoutSuccess({
@@ -259,7 +286,12 @@ function OffRampPageContent() {
         setPayoutError(data.error || "Processing failed. Try again or wait for automatic payout.");
       }
     } catch (err: any) {
-      setPayoutError(err?.message || "Request failed. Try again.");
+      clearTimeout(timeoutId);
+      if (err?.name === "AbortError") {
+        setPayoutError("Request took too long. The sweep may still complete in the background—check your bank in a few minutes or try again.");
+      } else {
+        setPayoutError(err?.message || "Request failed. Try again.");
+      }
     } finally {
       setProcessingPayout(false);
     }

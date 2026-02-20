@@ -1,5 +1,21 @@
 # Testing the off-ramp (SEND → Naira)
 
+## Quick: Test Flutterwave transfer only (no sweep)
+
+To verify that **NGN payouts** work (Flutterwave keys and bank transfer):
+
+```bash
+# Default: ₦100 to 0218921864, GTBank (058)
+npx tsx scripts/test-flutterwave-transfer.ts
+
+# Custom: account number, bank code, amount (NGN)
+npx tsx scripts/test-flutterwave-transfer.ts 0218921864 058 500
+```
+
+Requires Flutterwave env in `.env.local`. Bank code examples: `058` = GTBank, `011` = First Bank, `035` = Wema.
+
+---
+
 ## Prerequisites
 
 1. **Dev server running:** `npm run dev` (default http://localhost:3000)
@@ -57,7 +73,7 @@ Expected: `success: true`, `accountName`, `depositAddress` (0x…), `transaction
 
 ## Test 2: Full flow (sweep + payout)
 
-1. **Create an off-ramp** (Test 1) and note the `depositAddress`.
+1. **Create an off-ramp** (Test 1) and note the `depositAddress` (e.g. `0x97F92d40b1201220E4BECf129c16661e457f6147`).
 2. **Send a small amount of SEND** (on Base) to that address from another wallet. Ensure balance ≥ `OFFRAMP_MIN_SEND_SWEEP` (default 0.01).
 3. **Trigger sweep + payout:**
    - **Cron:** Wait for the next run (every 5 minutes) of `POST /api/offramp/process-payouts`, or
@@ -66,7 +82,7 @@ Expected: `success: true`, `accountName`, `depositAddress` (0x…), `transaction
      (If you use `OFFRAMP_CRON_SECRET`, add `Authorization: Bearer <secret>` or the header you use.)
 4. **Check result:** The row in `offramp_transactions` should move to `status: completed`; Flutterwave sends NGN to the account you verified.
 
-**Note:** Sweep uses the Smart Wallet’s **owner** key. We fund the owner EOA with BASE for gas, then call `execute(SEND.transfer(pool, amount))` on the Smart Wallet. If that fails (e.g. wrong ABI), check logs and the Smart Wallet contract.
+**Note:** Sweep uses the Smart Wallet’s **owner** key and a **Paymaster-sponsored UserOperation** (gas paid by CDP Paymaster; no EOA funding). The Smart Wallet executes `SEND.transfer(pool, amount)`. If that fails (e.g. wrong ABI or SEND not on Paymaster allowlist), check logs and `COINBASE_BUNDLER_RPC_URL`.
 
 ---
 

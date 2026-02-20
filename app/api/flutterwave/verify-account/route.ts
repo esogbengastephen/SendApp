@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifyBankAccount } from "@/lib/flutterwave";
+import { verifyBankAccount } from "@/lib/bank-verification";
 import { isValidBankAccountNumber } from "@/lib/nigerian-banks";
 
 /**
  * Verify bank account number and get account holder name
  * POST /api/flutterwave/verify-account
- * Body: { accountNumber: string, bankCode: string }
+ * Body: { accountNumber: string, bankCode: string, bankName?: string }
+ * bankName (e.g. "OPay") helps Paystack fallback resolve when Flutterwave fails.
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { accountNumber, bankCode } = body;
+    const { accountNumber, bankCode, bankName } = body;
 
     if (!accountNumber || !bankCode) {
       return NextResponse.json(
@@ -27,20 +28,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Verify account with Flutterwave
-    console.log(`[Verify Account API] Verifying account ${accountNumber} with bank code ${bankCode}`);
-    const result = await verifyBankAccount(accountNumber, bankCode);
+    console.log(`[Verify Account API] Verifying account ${accountNumber} bank ${bankCode}${bankName ? ` (${bankName})` : ""}`);
+    const result = await verifyBankAccount(accountNumber, bankCode, { bankName: bankName || undefined });
     console.log(`[Verify Account API] Result:`, JSON.stringify(result, null, 2));
 
     if (!result.success) {
-      console.error(`[Verify Account API] Verification failed: ${result.error}`);
+      const rawError = result.error || "Account verification failed";
+      const isConnectionError = /could not connect|connect to your bank|temporarily unavailable|connection/i.test(rawError);
+      const error = isConnectionError
+        ? "Bank verification is temporarily unavailable. Please check your account number and bank, then try again."
+        : rawError;
+      console.error(`[Verify Account API] Verification failed: ${rawError}`);
       return NextResponse.json(
-        { 
-          success: false, 
-          error: result.error || "Account verification failed",
-          details: result.details,
-          isTestMode: result.isTestMode,
-        },
+        { success: false, error, details: result.details, isTestMode: result.isTestMode },
         { status: 400 }
       );
     }

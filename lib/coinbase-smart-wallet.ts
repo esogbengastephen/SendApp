@@ -12,6 +12,15 @@ export interface SmartWalletData {
   salt?: string;
 }
 
+/** Extract 0x address from DB value that may be "WalletAddress{ addressId: '0x...', ... }" or already 0x... */
+export function normalizeSmartWalletAddress(value: string | null | undefined): string | null {
+  if (value == null || value === "") return null;
+  const s = String(value).trim();
+  const match = s.match(/(0x[a-fA-F0-9]{40})/);
+  if (match) return match[1];
+  return s.startsWith("0x") && s.length === 42 ? s : null;
+}
+
 /**
  * Simple encryption helper for private keys
  * Uses userId as encryption key
@@ -205,13 +214,14 @@ export async function getOrCreateSmartWallet(
   existingEncryptedKey?: string,
   existingAddress?: string
 ): Promise<SmartWalletData> {
-  // If wallet exists, decrypt and return it
+  // If wallet exists, decrypt and return it (normalize address in case DB has WalletAddress object string)
   if (existingAddress && existingEncryptedKey) {
     try {
       const decryptedKey = await decryptPrivateKey(existingEncryptedKey, userId);
-      
+      const normalized = normalizeSmartWalletAddress(existingAddress) ?? existingAddress;
+
       return {
-        address: existingAddress,
+        address: normalized,
         ownerPrivateKey: decryptedKey,
         salt: `smart_wallet_${userId}`,
       };

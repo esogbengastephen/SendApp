@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { nanoid } from "nanoid";
-import { getOrCreateSmartWallet, encryptWalletPrivateKey } from "@/lib/coinbase-smart-wallet";
+import { getOrCreateSmartWallet, encryptWalletPrivateKey, normalizeSmartWalletAddress } from "@/lib/coinbase-smart-wallet";
 import { generateSolanaWalletForUser, encryptSolanaPrivateKey } from "@/lib/solana-wallet";
 import { getOfframpTransactionsEnabled } from "@/lib/settings";
 
@@ -74,8 +74,8 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (existingWallet?.smart_wallet_address) {
-        // Reuse existing smart wallet address (works for both BASE and SEND)
-        walletAddress = existingWallet.smart_wallet_address;
+        // Reuse existing smart wallet address (normalize in case DB has WalletAddress object string)
+        walletAddress = normalizeSmartWalletAddress(existingWallet.smart_wallet_address) ?? existingWallet.smart_wallet_address;
       } else {
         // Generate smart wallet
         const walletData = await getOrCreateSmartWallet(
@@ -154,21 +154,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Ensure walletAddress is properly formatted (extract clean address if needed)
-    let cleanWalletAddress = walletAddress;
-    if (typeof walletAddress === "string" && walletAddress.includes("addressId:")) {
-      // Extract address from WalletAddress{ addressId: '0x...', ... }
-      const match = walletAddress.match(/addressId:\s*['"](0x[a-fA-F0-9]{40})['"]/);
-      if (match) {
-        cleanWalletAddress = match[1];
-      } else {
-        // Try to extract any 0x address
-        const addressMatch = walletAddress.match(/(0x[a-fA-F0-9]{40})/);
-        if (addressMatch) {
-          cleanWalletAddress = addressMatch[1];
-        }
-      }
-    }
+    // Ensure walletAddress is properly formatted (extract 0x from WalletAddress{...} if needed)
+    const cleanWalletAddress = normalizeSmartWalletAddress(walletAddress) ?? walletAddress;
     
     // Validate wallet address format based on network
     if (network === "base") {

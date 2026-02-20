@@ -1,83 +1,39 @@
 import axios from "axios";
-import { getAccessToken, isV4Configured } from "./flutterwave-v4-token";
 
-// Flutterwave v4 API credentials (OAuth2)
-const FLW_CLIENT_ID = process.env.FLW_CLIENT_ID || process.env.FLUTTERWAVE_CLIENT_ID;
-const FLW_CLIENT_SECRET = process.env.FLW_CLIENT_SECRET || process.env.FLUTTERWAVE_CLIENT_SECRET;
-
-// Flutterwave v3 API credentials (legacy - for backward compatibility)
+// Flutterwave V3 API (this app uses V3 only for transfers and payouts)
 const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY;
 const FLUTTERWAVE_PUBLIC_KEY = process.env.NEXT_PUBLIC_FLUTTERWAVE_PUBLIC_KEY;
 
 const FLUTTERWAVE_WEBHOOK_SECRET_HASH = process.env.FLUTTERWAVE_WEBHOOK_SECRET_HASH;
 
-// If FLUTTERWAVE_USE_TEST_MODE is explicitly set, use that value
-// Otherwise, default to test mode in development, production mode otherwise
-const FLUTTERWAVE_USE_TEST_MODE = process.env.FLUTTERWAVE_USE_TEST_MODE !== undefined
-  ? process.env.FLUTTERWAVE_USE_TEST_MODE === "true"
-  : process.env.NODE_ENV === "development";
+// Use live (production) mode by default. Set FLUTTERWAVE_USE_TEST_MODE=true for sandbox only.
+const FLUTTERWAVE_USE_TEST_MODE = process.env.FLUTTERWAVE_USE_TEST_MODE === "true";
 
-// Determine which API version to use
-// IMPORTANT: v4 API is NOT available in test/sandbox environment
-// - Test mode: Always use v3 API (even if v4 credentials are set)
-// - Production mode: Use v4 if credentials available AND not forced to v3, otherwise v3
-// Force v3 only: set FLUTTERWAVE_FORCE_V3=true (uses FLUTTERWAVE_SECRET_KEY, ignores v4 credentials)
-const FORCE_V3 = process.env.FLUTTERWAVE_FORCE_V3 === "true" || process.env.FLUTTERWAVE_USE_V3 === "true";
-const USE_V4_API = !FLUTTERWAVE_USE_TEST_MODE && isV4Configured() && !FORCE_V3;
+// This app uses Flutterwave V3 only for transfers and payouts (V4 not used).
+const USE_V4_API = false;
 
-// API Base URLs
-// v4 API: https://f4bexperience.flutterwave.com/ (production) or https://developersandbox-api.flutterwave.com/ (test)
-// v3 API: https://api.flutterwave.com/v3 (production) or https://developersandbox-api.flutterwave.com/v3 (test)
-const FLUTTERWAVE_API_BASE = USE_V4_API
-  ? (FLUTTERWAVE_USE_TEST_MODE 
-      ? "https://developersandbox-api.flutterwave.com"
-      : "https://f4bexperience.flutterwave.com")
-  : (FLUTTERWAVE_USE_TEST_MODE 
-      ? "https://developersandbox-api.flutterwave.com/v3"
-      : "https://api.flutterwave.com/v3");
+// V3 API base URLs
+const FLUTTERWAVE_API_BASE = FLUTTERWAVE_USE_TEST_MODE
+  ? "https://developersandbox-api.flutterwave.com/v3"
+  : "https://api.flutterwave.com/v3";
 
-if (USE_V4_API) {
-  console.log(`[Flutterwave] Using v4 API (OAuth2) - PRODUCTION: ${FLUTTERWAVE_API_BASE}`);
-} else {
-  if (FLUTTERWAVE_USE_TEST_MODE) {
-    console.log(`[Flutterwave] Using v3 API (Bearer Token) - TEST/SANDBOX: ${FLUTTERWAVE_API_BASE}`);
-    if (isV4Configured()) {
-      console.log(`[Flutterwave] Note: v4 credentials detected but v4 API is not available in test mode. Using v3 API with test keys.`);
-    }
-  } else {
-    if (FORCE_V3) {
-      console.log(`[Flutterwave] Using v3 API (Bearer Token) - PRODUCTION (forced): ${FLUTTERWAVE_API_BASE}`);
-      if (isV4Configured()) {
-        console.log(`[Flutterwave] Note: v4 credentials detected but FLUTTERWAVE_FORCE_V3=true. Using v3 API with live keys.`);
-      }
-    } else {
-      if (!FLUTTERWAVE_SECRET_KEY && !isV4Configured()) {
-        console.warn("FLUTTERWAVE_SECRET_KEY is not set. For v3 API, set FLUTTERWAVE_SECRET_KEY. For v4 API, set FLW_CLIENT_ID and FLW_CLIENT_SECRET.");
-      }
-      console.log(`[Flutterwave] Using v3 API (Bearer Token) - PRODUCTION: ${FLUTTERWAVE_API_BASE}`);
-    }
-  }
+console.log(`[Flutterwave] Using v3 API (Bearer) - ${FLUTTERWAVE_USE_TEST_MODE ? "TEST" : "PRODUCTION"}: ${FLUTTERWAVE_API_BASE}`);
+if (!FLUTTERWAVE_SECRET_KEY) {
+  console.warn("[Flutterwave] Set FLUTTERWAVE_SECRET_KEY for transfers and account verification.");
 }
 
 /**
- * Get authentication header for Flutterwave API requests
- * v4 uses OAuth2 access token, v3 uses secret key
+ * Get authentication header for Flutterwave V3 API (Bearer secret key).
  */
 async function getAuthHeader(): Promise<string> {
-  if (USE_V4_API) {
-    const accessToken = await getAccessToken();
-    return `Bearer ${accessToken}`;
-  } else {
-    if (!FLUTTERWAVE_SECRET_KEY) {
-      throw new Error("Flutterwave credentials not configured. For v4, set FLW_CLIENT_ID and FLW_CLIENT_SECRET. For v3, set FLUTTERWAVE_SECRET_KEY.");
-    }
-    // Trim secret key to remove any whitespace
-    const secretKey = FLUTTERWAVE_SECRET_KEY.trim();
-    if (!secretKey) {
-      throw new Error("Flutterwave secret key is empty after trimming. Check for whitespace issues.");
-    }
-    return `Bearer ${secretKey}`;
+  if (!FLUTTERWAVE_SECRET_KEY) {
+    throw new Error("Flutterwave credentials not configured. Set FLUTTERWAVE_SECRET_KEY.");
   }
+  const secretKey = FLUTTERWAVE_SECRET_KEY.trim();
+  if (!secretKey) {
+    throw new Error("Flutterwave secret key is empty. Check for whitespace issues.");
+  }
+  return `Bearer ${secretKey}`;
 }
 
 /**
@@ -222,13 +178,8 @@ export async function createVirtualAccount(
       requestBody.amount = 1; // Minimum amount for dynamic accounts
     }
 
-    // v4 API uses different endpoint
-    const endpoint = USE_V4_API 
-      ? `${FLUTTERWAVE_API_BASE}/virtual-account-numbers`
-      : `${FLUTTERWAVE_API_BASE}/virtual-account-numbers`;
-
     const response = await axios.post(
-      endpoint,
+      `${FLUTTERWAVE_API_BASE}/virtual-account-numbers`,
       requestBody,
       {
         headers: {
@@ -283,52 +234,55 @@ export interface TransferParams {
 }
 
 /**
- * Create a Flutterwave transfer
+ * Create a Flutterwave transfer (NGN bank payout).
+ * v4: POST /direct-transfers (Flutterwave docs Step 3 — Initiate the Transfer)
+ *     Body: action, type, reference, payment_instruction (source_currency, amount, recipient.bank, destination_currency)
+ * v3: POST /transfers with account_bank, account_number, amount, etc.
  */
 export async function createTransfer(params: TransferParams) {
+  const reference = params.reference || `TX-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+  const amount = Math.round(Number(params.amount)) || 0;
+  const currency = params.currency || "NGN";
+
+  if (amount <= 0) {
+    return { success: false as const, error: "Invalid transfer amount" };
+  }
+
   try {
     const authHeader = await getAuthHeader();
 
-    // v4 API uses different endpoint and structure
-    const endpoint = USE_V4_API 
-      ? `${FLUTTERWAVE_API_BASE}/transfers`
-      : `${FLUTTERWAVE_API_BASE}/transfers`;
-
+    // V3: POST /transfers
     const response = await axios.post(
-      endpoint,
+      `${FLUTTERWAVE_API_BASE}/transfers`,
       {
         account_bank: params.accountBank,
-        account_number: params.accountNumber,
-        amount: params.amount,
-        currency: params.currency || "NGN",
+        account_number: String(params.accountNumber).replace(/\D/g, "").slice(0, 10),
+        amount,
+        currency,
         debit_currency: "NGN",
         narration: params.narration || "Transfer",
-        reference: params.reference || `TX-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        reference,
       },
       {
-        headers: {
-          Authorization: authHeader,
-          "Content-Type": "application/json",
-        },
+        headers: { Authorization: authHeader, "Content-Type": "application/json" },
+        timeout: 30000,
       }
     );
 
     if (response.data.status === "success") {
-      return {
-        success: true,
-        data: response.data.data,
-      };
+      return { success: true as const, data: response.data.data };
     }
 
     return {
-      success: false,
+      success: false as const,
       error: response.data.message || "Failed to create transfer",
     };
   } catch (error: any) {
-    console.error("Flutterwave transfer error:", error);
+    console.error("[Flutterwave Transfer] Error:", error.response?.data ?? error.message);
+    const errMsg = error.response?.data?.message ?? error.response?.data?.error?.message ?? "Failed to create transfer";
     return {
-      success: false,
-      error: error.response?.data?.message || "Failed to create transfer",
+      success: false as const,
+      error: errMsg,
       details: error.response?.data,
     };
   }
@@ -407,110 +361,133 @@ export function verifyWebhookSignature(
   return false;
 }
 
-/**
- * Verify bank account number and get account holder name
- * Uses Flutterwave's account resolution API
- */
-export async function verifyBankAccount(accountNumber: string, bankCode: string) {
+/** Cache Flutterwave bank list (code -> Flutterwave code) for resolve. */
+let fwBankCodeCache: Map<string, string> | null = null;
+let fwBankCodeCacheTime = 0;
+const FW_BANK_CACHE_MS = 60 * 60 * 1000;
+
+async function getFlutterwaveBankCodeForResolve(ourBankCode: string): Promise<string> {
+  if (fwBankCodeCache && Date.now() - fwBankCodeCacheTime < FW_BANK_CACHE_MS) {
+    return fwBankCodeCache.get(ourBankCode) ?? ourBankCode;
+  }
   try {
     const authHeader = await getAuthHeader();
-
-    console.log(`[Flutterwave Verify Account] Verifying account ${accountNumber} with bank ${bankCode}`);
-    console.log(`[Flutterwave Verify Account] API Base: ${FLUTTERWAVE_API_BASE}`);
-    console.log(`[Flutterwave Verify Account] API Version: ${USE_V4_API ? 'v4' : 'v3'}`);
-    console.log(`[Flutterwave Verify Account] Test Mode: ${FLUTTERWAVE_USE_TEST_MODE}`);
-
-    // v4 API uses different endpoint structure
-    const endpoint = USE_V4_API 
-      ? `${FLUTTERWAVE_API_BASE}/accounts/resolve`
-      : `${FLUTTERWAVE_API_BASE}/accounts/resolve`;
-
-    const response = await axios.post(
-      endpoint,
-      {
-        account_number: accountNumber,
-        account_bank: bankCode,
-      },
-      {
-        headers: {
-          Authorization: authHeader,
-          "Content-Type": "application/json",
-        },
+    const res = await axios.get(`${FLUTTERWAVE_API_BASE}/banks/NG`, {
+      headers: { Authorization: authHeader },
+      timeout: 10000,
+    });
+    if (res.data?.status === "success" && Array.isArray(res.data.data)) {
+      fwBankCodeCache = new Map();
+      for (const b of res.data.data) {
+        const fwCode = String(b.code ?? b.id ?? "").trim();
+        if (!fwCode) continue;
+        fwBankCodeCache.set(fwCode, fwCode);
+        const name = (b.name ?? "").toLowerCase();
+        if (name.includes("opay")) fwBankCodeCache.set("100022", fwCode);
+        if (name.includes("palmpay")) fwBankCodeCache.set("100023", fwCode);
+        if (name.includes("moniepoint")) fwBankCodeCache.set("100024", fwCode);
+        if (name.includes("kuda")) fwBankCodeCache.set("50211", fwCode);
       }
-    );
+      fwBankCodeCacheTime = Date.now();
+      return fwBankCodeCache.get(ourBankCode) ?? ourBankCode;
+    }
+  } catch (e) {
+    console.warn("[Flutterwave Verify Account] Could not fetch bank list:", (e as Error).message);
+  }
+  return ourBankCode;
+}
 
-    console.log(`[Flutterwave Verify Account] Response status: ${response.data.status}`);
-    console.log(`[Flutterwave Verify Account] Response data:`, JSON.stringify(response.data, null, 2));
+/**
+ * Verify bank account number and get account holder name.
+ * v4: POST /banks/account-resolve (Flutterwave docs Step 2)
+ *     Body: { account: { code, number }, currency: "NGN" } → data.account_name
+ * v3: POST /accounts/resolve or /banks/account-resolve with account_bank + account_number
+ */
+export async function verifyBankAccount(accountNumber: string, bankCode: string) {
+  const accountNumberClean = String(accountNumber).replace(/\D/g, "").slice(0, 10);
+  const bankCodeTrimmed = String(bankCode ?? "").trim();
+  if (accountNumberClean.length !== 10 || !bankCodeTrimmed) {
+    return {
+      success: false as const,
+      error: "Invalid account number or bank code",
+      isTestMode: FLUTTERWAVE_USE_TEST_MODE,
+    };
+  }
 
-    if (response.data.status === "success" && response.data.data) {
-      const accountName = response.data.data.account_name;
-      const accountNumberFromResponse = response.data.data.account_number;
-      
-      if (!accountName) {
-        console.warn("[Flutterwave Verify Account] Account name is missing in response");
-        return {
-          success: false,
-          error: "Account verified but name not available",
-          details: response.data,
-        };
+  try {
+    const authHeader = await getAuthHeader();
+    const accountBank = await getFlutterwaveBankCodeForResolve(bankCodeTrimmed);
+
+    console.log(`[Flutterwave Verify] account=${accountNumberClean} bank=${bankCodeTrimmed} (FW code=${accountBank}) base=${FLUTTERWAVE_API_BASE}`);
+
+    const requestConfig = {
+      headers: { Authorization: authHeader, "Content-Type": "application/json" },
+      timeout: 15000,
+    };
+
+    // V3: POST /accounts/resolve or /banks/account-resolve
+    const payload = { account_number: accountNumberClean, account_bank: accountBank };
+    let response: any;
+    try {
+      response = await axios.post(`${FLUTTERWAVE_API_BASE}/accounts/resolve`, payload, requestConfig);
+    } catch (firstErr: any) {
+      if (firstErr.response?.status === 404) {
+        response = await axios.post(`${FLUTTERWAVE_API_BASE}/banks/account-resolve`, payload, requestConfig);
+      } else {
+        throw firstErr;
       }
+    }
 
+    const data = response.data?.data;
+    const status = response.data?.status;
+    const accountName = data?.account_name;
+    const accountNumberFromResponse = data?.account_number;
+
+    if (status === "success" && accountName) {
+      console.log(`[Flutterwave Verify] Resolved: ${accountName}`);
       return {
-        success: true,
+        success: true as const,
         data: {
-          accountNumber: accountNumberFromResponse || accountNumber,
-          accountName: accountName,
+          accountNumber: accountNumberFromResponse || accountNumberClean,
+          accountName: String(accountName),
         },
       };
     }
 
-    const errorMessage = response.data.message || "Failed to verify account";
-    console.error(`[Flutterwave Verify Account] Verification failed: ${errorMessage}`);
-    
-    // Provide helpful error message for test mode limitations
-    let userFriendlyError = errorMessage;
-    if (FLUTTERWAVE_USE_TEST_MODE && bankCode !== "044") {
-      userFriendlyError = `Account verification in test/sandbox mode only supports Access Bank (044). Please select Access Bank and use a valid Access Bank test account number, or switch to production mode for other banks.`;
-    } else if (errorMessage.toLowerCase().includes("invalid") || errorMessage.toLowerCase().includes("not found") || errorMessage.toLowerCase().includes("incorrect")) {
-      userFriendlyError = `Account could not be verified. Check that the account number and bank (e.g. OPay) are correct. In test mode only Access Bank (044) is supported.`;
+    const errorMessage = response.data?.message || response.data?.error?.message || "Failed to verify account";
+    console.error(`[Flutterwave Verify] Failed: ${errorMessage}`);
+
+    let userFriendlyError = /invalid|not found|incorrect|could not/i.test(errorMessage)
+      ? "Account could not be verified. Check account number and bank (e.g. OPay, Palmpay, GTBank)."
+      : errorMessage;
+    if (FLUTTERWAVE_USE_TEST_MODE) {
+      userFriendlyError += " For live banks use FLUTTERWAVE_USE_TEST_MODE=false and live keys.";
     }
-    
+
     return {
-      success: false,
+      success: false as const,
       error: userFriendlyError,
       details: response.data,
       isTestMode: FLUTTERWAVE_USE_TEST_MODE,
     };
   } catch (error: any) {
-    console.error("[Flutterwave Verify Account] Error:", error);
-    console.error("[Flutterwave Verify Account] Error response:", error.response?.data);
-    
+    console.error("[Flutterwave Verify] Error:", error.response?.data ?? error.message);
+
     let errorMessage = "Failed to verify account";
-    
-    if (error.response?.data?.message) {
-      const apiMsg = error.response.data.message;
-      if (FLUTTERWAVE_USE_TEST_MODE && bankCode !== "044") {
-        errorMessage = `Account verification in test/sandbox only supports Access Bank (044). Select Access Bank or use production. (${apiMsg})`;
-      } else if (/invalid account|invalid account number|not found/i.test(apiMsg)) {
-        errorMessage = "Account could not be verified. Check account number and bank. In test mode only Access Bank (044) works.";
-      } else {
-        errorMessage = apiMsg;
-      }
+    const apiMsg = error.response?.data?.message ?? error.response?.data?.error?.message;
+    if (apiMsg) {
+      errorMessage = /invalid|not found|incorrect/i.test(apiMsg)
+        ? "Account could not be verified. Check account number and bank (e.g. OPay, Palmpay, GTBank)."
+        : apiMsg;
     } else if (error.response?.status === 401) {
-      errorMessage = "Authentication failed. Please check your API credentials.";
-    } else if (error.response?.status === 400) {
-      const apiError = error.response.data?.message || "Invalid account number or bank code";
-      if (FLUTTERWAVE_USE_TEST_MODE && bankCode !== "044") {
-        errorMessage = `Account verification in test mode only supports Access Bank (044). For other banks use production. (${apiError})`;
-      } else {
-        errorMessage = apiError;
-      }
-    } else if (error.message) {
-      errorMessage = error.message;
+      errorMessage = "Authentication failed. Check FLW_CLIENT_ID and FLW_CLIENT_SECRET (v4) or FLUTTERWAVE_SECRET_KEY (v3).";
     }
-    
+    if (FLUTTERWAVE_USE_TEST_MODE) {
+      errorMessage += " For live banks use FLUTTERWAVE_USE_TEST_MODE=false and live keys.";
+    }
+
     return {
-      success: false,
+      success: false as const,
       error: errorMessage,
       details: error.response?.data,
       isTestMode: FLUTTERWAVE_USE_TEST_MODE,
@@ -585,46 +562,16 @@ export interface PaymentLinkResponse {
 
 /**
  * Initialize Flutterwave payment (creates payment link/checkout)
- * Similar to Paystack's initializeTransaction but uses Flutterwave API
+ * V3: POST /payments
  */
-// v3 base URL and payments path (used when v4 auth fails and v3 secret is set)
-const FLUTTERWAVE_V3_BASE = FLUTTERWAVE_USE_TEST_MODE
-  ? "https://developersandbox-api.flutterwave.com/v3"
-  : "https://api.flutterwave.com/v3";
-
 export async function initializePayment(
   params: InitializePaymentParams
 ): Promise<{ success: boolean; data?: PaymentLinkResponse["data"]; error?: string }> {
   try {
-    // Get authentication header (v4 uses OAuth2 token, v3 uses secret key)
-    let authHeader: string;
-    let useV4 = USE_V4_API;
-    let apiBase = FLUTTERWAVE_API_BASE;
-
-    if (USE_V4_API) {
-      try {
-        const accessToken = await getAccessToken();
-        authHeader = `Bearer ${accessToken}`;
-      } catch (v4Err: any) {
-        const isInvalidCreds = /Invalid client credentials|invalid_client/i.test(v4Err?.message || "");
-        if (isInvalidCreds && FLUTTERWAVE_SECRET_KEY?.trim()) {
-          console.warn("[Flutterwave] v4 auth failed, falling back to v3:", v4Err?.message);
-          useV4 = false;
-          apiBase = FLUTTERWAVE_V3_BASE;
-          authHeader = `Bearer ${FLUTTERWAVE_SECRET_KEY.trim()}`;
-        } else {
-          throw v4Err;
-        }
-      }
-    } else {
-      if (!FLUTTERWAVE_SECRET_KEY) {
-        return {
-          success: false,
-          error: "Flutterwave credentials not configured",
-        };
-      }
-      authHeader = `Bearer ${FLUTTERWAVE_SECRET_KEY}`;
+    if (!FLUTTERWAVE_SECRET_KEY?.trim()) {
+      return { success: false, error: "Flutterwave credentials not configured. Set FLUTTERWAVE_SECRET_KEY." };
     }
+    const authHeader = `Bearer ${FLUTTERWAVE_SECRET_KEY.trim()}`;
 
     const requestBody: any = {
       tx_ref: params.txRef,
@@ -719,25 +666,11 @@ export async function initializePayment(
  */
 export async function verifyPayment(txRef: string) {
   try {
-    // Get authentication header (v4 uses OAuth2 token, v3 uses secret key)
-    let authHeader: string;
-    if (USE_V4_API) {
-      const accessToken = await getAccessToken();
-      authHeader = `Bearer ${accessToken}`;
-    } else {
-      if (!FLUTTERWAVE_SECRET_KEY) {
-        return {
-          success: false,
-          error: "Flutterwave credentials not configured",
-        };
-      }
-      authHeader = `Bearer ${FLUTTERWAVE_SECRET_KEY}`;
+    if (!FLUTTERWAVE_SECRET_KEY?.trim()) {
+      return { success: false, error: "Flutterwave credentials not configured. Set FLUTTERWAVE_SECRET_KEY." };
     }
-
-    // v4 API uses different endpoint structure
-    const endpoint = USE_V4_API 
-      ? `${FLUTTERWAVE_API_BASE}/charges/${txRef}`
-      : `${FLUTTERWAVE_API_BASE}/transactions/${txRef}/verify`;
+    const authHeader = `Bearer ${FLUTTERWAVE_SECRET_KEY.trim()}`;
+    const endpoint = `${FLUTTERWAVE_API_BASE}/transactions/${txRef}/verify`;
 
     const response = await axios.get(
       endpoint,
@@ -748,7 +681,6 @@ export async function verifyPayment(txRef: string) {
       }
     );
 
-    // v4 API might have different response structure
     const responseData = response.data;
     const isSuccess = responseData.status === "success" || 
                      responseData.status === "succeeded" ||

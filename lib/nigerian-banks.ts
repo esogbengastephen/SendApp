@@ -1,38 +1,22 @@
 /**
- * Nigerian Bank Codes for Flutterwave Transfers
+ * Nigerian Bank Codes for Flutterwave Transfers (V3)
  * Bank codes are used in the account_bank field when creating transfers
  */
 
 import axios from "axios";
-import { getAccessToken, isV4Configured } from "./flutterwave-v4-token";
 
 export interface NigerianBank {
   code: string;
   name: string;
 }
 
-// Flutterwave v4 API credentials (OAuth2)
-const FLW_CLIENT_ID = process.env.FLW_CLIENT_ID || process.env.FLUTTERWAVE_CLIENT_ID;
-const FLW_CLIENT_SECRET = process.env.FLW_CLIENT_SECRET || process.env.FLUTTERWAVE_CLIENT_SECRET;
-
-// Flutterwave v3 API credentials (legacy)
 const FLUTTERWAVE_SECRET_KEY = process.env.FLUTTERWAVE_SECRET_KEY;
+const FLUTTERWAVE_USE_TEST_MODE = process.env.FLUTTERWAVE_USE_TEST_MODE === "true";
 
-const FLUTTERWAVE_USE_TEST_MODE = process.env.FLUTTERWAVE_USE_TEST_MODE !== undefined
-  ? process.env.FLUTTERWAVE_USE_TEST_MODE === "true"
-  : process.env.NODE_ENV === "development";
-
-// Determine which API version to use
-const USE_V4_API = isV4Configured();
-
-// API Base URLs
-const FLUTTERWAVE_API_BASE = USE_V4_API
-  ? (FLUTTERWAVE_USE_TEST_MODE 
-      ? "https://developersandbox-api.flutterwave.com"
-      : "https://f4bexperience.flutterwave.com")
-  : (FLUTTERWAVE_USE_TEST_MODE 
-      ? "https://developersandbox-api.flutterwave.com/v3"
-      : "https://api.flutterwave.com/v3");
+// V3 API base URLs (this app uses Flutterwave V3 only)
+const FLUTTERWAVE_API_BASE = FLUTTERWAVE_USE_TEST_MODE
+  ? "https://developersandbox-api.flutterwave.com/v3"
+  : "https://api.flutterwave.com/v3";
 
 export const NIGERIAN_BANKS: NigerianBank[] = [
   // Traditional Commercial Banks
@@ -106,18 +90,11 @@ export const NIGERIAN_BANKS: NigerianBank[] = [
  */
 export async function fetchBanksFromFlutterwave(): Promise<NigerianBank[]> {
   try {
-    // Get authentication header (v4 uses OAuth2 token, v3 uses secret key)
-    let authHeader: string;
-    if (USE_V4_API) {
-      const accessToken = await getAccessToken();
-      authHeader = `Bearer ${accessToken}`;
-    } else {
-      if (!FLUTTERWAVE_SECRET_KEY) {
-        console.warn("[Nigerian Banks] Flutterwave credentials not configured, using static list");
-        return NIGERIAN_BANKS;
-      }
-      authHeader = `Bearer ${FLUTTERWAVE_SECRET_KEY}`;
+    if (!FLUTTERWAVE_SECRET_KEY?.trim()) {
+      console.warn("[Nigerian Banks] FLUTTERWAVE_SECRET_KEY not set, using static list");
+      return NIGERIAN_BANKS;
     }
+    const authHeader = `Bearer ${FLUTTERWAVE_SECRET_KEY.trim()}`;
 
     const response = await axios.get(
       `${FLUTTERWAVE_API_BASE}/banks/NG`,
@@ -129,26 +106,18 @@ export async function fetchBanksFromFlutterwave(): Promise<NigerianBank[]> {
     );
 
     if (response.data.status === "success" && response.data.data) {
-      // Flutterwave returns banks with code and name
+      // Use only Flutterwave's list so codes match exactly for resolve/transfers (e.g. OPay)
       const banks = response.data.data
-        .filter((bank: any) => bank.code && bank.name) // Filter out invalid entries
+        .filter((bank: any) => bank.code && bank.name)
         .map((bank: any) => ({
           code: String(bank.code || bank.id || ""),
-          name: bank.name,
+          name: String(bank.name ?? "").trim(),
         }))
-        .filter((bank: NigerianBank) => bank.code && bank.name); // Final filter
+        .filter((bank: NigerianBank) => bank.code && bank.name)
+        .sort((a: NigerianBank, b: NigerianBank) => a.name.localeCompare(b.name));
 
-      // Merge with static list, prioritizing API data (remove duplicates)
-      const apiBankCodes = new Set(banks.map((b: NigerianBank) => b.code));
-      const staticBanksNotInAPI = NIGERIAN_BANKS.filter(b => !apiBankCodes.has(b.code));
-      
-      // Combine and sort alphabetically
-      const allBanks = [...banks, ...staticBanksNotInAPI].sort((a, b) => 
-        a.name.localeCompare(b.name)
-      );
-      
-      console.log(`[Nigerian Banks] Fetched ${banks.length} banks from Flutterwave API, ${staticBanksNotInAPI.length} from static list`);
-      return allBanks;
+      console.log(`[Nigerian Banks] Fetched ${banks.length} banks from Flutterwave (used as single source for UI)`);
+      return banks;
     }
 
     return NIGERIAN_BANKS;

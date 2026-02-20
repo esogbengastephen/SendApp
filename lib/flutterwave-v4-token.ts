@@ -8,9 +8,7 @@ import axios from "axios";
 
 const FLW_CLIENT_ID = process.env.FLW_CLIENT_ID || process.env.FLUTTERWAVE_CLIENT_ID;
 const FLW_CLIENT_SECRET = process.env.FLW_CLIENT_SECRET || process.env.FLUTTERWAVE_CLIENT_SECRET;
-const FLUTTERWAVE_USE_TEST_MODE = process.env.FLUTTERWAVE_USE_TEST_MODE !== undefined
-  ? process.env.FLUTTERWAVE_USE_TEST_MODE === "true"
-  : process.env.NODE_ENV === "development";
+const FLUTTERWAVE_USE_TEST_MODE = process.env.FLUTTERWAVE_USE_TEST_MODE === "true";
 
 // Token cache
 interface TokenCache {

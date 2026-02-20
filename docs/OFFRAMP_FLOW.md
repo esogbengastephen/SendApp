@@ -9,8 +9,8 @@ This document explains how the **SEND → Naira** off-ramp works: user gets a **
 ## Overview
 
 - **Asset:** SEND only (on Base). No swap: we receive SEND and pay out Naira.
-- **Bank:** Flutterwave for **name verification** (account number + bank code → account name) and for **Naira transfer** (payout to user’s bank).
-- **Deposit:** The **same Coinbase Smart Wallet** the user uses for Base (receive/generate-address). One Smart Wallet per user; owner key stored in `users`. We **sweep** SEND from the Smart Wallet to the pool via a **Paymaster-sponsored UserOperation** (no EOA gas funding; requires `COINBASE_BUNDLER_RPC_URL` and SEND token on CDP Paymaster allowlist).
+- **Bank:** **Name verification** and **Naira transfer** (payout) both use **Flutterwave**.
+- **Deposit:** The **same Coinbase Smart Wallet** the user uses for Base (receive/generate-address). Example: `0x97F92d40b1201220E4BECf129c16661e457f6147`. One Smart Wallet per user; owner key stored in `users`. We **sweep** SEND from the Smart Wallet to the pool via a **Paymaster-sponsored UserOperation** (no EOA gas funding; requires `COINBASE_BUNDLER_RPC_URL` and SEND token on CDP Paymaster allowlist).
 
 ---
 
@@ -25,7 +25,7 @@ This document explains how the **SEND → Naira** off-ramp works: user gets a **
 | 5 | **Backend** | Inserts a row in `offramp_transactions` with: `deposit_address` = Smart Wallet address, `user_id`, no EOA key, `account_number`, `bank_code`, `account_name`, `status: "pending"`, etc. |
 | 6 | **App** | Shows user: **account name** (from verification), **deposit address** = Smart Wallet (with QR + copy). Message: “Send SEND to your Smart Wallet (same as your receive address); Naira will be sent after confirmation.” |
 | 7 | **User** | Sends **SEND** (on Base) to their Smart Wallet address. |
-| 8 | **System** | Cron calls `POST /api/offramp/process-payouts`. For each pending row: **sweeps** SEND from Smart Wallet to pool via **Paymaster-sponsored UserOperation** (gas paid by CDP Paymaster), then **Flutterwave transfer** (NGN = SEND × sell rate). User receives Naira in bank. |
+| 8 | **System** | Cron calls `POST /api/offramp/process-payouts`. For each pending row: **sweeps** SEND from Smart Wallet to pool via **Paymaster-sponsored UserOperation** (gas paid by CDP Paymaster), then **NGN transfer** via **Flutterwave**. User receives Naira in bank. |
 | 9 | **System** | DB updated: `status: completed`, `swap_tx_hash`, `token_amount`, `ngn_amount`, `paid_at`. |
 
 ---
@@ -114,10 +114,10 @@ flowchart LR
 
 ## Important details
 
-- **Deposit = Smart Wallet only:** One Coinbase Smart Wallet per user (same as Base receive). Address in `users.smart_wallet_address`, owner key in `users.smart_wallet_owner_encrypted`. Sweep: **Paymaster-sponsored UserOperation** — the Smart Wallet (deposit address) is the UserOp sender and executes SEND.transfer(pool, amount); gas is paid by CDP Paymaster (no EOA funding). Implemented in `lib/offramp-sweep-payout.ts` with viem `toCoinbaseSmartAccount` + `createBundlerClient` + `sendUserOperation(..., paymaster: true)`. Requires `COINBASE_BUNDLER_RPC_URL` and SEND token on CDP Paymaster allowlist. Only Smart Wallet deposits are processed; no EOA path. Only one pending off-ramp per user at a time.
+- **Deposit = Smart Wallet only:** One Coinbase Smart Wallet per user (same as Base receive). Example deposit address: `0x97F92d40b1201220E4BECf129c16661e457f6147`. Address in `users.smart_wallet_address`, owner key in `users.smart_wallet_owner_encrypted`. Sweep: **Paymaster-sponsored UserOperation** — the Smart Wallet (deposit address) is the UserOp sender and executes SEND.transfer(pool, amount); gas is paid by CDP Paymaster (no EOA funding). Implemented in `lib/offramp-sweep-payout.ts` with viem `toCoinbaseSmartAccount` + `createBundlerClient` + `sendUserOperation(..., paymaster: true)`. Requires `COINBASE_BUNDLER_RPC_URL` and SEND token on CDP Paymaster allowlist. Only Smart Wallet deposits are processed; no EOA path. Only one pending off-ramp per user at a time.
 - **No swap:** We do not swap SEND to anything else. The pool wallet receives SEND; Naira payout is funded by your own liquidity/treasury (SEND is effectively “sold” by you off-book or later).
-- **Flutterwave:** Used for (1) bank verification (name enquiry) and (2) Naira transfer (payout). No Moniepoint.
-- **Sweep + payout:** The logic that “on SEND received at deposit address → sweep to pool → Flutterwave transfer” is **implemented**; the diagram marks it as “to implement.” Rate: 1 SEND = `sendToNgnSell` NGN (platform settings), or `exchangeRate` if sell rate not set.
+- **Bank verification and Naira transfer (payout):** Flutterwave (name verification; NIBSS optional). Naira payout is always via **Flutterwave**.
+- **Sweep + payout:** The logic that “on SEND received at deposit address → sweep to pool → NGN transfer” is **implemented**. Rate: 1 SEND = `sendToNgnSell` NGN (platform settings), or `exchangeRate` if sell rate not set.
 
 ---
 
@@ -129,6 +129,7 @@ flowchart LR
 | Smart Wallet (get/create, decrypt owner) | `lib/coinbase-smart-wallet.ts` |
 | Sweep SEND to pool + Flutterwave payout | `lib/offramp-sweep-payout.ts` |
 | Cron/manual trigger for payouts | `POST /api/offramp/process-payouts` |
+| CDP webhook (instant deposit detection) | `POST /api/offramp/webhook` |
 | Flutterwave verify + transfer | `lib/flutterwave.ts`, `app/api/flutterwave/send-money/route.ts` |
 | Off-ramp UI | `app/offramp/page.tsx` |
 | DB schema (deposit columns) | `supabase/migrations/026_offramp_dedicated_deposit.sql` |
@@ -141,6 +142,8 @@ flowchart LR
 - **Sell rate:** In admin → platform settings, set **SEND sell rate** (1 SEND = X NGN). If not set, buy `exchangeRate` is used.
 - **Pool:** SEND is swept to: `OFFRAMP_RECEIVER_WALLET_ADDRESS` if set (exact address), else the wallet from `OFFRAMP_POOL_PRIVATE_KEY`, else `LIQUIDITY_POOL_PRIVATE_KEY`.
 - **Cron:** Something must call `POST /api/offramp/process-payouts` (or `POST /api/offramp/monitor-wallets`, same logic) every few minutes (e.g. 5). Optional: `OFFRAMP_CRON_SECRET`; `OFFRAMP_MIN_SEND_SWEEP` (default `0.01`).
+- **CDP webhook (optional, for instant payout):** Set `CDP_WEBHOOK_SECRET` (or `OFFRAMP_WEBHOOK_SECRET`) to the signing secret from CDP Portal → Webhooks. Register your webhook URL `https://your-domain.com/api/offramp/webhook` and subscribe to onchain activity (Base). When a deposit is detected, the webhook triggers the same sweep + payout immediately; cron remains as fallback.
+- **Flutterwave:** Configure Flutterwave for both bank verification and NGN payouts (no Zainpay/Zainbox in off-ramp).
 
 ### Adding SEND token to the Paymaster allowlist
 

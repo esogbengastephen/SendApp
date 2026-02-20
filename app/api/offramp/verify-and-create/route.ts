@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { nanoid } from "nanoid";
-import { verifyBankAccount } from "@/lib/flutterwave";
-import { getOrCreateSmartWallet, encryptWalletPrivateKey } from "@/lib/coinbase-smart-wallet";
+import { verifyBankAccount } from "@/lib/bank-verification";
+import { getOrCreateSmartWallet, encryptWalletPrivateKey, normalizeSmartWalletAddress } from "@/lib/coinbase-smart-wallet";
+import { getCDPSmartWalletAddress } from "@/lib/offramp-sweep-payout";
 import { getOfframpTransactionsEnabled } from "@/lib/settings";
 import { isValidBankAccountNumber, getBankByCode } from "@/lib/nigerian-banks";
 
@@ -30,11 +31,13 @@ export async function POST(request: NextRequest) {
     const {
       accountNumber,
       bankCode,
+      bankName: bodyBankName,
       userEmail,
       network = "base",
     } = body as {
       accountNumber?: string;
       bankCode?: string;
+      bankName?: string;
       userEmail?: string;
       network?: string;
     };
@@ -66,8 +69,8 @@ export async function POST(request: NextRequest) {
     const cleanedAccountNumber = accountNumber.replace(/\D/g, "").slice(0, 10);
     const bankCodeStr = String(bankCode ?? "").trim();
 
-    // 1) Verify bank account with Flutterwave
-    const verifyResult = await verifyBankAccount(cleanedAccountNumber, bankCodeStr);
+    // 1) Verify bank account (Flutterwave then Paystack fallback; bankName helps Paystack resolve OPay etc.)
+    const verifyResult = await verifyBankAccount(cleanedAccountNumber, bankCodeStr, { bankName: bodyBankName || undefined });
 
     if (!verifyResult.success || !verifyResult.data?.accountName) {
       const errorMessage =
@@ -75,7 +78,7 @@ export async function POST(request: NextRequest) {
           ? verifyResult.error
           : "Could not verify bank account. Check account number and bank.";
       console.error(
-        "[Off-ramp verify-and-create] Flutterwave verification failed:",
+        "[Off-ramp verify-and-create] Bank verification failed:",
         errorMessage,
         "account:",
         cleanedAccountNumber,
@@ -106,7 +109,7 @@ export async function POST(request: NextRequest) {
 
     const userId = userData.id;
     const bank = getBankByCode(String(bankCode).trim());
-    const bankName = bank?.name ?? null;
+    const resolvedBankName = bodyBankName ?? bank?.name ?? null;
 
     // 3) Enforce one pending off-ramp per user (dedicated wallet is per-user)
     const { data: pendingRow } = await supabaseAdmin
@@ -125,7 +128,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 4) Get or create user's Smart Wallet (same as Base / generate-address) — one address for receive and SEND off-ramp
+    // 4) Get or create user's owner key; use CDP Smart Wallet (factory 1.1, nonce 0) as off-ramp deposit address
     const { data: userRow } = await supabaseAdmin
       .from("users")
       .select("id, email, smart_wallet_address, smart_wallet_owner_encrypted")
@@ -146,19 +149,28 @@ export async function POST(request: NextRequest) {
       userRow.smart_wallet_address ?? undefined
     );
 
-    const depositAddress = walletData.address;
+    // Off-ramp uses CDP Smart Wallet address (viem factory 1.1, nonce 0) so sweep can deploy + sweep
+    const depositAddress = await getCDPSmartWalletAddress(walletData.ownerPrivateKey);
 
-    if (!userRow.smart_wallet_address || !userRow.smart_wallet_owner_encrypted) {
+    const needsWalletWrite =
+      !userRow.smart_wallet_address ||
+      !userRow.smart_wallet_owner_encrypted ||
+      normalizeSmartWalletAddress(userRow.smart_wallet_address) !== normalizeSmartWalletAddress(depositAddress);
+
+    if (needsWalletWrite) {
       const encryptedKey = await encryptWalletPrivateKey(walletData.ownerPrivateKey, userRow.id);
-      await supabaseAdmin
+      const { error: updateErr } = await supabaseAdmin
         .from("users")
         .update({
-          smart_wallet_address: walletData.address,
+          smart_wallet_address: depositAddress,
           smart_wallet_owner_encrypted: encryptedKey,
           smart_wallet_salt: walletData.salt,
           smart_wallet_created_at: new Date().toISOString(),
         })
         .eq("id", userId);
+      if (updateErr) {
+        console.error("[Off-ramp verify-and-create] Failed to save smart wallet to user:", updateErr.message);
+      }
     }
 
     // 5) Unique transaction ID
@@ -189,7 +201,7 @@ export async function POST(request: NextRequest) {
       account_number: cleanedAccountNumber,
       account_name: accountName ?? "",
       bank_code: bankCodeStr || null,
-      bank_name: bankName ?? null,
+      bank_name: resolvedBankName ?? null,
       user_account_number: cleanedAccountNumber,
       user_account_name: accountName ?? "",
       user_bank_code: bankCodeStr || null,
@@ -259,7 +271,7 @@ export async function POST(request: NextRequest) {
       depositAddress,
       transactionId,
       network: networkVal,
-      message: "Send SEND to your Smart Wallet (same as your receive address). Naira will be sent to your account after confirmation.",
+      message: "Send SEND to your CDP Smart Wallet address below. Naira will be sent to your account after confirmation.",
     });
   } catch (err: unknown) {
     console.error("[Off-ramp verify-and-create] Error:", err);

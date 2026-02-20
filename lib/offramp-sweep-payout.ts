@@ -1,18 +1,22 @@
 /**
- * Off-ramp sweep + payout: when SEND is received at a dedicated deposit address
- * (user's Smart Wallet, e.g. 0x97F92d40b1201220E4BECf129c16661e457f6147),
- * sweep it to the pool wallet and pay out NGN via Flutterwave.
+ * Off-ramp sweep + payout: when SEND is received at the user's Smart Wallet deposit address,
+ * sweep it to the pool wallet and pay out NGN via Flutterwave (bank transfer).
  * Uses Coinbase Paymaster to sponsor the sweep (no EOA gas funding).
  */
 
-import { createPublicClient, http, formatUnits, encodeFunctionData } from "viem";
+import { createPublicClient, http, formatUnits, encodeFunctionData, pad } from "viem";
 import { base } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
-import { createBundlerClient, toCoinbaseSmartAccount, waitForUserOperationReceipt } from "viem/account-abstraction";
+import {
+  createBundlerClient,
+  estimateUserOperationGas,
+  toCoinbaseSmartAccount,
+  waitForUserOperationReceipt,
+} from "viem/account-abstraction";
 import { BASE_RPC_URL, SEND_TOKEN_ADDRESS } from "./constants";
 import { getPublicClient, getLiquidityPoolAddress, getTokenBalance, normalizeBaseAddress } from "./blockchain";
-import { decryptWalletPrivateKey } from "./coinbase-smart-wallet";
-import { createTransfer } from "./flutterwave";
+import { decryptWalletPrivateKey, normalizeSmartWalletAddress } from "./coinbase-smart-wallet";
+import { createTransfer as createTransferFlutterwave, getAccountBalance as getAccountBalanceFlutterwave } from "./flutterwave";
 import { getSettings, getMinimumPurchase } from "./settings";
 import { supabaseAdmin } from "./supabase";
 
@@ -45,6 +49,21 @@ const ERC20_ABI = [
 
 /** Minimum SEND balance to trigger sweep (avoid dust and fee issues) */
 const MIN_SEND_SWEEP = parseFloat(process.env.OFFRAMP_MIN_SEND_SWEEP || "0.01");
+
+/** Coinbase Smart Wallet factory 1.1 (Base) — for resolving nonce when account is counterfactual */
+const COINBASE_FACTORY_1_1 = "0xba5ed110efdba3d005bfc882d75358acbbb85842" as const;
+const FACTORY_GET_ADDRESS_ABI = [
+  {
+    inputs: [
+      { name: "owners", type: "bytes[]" },
+      { name: "nonce", type: "uint256" },
+    ],
+    name: "getAddress",
+    outputs: [{ name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
+] as const;
 
 /** CDP Paymaster/Bundler RPC URL for Base mainnet (from CDP Portal → Paymaster). Required for sponsored sweep. */
 function getBundlerRpcUrl(): string {
@@ -89,6 +108,28 @@ export function getOfframpPoolAddress(): string {
 }
 
 /**
+ * Compute the CDP Smart Wallet (Coinbase factory 1.1, nonce 0) address for an owner key.
+ * Use this as the off-ramp deposit address so sweep uses the same factory/nonce and can deploy + sweep.
+ */
+export async function getCDPSmartWalletAddress(ownerPrivateKeyHex: string): Promise<string> {
+  const raw = ownerPrivateKeyHex.trim().replace(/^0x/, "");
+  const key = (`0x${raw}`) as `0x${string}`;
+  const ownerAccount = privateKeyToAccount(key);
+  const publicClient = createPublicClient({
+    chain: base,
+    transport: http(BASE_RPC_URL, { retryCount: 2 }),
+  });
+  const ownersBytes = [pad(ownerAccount.address as `0x${string}`, { size: 32 })];
+  const address = await publicClient.readContract({
+    address: COINBASE_FACTORY_1_1 as `0x${string}`,
+    abi: FACTORY_GET_ADDRESS_ABI,
+    functionName: "getAddress",
+    args: [ownersBytes, BigInt(0)],
+  });
+  return address;
+}
+
+/**
  * SEND → NGN sell rate (1 SEND = X NGN). Uses sendToNgnSell if set, else buy exchangeRate.
  */
 export async function getSendToNgnSellRate(): Promise<number> {
@@ -100,6 +141,22 @@ export async function getSendToNgnSellRate(): Promise<number> {
   return rate;
 }
 
+export type SweepResult = { success: boolean; txHash?: string; sendAmount?: string; error?: string };
+
+/**
+ * Sweep SEND from a Smart Wallet to pool using an explicit owner private key (hex).
+ * For testing when the wallet is not yet linked to a user in DB. Paymaster-sponsored.
+ */
+export async function sweepSendFromSmartWalletWithKey(
+  smartWalletAddress: string,
+  ownerPrivateKeyHex: string,
+  poolAddress: string
+): Promise<SweepResult> {
+  const raw = ownerPrivateKeyHex.trim().replace(/^0x/, "");
+  const key = (`0x${raw}`) as `0x${string}`;
+  return doSweep(smartWalletAddress, key, poolAddress);
+}
+
 /**
  * Sweep SEND from user's Smart Wallet (deposit address) to pool via Paymaster-sponsored UserOperation.
  * No EOA gas funding: the sweep is executed by the Smart Wallet as the UserOp sender, with gas paid by CDP Paymaster.
@@ -108,22 +165,29 @@ async function sweepSendFromSmartWallet(
   userId: string,
   smartWalletAddress: string,
   poolAddress: string
-): Promise<{ success: boolean; txHash?: string; sendAmount?: string; error?: string }> {
+): Promise<SweepResult> {
+  const { data: user } = await supabaseAdmin
+    .from("users")
+    .select("smart_wallet_owner_encrypted")
+    .eq("id", userId)
+    .single();
+
+  if (!user?.smart_wallet_owner_encrypted) {
+    return { success: false, error: "Smart wallet owner key not found for user" };
+  }
+
+  const ownerPrivateKey = await decryptWalletPrivateKey(user.smart_wallet_owner_encrypted, userId);
+  return doSweep(smartWalletAddress, ownerPrivateKey as `0x${string}`, poolAddress);
+}
+
+async function doSweep(
+  smartWalletAddress: string,
+  ownerPrivateKey: `0x${string}`,
+  poolAddress: string
+): Promise<SweepResult> {
   try {
     const bundlerRpcUrl = getBundlerRpcUrl();
-
-    const { data: user } = await supabaseAdmin
-      .from("users")
-      .select("smart_wallet_owner_encrypted")
-      .eq("id", userId)
-      .single();
-
-    if (!user?.smart_wallet_owner_encrypted) {
-      return { success: false, error: "Smart wallet owner key not found for user" };
-    }
-
-    const ownerPrivateKey = await decryptWalletPrivateKey(user.smart_wallet_owner_encrypted, userId);
-    const ownerAccount = privateKeyToAccount(ownerPrivateKey as `0x${string}`);
+    const ownerAccount = privateKeyToAccount(ownerPrivateKey);
 
     const publicClient = createPublicClient({
       chain: base,
@@ -154,12 +218,53 @@ async function sweepSendFromSmartWallet(
       args: [poolAddress as `0x${string}`, balanceWei],
     });
 
-    // Coinbase Smart Account (same address as deposit_address so we sweep from the correct wallet)
+    // Is the Smart Wallet already deployed? (AA20 = "account not deployed" if we send initCode: '0x' on counterfactual)
+    const code = await publicClient.getCode({ address: smartWalletAddress as `0x${string}` });
+    const isDeployed = code !== undefined && code !== "0x" && code.length > 2;
+
+    // If counterfactual, find nonce so factory.getAddress(owners, nonce) === smartWalletAddress. Try 0 first (CDP off-ramp uses nonce 0).
+    let accountNonce: bigint | undefined;
+    if (!isDeployed) {
+      const ownersBytes = [pad(ownerAccount.address as `0x${string}`, { size: 32 })];
+      const target = smartWalletAddress.toLowerCase();
+      let computed = await publicClient.readContract({
+        address: COINBASE_FACTORY_1_1 as `0x${string}`,
+        abi: FACTORY_GET_ADDRESS_ABI,
+        functionName: "getAddress",
+        args: [ownersBytes, BigInt(0)],
+      });
+      if (computed?.toLowerCase() === target) {
+        accountNonce = BigInt(0);
+      } else {
+        for (let n = 1; n < 20; n++) {
+          computed = await publicClient.readContract({
+            address: COINBASE_FACTORY_1_1 as `0x${string}`,
+            abi: FACTORY_GET_ADDRESS_ABI,
+            functionName: "getAddress",
+            args: [ownersBytes, BigInt(n)],
+          });
+          if (computed?.toLowerCase() === target) {
+            accountNonce = BigInt(n);
+            break;
+          }
+        }
+      }
+      if (accountNonce === undefined) {
+        return {
+          success: false,
+          error:
+            "Smart Account address not found for this owner (wrong factory/nonce). Deposit address may not be a Coinbase Smart Wallet.",
+        };
+      }
+    }
+
+    // Coinbase Smart Account; when counterfactual use resolved nonce so initCode deploys to this address
     const account = await toCoinbaseSmartAccount({
       client: publicClient,
       owners: [ownerAccount],
       version: "1.1",
       address: smartWalletAddress as `0x${string}`,
+      ...(accountNonce !== undefined ? { nonce: accountNonce } : {}),
     });
 
     const bundlerClient = createBundlerClient({
@@ -169,7 +274,6 @@ async function sweepSendFromSmartWallet(
       paymaster: true,
     });
 
-    // Single call: Smart Wallet executes SEND.transfer(pool, amount)
     const calls = [
       {
         to: SEND_TOKEN_ADDRESS as `0x${string}`,
@@ -178,10 +282,23 @@ async function sweepSendFromSmartWallet(
       },
     ] as const;
 
+    // Estimate gas with no-op paymaster stub so CDP stub later gets non-zero gas (avoids "no valid calls").
+    const estimatedGas = await estimateUserOperationGas(bundlerClient, {
+      account,
+      calls,
+      ...(isDeployed ? { initCode: "0x" as const } : {}),
+      paymaster: {
+        getPaymasterStubData: async () => ({ paymasterAndData: "0x" as const }),
+      },
+    });
     const userOpHash = await bundlerClient.sendUserOperation({
       account,
       calls,
       paymaster: true,
+      ...(isDeployed ? { initCode: "0x" as const } : {}),
+      callGasLimit: estimatedGas.callGasLimit,
+      preVerificationGas: estimatedGas.preVerificationGas,
+      verificationGasLimit: estimatedGas.verificationGasLimit,
     });
 
     const receipt = await waitForUserOperationReceipt(bundlerClient, { hash: userOpHash });
@@ -220,9 +337,10 @@ export async function processOneOfframpPayout(row: OfframpRow): Promise<{
     return { success: false, error: "Missing account_number or bank_code" };
   }
 
+  const depositAddressNormalized = normalizeSmartWalletAddress(deposit_address) ?? deposit_address;
   let depositAddressHex: string;
   try {
-    depositAddressHex = normalizeBaseAddress(deposit_address);
+    depositAddressHex = normalizeBaseAddress(depositAddressNormalized);
   } catch (e) {
     const err = e instanceof Error ? e.message : String(e);
     return { success: false, error: `Invalid deposit address: ${err}` };
@@ -276,9 +394,38 @@ export async function processOneOfframpPayout(row: OfframpRow): Promise<{
     };
   }
 
-  // 3) Flutterwave transfer
+  // 2.5) NGN float check — never initiate transfer if platform balance is insufficient (Flutterwave)
+  let ngnBalance = 0;
+  try {
+    const balanceResult = await getAccountBalanceFlutterwave();
+    if (balanceResult.success && balanceResult.data) {
+      const data = balanceResult.data as { available_balance?: number; balance?: number };
+      ngnBalance = Number(data.available_balance ?? data.balance ?? 0) || 0;
+    }
+  } catch (e) {
+    console.warn("[Offramp Payout] Could not fetch Flutterwave balance:", (e as Error).message);
+  }
+  if (ngnBalance > 0 && ngnAmount > ngnBalance) {
+    await supabaseAdmin
+      .from("offramp_transactions")
+      .update({
+        status: "failed",
+        error_message: `Insufficient float balance. Need ₦${ngnAmount}, available ₦${ngnBalance}. Top up Flutterwave NGN balance.`,
+        swap_tx_hash: sweepResult.txHash,
+        token_amount: sendAmount,
+        ngn_amount: ngnAmount,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("transaction_id", transaction_id);
+    return {
+      success: false,
+      error: "Insufficient platform NGN balance. Payout paused until float is topped up.",
+    };
+  }
+
+  // 3) NGN transfer via Flutterwave
   const reference = `OFFRAMP-${transaction_id}-${Date.now()}`;
-  const transferResult = await createTransfer({
+  const transferResult = await createTransferFlutterwave({
     accountBank: bank_code,
     accountNumber: account_number.replace(/\D/g, "").slice(0, 10),
     amount: ngnAmount,
@@ -302,16 +449,15 @@ export async function processOneOfframpPayout(row: OfframpRow): Promise<{
     return { success: false, error: transferResult.error };
   }
 
-  // 4) Mark completed
+  // 4) Mark as payment_sent — webhook (transfer.completed / transfer.failed) will set completed or failed
   const { error: updateErr } = await supabaseAdmin
     .from("offramp_transactions")
     .update({
-      status: "completed",
+      status: "payment_sent",
       swap_tx_hash: sweepResult.txHash,
       token_amount: sendAmount,
       ngn_amount: ngnAmount,
       payment_reference: reference,
-      paid_at: new Date().toISOString(),
       token_received_at: new Date().toISOString(),
       error_message: null,
       updated_at: new Date().toISOString(),
@@ -322,7 +468,7 @@ export async function processOneOfframpPayout(row: OfframpRow): Promise<{
     console.error("[Offramp Payout] DB update error:", updateErr);
     return {
       success: false,
-      error: `Payout sent but DB update failed: ${updateErr.message}`,
+      error: `Transfer initiated but DB update failed: ${updateErr.message}`,
       transactionId: transaction_id,
       sendAmount,
       ngnAmount,
@@ -330,7 +476,7 @@ export async function processOneOfframpPayout(row: OfframpRow): Promise<{
     };
   }
 
-  console.log(`[Offramp Payout] Completed ${transaction_id}: ${sendAmount} SEND → ₦${ngnAmount}`);
+  console.log(`[Offramp Payout] Transfer initiated ${transaction_id}: ${sendAmount} SEND → ₦${ngnAmount} (ref=${reference}); waiting for webhook to confirm.`);
   return {
     success: true,
     transactionId: transaction_id,

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
-import { getOrCreateSmartWallet, encryptWalletPrivateKey } from "@/lib/coinbase-smart-wallet";
+import { getOrCreateSmartWallet, encryptWalletPrivateKey, normalizeSmartWalletAddress } from "@/lib/coinbase-smart-wallet";
 import { generateSolanaWalletForUser, encryptSolanaPrivateKey } from "@/lib/solana-wallet";
 
 export async function POST(request: NextRequest) {
@@ -23,9 +23,10 @@ export async function POST(request: NextRequest) {
         .single();
 
       if (userData?.smart_wallet_address) {
+        const normalized = normalizeSmartWalletAddress(userData.smart_wallet_address) ?? userData.smart_wallet_address;
         return NextResponse.json({
           success: true,
-          walletAddress: userData.smart_wallet_address,
+          walletAddress: normalized,
           message: "Smart wallet already exists",
         });
       }
@@ -45,10 +46,11 @@ export async function POST(request: NextRequest) {
       );
 
       // Store in database
+      const addressToStore = normalizeSmartWalletAddress(walletData.address) ?? walletData.address;
       const { error: updateError } = await supabaseAdmin
         .from("users")
         .update({
-          smart_wallet_address: walletData.address,
+          smart_wallet_address: addressToStore,
           smart_wallet_owner_encrypted: encryptedKey,
           smart_wallet_salt: walletData.salt,
           smart_wallet_created_at: new Date().toISOString(),
@@ -65,7 +67,7 @@ export async function POST(request: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        walletAddress: walletData.address,
+        walletAddress: addressToStore,
       });
     } else if (network === "solana") {
       // Check if user already has Solana wallet

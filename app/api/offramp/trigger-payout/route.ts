@@ -50,7 +50,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (row.status !== "pending") {
+    // Allow processing for pending or failed (retry). Reject completed/payment_sent.
+    const allowedStatuses = ["pending", "failed"];
+    if (!allowedStatuses.includes(row.status)) {
       return NextResponse.json(
         {
           success: false,
@@ -58,6 +60,15 @@ export async function POST(request: NextRequest) {
         },
         { status: 400 }
       );
+    }
+
+    // Optional: reset to pending when retrying so UI and downstream see a fresh attempt
+    if (row.status === "failed") {
+      await supabaseAdmin
+        .from("offramp_transactions")
+        .update({ status: "pending", error_message: null, updated_at: new Date().toISOString() })
+        .eq("transaction_id", row.transaction_id)
+        .eq("user_id", userId);
     }
 
     const result = await processOneOfframpPayout(row as OfframpRow);

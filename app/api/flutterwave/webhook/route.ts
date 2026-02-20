@@ -645,14 +645,42 @@ export async function POST(request: NextRequest) {
       const accountNumber = transferData.account_number;
       const status = transferData.status;
 
-      console.log(`[Flutterwave Webhook] Transfer completed: ${reference} - ₦${amount}`);
+      console.log(`[Flutterwave Webhook] Transfer completed: ${reference} - ₦${amount} - status=${status}`);
 
-      // Find transaction by reference (from send-money)
+      // 1) Off-ramp: mark sell order as PAID when Flutterwave confirms transfer
+      const { data: offrampRow } = await supabaseAdmin
+        .from("offramp_transactions")
+        .select("id, transaction_id, status")
+        .eq("payment_reference", reference)
+        .eq("status", "payment_sent")
+        .maybeSingle();
+
+      if (offrampRow && (status === "SUCCESSFUL" || status === "successful" || status === "success")) {
+        await supabaseAdmin
+          .from("offramp_transactions")
+          .update({
+            status: "completed",
+            paid_at: new Date().toISOString(),
+            completed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", offrampRow.id);
+        console.log(`[Flutterwave Webhook] ✅ Off-ramp marked PAID: ${offrampRow.transaction_id}`);
+        return NextResponse.json({
+          success: true,
+          message: "Off-ramp transfer completed",
+          data: { transferId, reference, amount, offrampTransactionId: offrampRow.transaction_id },
+        });
+      }
+      if (offrampRow && status !== "SUCCESSFUL" && status !== "successful" && status !== "success") {
+        console.log(`[Flutterwave Webhook] Off-ramp transfer not successful (status=${status}), not marking completed`);
+      }
+
+      // 2) Find transaction by reference (from send-money / user-to-user)
       const { data: transaction, error: txError } = await supabaseAdmin
         .from("transactions")
         .select("id, transaction_id, user_id, ngn_amount, status, metadata")
-        .eq("payment_reference", reference) // Updated to use payment_reference
-        .or("metadata->>reference.eq." + reference)
+        .eq("payment_reference", reference)
         .maybeSingle();
 
       if (transaction && transaction.status === "pending") {
@@ -696,22 +724,46 @@ export async function POST(request: NextRequest) {
     }
 
     // Handle transfer failed
-    if (event.event === "transfer.failed" || event.event === "transfer.failed") {
+    if (event.event === "transfer.failed") {
       const transferData = event.data;
       const transferId = transferData.id;
       const reference = transferData.reference;
       const amount = parseFloat(transferData.amount || "0");
       const accountNumber = transferData.account_number;
-      const errorMessage = transferData.complete_message || transferData.narration || "Transfer failed";
+      const errorMessage = transferData.complete_message || transferData.narration || transferData.reason || "Transfer failed";
 
-      console.log(`[Flutterwave Webhook] Transfer failed: ${reference} - ₦${amount}`);
+      console.log(`[Flutterwave Webhook] Transfer failed: ${reference} - ₦${amount} - ${errorMessage}`);
 
-      // Find transaction by reference
+      // 1) Off-ramp: mark as failed so support can retry or user can create new order
+      const { data: offrampRow } = await supabaseAdmin
+        .from("offramp_transactions")
+        .select("id, transaction_id, status")
+        .eq("payment_reference", reference)
+        .eq("status", "payment_sent")
+        .maybeSingle();
+
+      if (offrampRow) {
+        await supabaseAdmin
+          .from("offramp_transactions")
+          .update({
+            status: "failed",
+            error_message: errorMessage,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", offrampRow.id);
+        console.log(`[Flutterwave Webhook] ✅ Off-ramp marked FAILED: ${offrampRow.transaction_id}`);
+        return NextResponse.json({
+          success: true,
+          message: "Off-ramp transfer failed recorded",
+          data: { transferId, reference, amount, offrampTransactionId: offrampRow.transaction_id },
+        });
+      }
+
+      // 2) Find transaction by reference (send-money)
       const { data: transaction, error: txError } = await supabaseAdmin
         .from("transactions")
         .select("id, transaction_id, user_id, ngn_amount, status, metadata")
-        .eq("payment_reference", reference) // Updated to use payment_reference
-        .or("metadata->>reference.eq." + reference)
+        .eq("payment_reference", reference)
         .maybeSingle();
 
       if (transaction) {
