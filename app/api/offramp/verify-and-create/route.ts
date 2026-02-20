@@ -74,7 +74,7 @@ export async function POST(request: NextRequest) {
 
     if (!verifyResult.success || !verifyResult.data?.accountName) {
       const errorMessage =
-        (verifyResult.error && verifyResult.error.trim() !== "")
+        !verifyResult.success && "error" in verifyResult && typeof verifyResult.error === "string" && verifyResult.error.trim() !== ""
           ? verifyResult.error
           : "Could not verify bank account. Check account number and bank.";
       console.error(
