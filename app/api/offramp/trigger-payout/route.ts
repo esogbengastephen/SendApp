@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 import { processOneOfframpPayout, type OfframpRow } from "@/lib/offramp-sweep-payout";
 
+/** Allow up to 5 min for sweep + Paymaster + Flutterwave (Vercel Pro supports up to 300s). Stops "request took too long" from server timeout. */
+export const maxDuration = 300;
+
 /**
  * POST /api/offramp/trigger-payout
  *

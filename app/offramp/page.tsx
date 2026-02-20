@@ -31,6 +31,7 @@ function OffRampPageContent() {
   const [bankSearchQuery, setBankSearchQuery] = useState("");
   const bankDropdownRef = useRef<HTMLDivElement>(null);
   const [processingPayout, setProcessingPayout] = useState(false);
+  const [payoutTakingLong, setPayoutTakingLong] = useState(false);
   const [payoutError, setPayoutError] = useState("");
   const [payoutSuccess, setPayoutSuccess] = useState<{ message: string; ngnAmount?: number } | null>(null);
   const [cancellingPending, setCancellingPending] = useState(false);
@@ -268,7 +269,11 @@ function OffRampPageContent() {
     setPayoutSuccess(null);
     setProcessingPayout(true);
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 90_000); // 90s: sweep + Paymaster can be slow
+    // Sweep + Paymaster + RPC retries can take 2+ min; allow up to 2.5 min before client abort
+    const timeoutMs = 150_000;
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    setPayoutTakingLong(false);
+    const slowMessageId = setTimeout(() => setPayoutTakingLong(true), 45_000);
     try {
       const res = await fetch("/api/offramp/trigger-payout", {
         method: "POST",
@@ -277,6 +282,7 @@ function OffRampPageContent() {
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
+      clearTimeout(slowMessageId);
       const data = await res.json();
       if (data.success) {
         setPayoutSuccess({
@@ -288,6 +294,7 @@ function OffRampPageContent() {
       }
     } catch (err: any) {
       clearTimeout(timeoutId);
+      clearTimeout(slowMessageId);
       if (err?.name === "AbortError") {
         setPayoutError("Request took too long. The sweep may still complete in the background—check your bank in a few minutes or try again.");
       } else {
@@ -295,6 +302,7 @@ function OffRampPageContent() {
       }
     } finally {
       setProcessingPayout(false);
+      setPayoutTakingLong(false);
     }
   };
 
@@ -648,6 +656,11 @@ function OffRampPageContent() {
                 >
                   {processingPayout ? "Processing…" : "I've sent SEND — process now"}
                 </button>
+                {payoutTakingLong && (
+                  <p className="text-sm text-amber-600 dark:text-amber-400 text-center mt-2">
+                    Still processing… This can take up to 2 minutes. Don&apos;t close the page.
+                  </p>
+                )}
 
                 <button
                   onClick={() => {

@@ -8,6 +8,7 @@ import { createPublicClient, createWalletClient, http, parseUnits, formatUnits, 
 import { base } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { BASE_RPC_URL } from "./constants";
+import { createRpcFetchWith429Retry } from "./rpc-fetch";
 
 // USDC on Base
 const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as `0x${string}`;
@@ -90,7 +91,7 @@ export async function swapAndTransferToAdmin(
   try {
     const publicClient = createPublicClient({
       chain: base,
-      transport: http(BASE_RPC_URL),
+      transport: http(BASE_RPC_URL, { fetch: createRpcFetchWith429Retry() }),
     });
 
     // 1. Get swap quote from 0x
@@ -115,7 +116,7 @@ export async function swapAndTransferToAdmin(
     const walletClient = createWalletClient({
       account,
       chain: base,
-      transport: http(BASE_RPC_URL),
+      transport: http(BASE_RPC_URL, { fetch: createRpcFetchWith429Retry() }),
     });
 
     // Send swap transaction

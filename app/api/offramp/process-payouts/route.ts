@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processPendingOfframpPayouts } from "@/lib/offramp-sweep-payout";
 
+/** Allow long run for multiple sweep+payouts (Vercel Pro: up to 300s). */
+export const maxDuration = 300;
+
 /**
  * POST /api/offramp/process-payouts
  *

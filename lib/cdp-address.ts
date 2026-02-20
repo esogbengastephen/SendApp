@@ -7,6 +7,7 @@ import { createPublicClient, http, pad } from "viem";
 import { base } from "viem/chains";
 import { privateKeyToAccount } from "viem/accounts";
 import { BASE_RPC_URL } from "./constants";
+import { createRpcFetchWith429Retry } from "./rpc-fetch";
 
 const COINBASE_FACTORY_1_1 = "0xba5ed110efdba3d005bfc882d75358acbbb85842" as const;
 const FACTORY_GET_ADDRESS_ABI = [
@@ -32,7 +33,7 @@ export async function getCDPSmartWalletAddress(ownerPrivateKeyHex: string): Prom
   const ownerAccount = privateKeyToAccount(key);
   const publicClient = createPublicClient({
     chain: base,
-    transport: http(BASE_RPC_URL, { retryCount: 2 }),
+    transport: http(BASE_RPC_URL, { fetch: createRpcFetchWith429Retry(), retryCount: 2 }),
   });
   const ownersBytes = [pad(ownerAccount.address as `0x${string}`, { size: 32 })];
   const address = await publicClient.readContract({

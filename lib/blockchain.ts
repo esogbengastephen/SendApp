@@ -4,6 +4,7 @@ import { privateKeyToAccount } from "viem/accounts";
 import { defineChain } from "viem";
 import { BASE_RPC_URL, SEND_TOKEN_ADDRESS } from "./constants";
 import { SUPPORTED_CHAINS } from "./chains";
+import { createRpcFetchWith429Retry } from "./rpc-fetch";
 
 // ERC20 Token ABI (minimal - just what we need for transfers)
 const ERC20_ABI = [
@@ -54,6 +55,7 @@ export function getPublicClient() {
   return createPublicClient({
     chain: base,
     transport: http(BASE_RPC_URL, {
+      fetch: createRpcFetchWith429Retry(),
       retryCount: 3,
       retryDelay: 1000,
     }),
@@ -100,6 +102,7 @@ export function getWalletClient() {
     account,
     chain: base,
     transport: http(BASE_RPC_URL, {
+      fetch: createRpcFetchWith429Retry(),
       retryCount: 3,
       retryDelay: 1000,
     }),

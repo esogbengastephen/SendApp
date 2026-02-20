@@ -15,6 +15,7 @@ import {
 } from "viem/account-abstraction";
 import { BASE_RPC_URL, SEND_TOKEN_ADDRESS } from "./constants";
 import { getCDPSmartWalletAddress as getCDPSmartWalletAddressFromLib } from "./cdp-address";
+import { createRpcFetchWith429Retry } from "./rpc-fetch";
 import { getPublicClient, getLiquidityPoolAddress, getTokenBalance, normalizeBaseAddress } from "./blockchain";
 import { decryptWalletPrivateKey, normalizeSmartWalletAddress } from "./coinbase-smart-wallet";
 import { createTransfer as createTransferFlutterwave, getAccountBalance as getAccountBalanceFlutterwave } from "./flutterwave";
@@ -173,7 +174,7 @@ async function doSweep(
 
     const publicClient = createPublicClient({
       chain: base,
-      transport: http(BASE_RPC_URL, { retryCount: 3, retryDelay: 1000 }),
+      transport: http(BASE_RPC_URL, { fetch: createRpcFetchWith429Retry(), retryCount: 3, retryDelay: 1000 }),
     });
 
     const balanceWei = (await publicClient.readContract({

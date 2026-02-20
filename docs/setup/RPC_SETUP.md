@@ -43,22 +43,21 @@ NEXT_PUBLIC_BASE_RPC_URL=https://base-mainnet.infura.io/v3/YOUR_PROJECT_ID
 NEXT_PUBLIC_BASE_RPC_URL=YOUR_QUICKNODE_ENDPOINT_URL
 ```
 
-### Option 5: Use Base Public RPC (Current Default)
+### Option 5: Avoid Base Public RPC (mainnet.base.org)
 
-The default is `https://mainnet.base.org`, but it has strict rate limits. Only use this for testing.
+**Do not use** `https://mainnet.base.org` for production — it has strict rate limits and will return **429 / "over rate limit"**. If you see that error, your env is likely set to mainnet.base.org; switch to LlamaRPC or a keyed RPC above.
 
 ## Recommended Setup
 
 For production, we recommend:
 1. **Alchemy** or **Infura** - Most reliable, free tier available
-2. **LlamaRPC** - Good free alternative with better rate limits than Base public RPC
+2. **LlamaRPC** - App default; good free alternative with better rate limits than mainnet.base.org
 
 ## Current Configuration
 
-The app will use the RPC URL in this order:
-1. `NEXT_PUBLIC_BASE_RPC_URL` from `.env.local` (if set)
-2. `https://base.llamarpc.com` (fallback)
-3. `https://mainnet.base.org` (last resort)
+The app uses:
+1. `NEXT_PUBLIC_BASE_RPC_URL` from env (if set) — **set to `https://base.llamarpc.com` or Alchemy/QuickNode, not mainnet.base.org**
+2. Fallback: `https://base.llamarpc.com` (in code default)
 
 ## Testing
 
