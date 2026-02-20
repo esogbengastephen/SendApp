@@ -139,12 +139,26 @@ export async function generateSmartWalletForUser(
     // Note: In production, consider using HD wallet derivation for better security
     const ownerPrivateKey = generatePrivateKey();
     
-    // Create smart wallet using Coinbase SDK
-    // Note: The Wallet.create() creates a server-managed wallet
-    // For smart wallets with account abstraction, we might need a different approach
-    const wallet = await Wallet.create({
-      networkId: "base-mainnet", // Use Base network
-    });
+    // Create smart wallet using Coinbase SDK (retry once on 429 rate limit)
+    const createWalletOnce = () =>
+      Wallet.create({ networkId: "base-mainnet" });
+    let wallet;
+    try {
+      wallet = await createWalletOnce();
+    } catch (rateLimitErr: unknown) {
+      const err = rateLimitErr as { httpCode?: number; apiCode?: string; apiMessage?: string };
+      const is429 =
+        err?.httpCode === 429 ||
+        err?.apiCode === "resource_exhausted" ||
+        (typeof err?.apiMessage === "string" && err.apiMessage.toLowerCase().includes("rate limit"));
+      if (is429) {
+        console.warn("[Smart Wallet] CreateWallet rate limited (429), retrying once after 12s…");
+        await new Promise((r) => setTimeout(r, 12000));
+        wallet = await createWalletOnce();
+      } else {
+        throw rateLimitErr;
+      }
+    }
 
     // Get the default address from the wallet
     const defaultAddress = await wallet.getDefaultAddress();
