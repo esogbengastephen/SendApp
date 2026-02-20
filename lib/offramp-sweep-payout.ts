@@ -14,6 +14,7 @@ import {
   waitForUserOperationReceipt,
 } from "viem/account-abstraction";
 import { BASE_RPC_URL, SEND_TOKEN_ADDRESS } from "./constants";
+import { getCDPSmartWalletAddress as getCDPSmartWalletAddressFromLib } from "./cdp-address";
 import { getPublicClient, getLiquidityPoolAddress, getTokenBalance, normalizeBaseAddress } from "./blockchain";
 import { decryptWalletPrivateKey, normalizeSmartWalletAddress } from "./coinbase-smart-wallet";
 import { createTransfer as createTransferFlutterwave, getAccountBalance as getAccountBalanceFlutterwave } from "./flutterwave";
@@ -107,27 +108,8 @@ export function getOfframpPoolAddress(): string {
   return getLiquidityPoolAddress();
 }
 
-/**
- * Compute the CDP Smart Wallet (Coinbase factory 1.1, nonce 0) address for an owner key.
- * Use this as the off-ramp deposit address so sweep uses the same factory/nonce and can deploy + sweep.
- */
-export async function getCDPSmartWalletAddress(ownerPrivateKeyHex: string): Promise<string> {
-  const raw = ownerPrivateKeyHex.trim().replace(/^0x/, "");
-  const key = (`0x${raw}`) as `0x${string}`;
-  const ownerAccount = privateKeyToAccount(key);
-  const publicClient = createPublicClient({
-    chain: base,
-    transport: http(BASE_RPC_URL, { retryCount: 2 }),
-  });
-  const ownersBytes = [pad(ownerAccount.address as `0x${string}`, { size: 32 })];
-  const address = await publicClient.readContract({
-    address: COINBASE_FACTORY_1_1 as `0x${string}`,
-    abi: FACTORY_GET_ADDRESS_ABI,
-    functionName: "getAddress",
-    args: [ownersBytes, BigInt(0)],
-  });
-  return address;
-}
+/** Re-export for callers that import from this file. */
+export const getCDPSmartWalletAddress = getCDPSmartWalletAddressFromLib;
 
 /**
  * SEND → NGN sell rate (1 SEND = X NGN). Uses sendToNgnSell if set, else buy exchangeRate.

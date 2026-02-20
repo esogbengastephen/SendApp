@@ -5,6 +5,7 @@
 
 import { base } from "viem/chains";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { getCDPSmartWalletAddress } from "@/lib/cdp-address";
 
 export interface SmartWalletData {
   address: string;
@@ -172,6 +173,7 @@ export async function generateSmartWalletForUser(
       }
       if (lastError != null) throw lastError;
     }
+    if (!wallet) throw lastError ?? new Error("CreateWallet failed");
 
     // Get the default address from the wallet
     const defaultAddress = await wallet.getDefaultAddress();
@@ -258,8 +260,23 @@ export async function getOrCreateSmartWallet(
     }
   }
 
-  // Create new smart wallet
-  return await generateSmartWalletForUser(userId, userEmail);
+  // Create new smart wallet locally (no Coinbase CreateWallet API — avoids rate limit).
+  // Same CDP factory/nonce as off-ramp sweep; sweep can deploy + sweep using this owner key.
+  return createSmartWalletLocalOnly(userId);
+}
+
+/**
+ * Create smart wallet data (owner key + CDP address) without calling Coinbase API.
+ * Used so we never hit CreateWallet rate limits. Address is derived on-chain (factory 1.1, nonce 0).
+ */
+async function createSmartWalletLocalOnly(userId: string): Promise<SmartWalletData> {
+  const ownerPrivateKey = generatePrivateKey();
+  const address = await getCDPSmartWalletAddress(ownerPrivateKey);
+  return {
+    address,
+    ownerPrivateKey,
+    salt: `smart_wallet_${userId}`,
+  };
 }
 
 /**
