@@ -106,7 +106,8 @@ async function main() {
   // 3) Verify bank account (Flutterwave)
   const verifyResult = await verifyBankAccount(ACCOUNT_NUMBER, BANK_CODE);
   if (!verifyResult.success || !verifyResult.data?.accountName) {
-    console.error("Flutterwave account verification failed:", verifyResult.error);
+    const errMsg = !verifyResult.success && "error" in verifyResult ? verifyResult.error : "Could not verify bank account.";
+    console.error("Flutterwave account verification failed:", errMsg);
     process.exit(1);
   }
   const accountName = verifyResult.data.accountName;
