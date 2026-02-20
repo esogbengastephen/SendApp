@@ -27,22 +27,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
-    const {
-      accountNumber,
-      bankCode,
-      bankName: bodyBankName,
-      accountName: bodyAccountName,
-      userEmail,
-      network = "base",
-    } = body as {
-      accountNumber?: string;
-      bankCode?: string;
-      bankName?: string;
-      accountName?: string;
-      userEmail?: string;
-      network?: string;
-    };
+    const body = (await request.json()) as Record<string, unknown>;
+    const accountNumber = body.accountNumber as string | undefined;
+    const bankCode = body.bankCode as string | undefined;
+    const bodyBankName = body.bankName as string | undefined;
+    const bodyAccountName = (body.accountName ?? body.account_name) as string | undefined;
+    const userEmail = body.userEmail as string | undefined;
+    const network = (body.network as string) || "base";
 
     if (!accountNumber || !bankCode) {
       return NextResponse.json(
@@ -71,18 +62,18 @@ export async function POST(request: NextRequest) {
     const cleanedAccountNumber = accountNumber.replace(/\D/g, "").slice(0, 10);
     const bankCodeStr = String(bankCode ?? "").trim();
 
-    // 1) Verify bank account (Flutterwave V3 then Paystack fallback; bankName helps Paystack resolve OPay). Pre-verified accountName accepted if re-verify fails.
-    const verifyResult = await verifyBankAccount(cleanedAccountNumber, bankCodeStr, { bankName: bodyBankName || undefined });
+    // 1) Resolve account name: use client-sent pre-verified name if valid, else verify via Flutterwave V3 / Paystack.
+    const preVerifiedName = typeof bodyAccountName === "string" ? bodyAccountName.trim() : "";
+    const hasValidPreVerifiedName = preVerifiedName.length >= 2 && preVerifiedName.length <= 100 && /^[a-zA-Z\s\-'.]+$/.test(preVerifiedName);
 
     let accountName: string;
-    if (verifyResult.success && verifyResult.data?.accountName) {
-      accountName = verifyResult.data.accountName;
+    if (hasValidPreVerifiedName) {
+      accountName = preVerifiedName;
+      console.log("[Off-ramp verify-and-create] Using pre-verified account name from client:", accountName);
     } else {
-      const preVerifiedName = typeof bodyAccountName === "string" ? bodyAccountName.trim() : "";
-      const isValidPreVerified = preVerifiedName.length >= 2 && preVerifiedName.length <= 100 && /^[\p{L}\p{M}\s\-'.]+$/u.test(preVerifiedName);
-      if (isValidPreVerified) {
-        accountName = preVerifiedName;
-        console.log("[Off-ramp verify-and-create] Using pre-verified account name (re-verify failed):", accountName);
+      const verifyResult = await verifyBankAccount(cleanedAccountNumber, bankCodeStr, { bankName: bodyBankName || undefined });
+      if (verifyResult.success && verifyResult.data?.accountName) {
+        accountName = verifyResult.data.accountName;
       } else {
         const errorMessage =
           !verifyResult.success && "error" in verifyResult && typeof verifyResult.error === "string" && verifyResult.error.trim() !== ""
