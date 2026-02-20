@@ -20,22 +20,25 @@ export async function GET(request: NextRequest) {
     const apiKeyPrivateKey = process.env.COINBASE_API_KEY_PRIVATE_KEY;
     const appId = process.env.COINBASE_APP_ID;
     const paymasterEnabled = process.env.COINBASE_PAYMASTER_ENABLED;
+    const bundlerRpcUrl = process.env.COINBASE_BUNDLER_RPC_URL?.trim();
 
     results.checks.environmentVariables = {
       COINBASE_API_KEY_NAME: !!apiKeyName,
       COINBASE_API_KEY_PRIVATE_KEY: !!apiKeyPrivateKey,
       COINBASE_APP_ID: !!appId,
+      COINBASE_BUNDLER_RPC_URL: !!bundlerRpcUrl,
       COINBASE_PAYMASTER_ENABLED: paymasterEnabled || "false",
     };
 
     if (!apiKeyName || !apiKeyPrivateKey || !appId) {
-      results.errors.push("Missing required environment variables");
+      results.errors.push("Missing required environment variables (COINBASE_API_KEY_NAME, COINBASE_API_KEY_PRIVATE_KEY, COINBASE_APP_ID)");
       return NextResponse.json(results, { status: 400 });
     }
 
-    // Check 2: Format Validation
-    const apiKeyNameValid = /^[A-Za-z0-9]+$/.test(apiKeyName);
-    const privateKeyClean = apiKeyPrivateKey.replace(/^"|"$/g, "");
+    // Check 2: Format Validation (private key may contain newlines when pasted in Vercel)
+    // CDP API key names often include hyphens/underscores (e.g. "my-app-key")
+    const apiKeyNameValid = apiKeyName.length >= 1 && apiKeyName.length <= 256 && /^[A-Za-z0-9_\-]+$/.test(apiKeyName);
+    const privateKeyClean = apiKeyPrivateKey.replace(/^"|"$/g, "").replace(/\s/g, "");
     const privateKeyValid = /^[A-Za-z0-9+/=]+$/.test(privateKeyClean);
     const appIdValid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(appId);
 
@@ -73,6 +76,7 @@ export async function GET(request: NextRequest) {
       results.success = true;
       results.message = "✅ Credentials format is valid!";
       results.note = "SDK import successful. Actual API validation will occur when creating a wallet.";
+      if (!bundlerRpcUrl) results.warning = "COINBASE_BUNDLER_RPC_URL is not set; off-ramp sweep will fail. Set it in Vercel (CDP → Paymaster).";
 
       return NextResponse.json(results, { status: 200 });
     } catch (sdkError: any) {
