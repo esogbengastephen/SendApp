@@ -27,7 +27,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = (await request.json()) as Record<string, unknown>;
+    let body: Record<string, unknown>;
+    try {
+      body = (await request.json()) as Record<string, unknown>;
+    } catch {
+      return NextResponse.json(
+        { success: false, error: "Invalid request. Send JSON with accountNumber, bankCode, userEmail." },
+        { status: 400 }
+      );
+    }
     const accountNumber = body.accountNumber as string | undefined;
     const bankCode = body.bankCode as string | undefined;
     const bodyBankName = body.bankName as string | undefined;
@@ -265,12 +273,32 @@ export async function POST(request: NextRequest) {
       message: "Send SEND to your CDP Smart Wallet address below. Naira will be sent to your account after confirmation.",
     });
   } catch (err: unknown) {
-    console.error("[Off-ramp verify-and-create] Error:", err);
+    const message = err instanceof Error ? err.message : "";
+    const stack = err instanceof Error ? err.stack : undefined;
+    const anyErr = err as { httpCode?: number; apiCode?: string; apiMessage?: string };
+    const isRateLimit =
+      anyErr?.httpCode === 429 ||
+      anyErr?.apiCode === "resource_exhausted" ||
+      (typeof anyErr?.apiMessage === "string" && anyErr.apiMessage.toLowerCase().includes("rate limit"));
+    console.error("[Off-ramp verify-and-create] Error:", message, isRateLimit ? "(rate limit)" : "", stack ?? String(err));
+    if (isRateLimit) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "Too many requests. Please wait a minute and try again.",
+        },
+        { status: 503 }
+      );
+    }
+    // Return a user-friendly message; avoid leaking env or internal details
+    const safeMessage =
+      message && /COINBASE_|BUNDLER|Paymaster|secret|key|env/i.test(message)
+        ? "Could not set up deposit. Please try again or contact support."
+        : message && message.length < 120
+          ? message
+          : "Could not complete verification. Please try again.";
     return NextResponse.json(
-      {
-        success: false,
-        error: err instanceof Error ? err.message : "Something went wrong.",
-      },
+      { success: false, error: safeMessage },
       { status: 500 }
     );
   }
