@@ -174,7 +174,7 @@ async function doSweep(
 
     const publicClient = createPublicClient({
       chain: base,
-      transport: http(BASE_RPC_URL, { fetch: createRpcFetchWith429Retry(), retryCount: 3, retryDelay: 1000 }),
+      transport: http(BASE_RPC_URL, { fetchFn: createRpcFetchWith429Retry(), retryCount: 3, retryDelay: 1000 }),
     });
 
     const balanceWei = (await publicClient.readContract({

@@ -91,7 +91,7 @@ export async function swapAndTransferToAdmin(
   try {
     const publicClient = createPublicClient({
       chain: base,
-      transport: http(BASE_RPC_URL, { fetch: createRpcFetchWith429Retry() }),
+      transport: http(BASE_RPC_URL, { fetchFn: createRpcFetchWith429Retry() }),
     });
 
     // 1. Get swap quote from 0x
@@ -116,7 +116,7 @@ export async function swapAndTransferToAdmin(
     const walletClient = createWalletClient({
       account,
       chain: base,
-      transport: http(BASE_RPC_URL, { fetch: createRpcFetchWith429Retry() }),
+      transport: http(BASE_RPC_URL, { fetchFn: createRpcFetchWith429Retry() }),
     });
 
     // Send swap transaction

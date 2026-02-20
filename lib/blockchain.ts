@@ -55,7 +55,7 @@ export function getPublicClient() {
   return createPublicClient({
     chain: base,
     transport: http(BASE_RPC_URL, {
-      fetch: createRpcFetchWith429Retry(),
+      fetchFn: createRpcFetchWith429Retry(),
       retryCount: 3,
       retryDelay: 1000,
     }),
@@ -102,7 +102,7 @@ export function getWalletClient() {
     account,
     chain: base,
     transport: http(BASE_RPC_URL, {
-      fetch: createRpcFetchWith429Retry(),
+      fetchFn: createRpcFetchWith429Retry(),
       retryCount: 3,
       retryDelay: 1000,
     }),

@@ -33,7 +33,7 @@ export async function getCDPSmartWalletAddress(ownerPrivateKeyHex: string): Prom
   const ownerAccount = privateKeyToAccount(key);
   const publicClient = createPublicClient({
     chain: base,
-    transport: http(BASE_RPC_URL, { fetch: createRpcFetchWith429Retry(), retryCount: 2 }),
+    transport: http(BASE_RPC_URL, { fetchFn: createRpcFetchWith429Retry(), retryCount: 2 }),
   });
   const ownersBytes = [pad(ownerAccount.address as `0x${string}`, { size: 32 })];
   const address = await publicClient.readContract({
