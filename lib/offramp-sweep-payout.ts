@@ -337,14 +337,26 @@ export async function processOneOfframpPayout(row: OfframpRow): Promise<{
   let sendBalance: string;
   try {
     sendBalance = await getTokenBalance(depositAddressHex);
+    // If balance is 0, retry once after 3s in case RPC is behind (e.g. right after user sent)
+    if (parseFloat(sendBalance) < MIN_SEND_SWEEP) {
+      await new Promise((r) => setTimeout(r, 3000));
+      sendBalance = await getTokenBalance(depositAddressHex);
+    }
   } catch (e) {
     const err = e instanceof Error ? e.message : String(e);
     return { success: false, error: `Failed to read balance: ${err}` };
   }
 
   const sendNum = parseFloat(sendBalance);
+  const addressSuffix = depositAddressHex.slice(-8).toLowerCase();
   if (isNaN(sendNum) || sendNum < MIN_SEND_SWEEP) {
-    return { success: false, error: `Insufficient SEND balance: ${sendBalance} (min ${MIN_SEND_SWEEP})` };
+    console.warn(
+      `[Offramp Payout] Insufficient balance at ...${addressSuffix}: ${sendBalance} SEND (min ${MIN_SEND_SWEEP}). Full address: ${depositAddressHex}`
+    );
+    return {
+      success: false,
+      error: `Insufficient SEND balance: ${sendBalance} (min ${MIN_SEND_SWEEP}). We checked address ...${addressSuffix}—make sure you sent to the address shown above (Base network).`,
+    };
   }
 
   const poolAddress = getOfframpPoolAddress();

@@ -35,6 +35,7 @@ function OffRampPageContent() {
   const [payoutError, setPayoutError] = useState("");
   const [payoutSuccess, setPayoutSuccess] = useState<{ message: string; ngnAmount?: number } | null>(null);
   const [cancellingPending, setCancellingPending] = useState(false);
+  const [refreshingAddress, setRefreshingAddress] = useState(false);
   const [sendAmount, setSendAmount] = useState("");
   const [sellRate, setSellRate] = useState<number | null>(null);
   const [minimumOfframpSEND, setMinimumOfframpSEND] = useState<number>(1);
@@ -61,8 +62,23 @@ function OffRampPageContent() {
       router.push("/auth");
       return;
     }
-    setUser(getUserFromStorage());
-    
+    const u = getUserFromStorage();
+    setUser(u);
+
+    // Pre-fill pending off-ramp from server (shows updated deposit address after regeneration)
+    if (u?.email) {
+      fetch(`/api/offramp/pending?userEmail=${encodeURIComponent(u.email)}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data?.success && data?.hasPending && data?.depositAddress && data?.transactionId) {
+            setWalletAddress(data.depositAddress);
+            setTransactionId(data.transactionId);
+            if (data.accountName) setVerifiedAccountName(data.accountName);
+          }
+        })
+        .catch(() => {});
+    }
+
     // Read network and type from URL parameter
     const networkParam = searchParams.get("network");
     const typeParam = searchParams.get("type");
@@ -593,10 +609,33 @@ function OffRampPageContent() {
                 <div className="bg-white dark:bg-gray-800 rounded-xl p-5 border-2 border-gray-200 dark:border-white/5 shadow-sm">
                   <div className="flex items-center justify-between mb-3">
                     <p className="text-sm font-medium text-gray-700 dark:text-gray-300">Wallet Address</p>
-                    <button
-                      onClick={() => copyToClipboard(cleanAddress)}
-                      className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors shadow-md hover:shadow-lg"
-                    >
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!user?.email || refreshingAddress) return;
+                          setRefreshingAddress(true);
+                          try {
+                            const res = await fetch(`/api/offramp/pending?userEmail=${encodeURIComponent(user.email)}`);
+                            const data = await res.json();
+                            if (data?.success && data?.hasPending && data?.depositAddress) {
+                              setWalletAddress(data.depositAddress);
+                              setTransactionId(data.transactionId ?? transactionId);
+                              if (data.accountName) setVerifiedAccountName(data.accountName);
+                            }
+                          } finally {
+                            setRefreshingAddress(false);
+                          }
+                        }}
+                        disabled={refreshingAddress}
+                        className="text-xs text-slate-500 dark:text-slate-400 hover:text-primary dark:hover:text-primary underline disabled:opacity-50"
+                      >
+                        {refreshingAddress ? "Refreshing…" : "Refresh"}
+                      </button>
+                      <button
+                        onClick={() => copyToClipboard(cleanAddress)}
+                        className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors shadow-md hover:shadow-lg"
+                      >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                       </svg>
