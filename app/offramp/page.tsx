@@ -647,6 +647,7 @@ function OffRampPageContent() {
                       {cleanAddress}
                     </p>
                   </div>
+                  </div>
                 </div>
 
                 {/* Instructions: automatic sweep + payout */}
