@@ -139,25 +139,38 @@ export async function generateSmartWalletForUser(
     // Note: In production, consider using HD wallet derivation for better security
     const ownerPrivateKey = generatePrivateKey();
     
-    // Create smart wallet using Coinbase SDK (retry once on 429 rate limit)
+    // Create smart wallet using Coinbase SDK (exponential backoff on 429 per CDP docs)
     const createWalletOnce = () =>
       Wallet.create({ networkId: "base-mainnet" });
-    let wallet;
-    try {
-      wallet = await createWalletOnce();
-    } catch (rateLimitErr: unknown) {
-      const err = rateLimitErr as { httpCode?: number; apiCode?: string; apiMessage?: string };
-      const is429 =
+    const is429 = (e: unknown) => {
+      const err = e as { httpCode?: number; apiCode?: string; apiMessage?: string };
+      return (
         err?.httpCode === 429 ||
         err?.apiCode === "resource_exhausted" ||
-        (typeof err?.apiMessage === "string" && err.apiMessage.toLowerCase().includes("rate limit"));
-      if (is429) {
-        console.warn("[Smart Wallet] CreateWallet rate limited (429), retrying once after 12s…");
-        await new Promise((r) => setTimeout(r, 12000));
-        wallet = await createWalletOnce();
-      } else {
-        throw rateLimitErr;
+        (typeof err?.apiMessage === "string" && err.apiMessage.toLowerCase().includes("rate limit"))
+      );
+    };
+    const delays = [10000, 20000]; // 10s, then 20s (exponential backoff)
+    let wallet;
+    let lastError: unknown;
+    try {
+      wallet = await createWalletOnce();
+    } catch (firstErr: unknown) {
+      lastError = firstErr;
+      if (!is429(firstErr)) throw firstErr;
+      for (let i = 0; i < delays.length; i++) {
+        console.warn(`[Smart Wallet] CreateWallet rate limited (429), retry ${i + 1}/${delays.length} after ${delays[i] / 1000}s…`);
+        await new Promise((r) => setTimeout(r, delays[i]));
+        try {
+          wallet = await createWalletOnce();
+          lastError = null;
+          break;
+        } catch (retryErr: unknown) {
+          lastError = retryErr;
+          if (!is429(retryErr)) throw retryErr;
+        }
       }
+      if (lastError != null) throw lastError;
     }
 
     // Get the default address from the wallet
