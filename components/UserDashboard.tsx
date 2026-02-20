@@ -114,6 +114,15 @@ export default function UserDashboard() {
   const CRYPTO_TO_NAIRA_ALLOWED_EMAILS = ["esogbengastephen@gmail.com", "flippayhq@gmail.com"];
   const canUseCryptoToNaira = CRYPTO_TO_NAIRA_ALLOWED_EMAILS.includes((user?.email ?? userProfile?.email ?? "").toLowerCase());
 
+  // Generate Invoice: allow access for specific emails
+  const GENERATE_INVOICE_ALLOWED_EMAILS = [
+    "esogbengastephen@gmail.com",
+    "flippayhq@gmail.com",
+    "whycee19@gmail.com",
+    "badmusolayemi6@gmail.com",
+  ];
+  const canUseGenerateInvoice = GENERATE_INVOICE_ALLOWED_EMAILS.includes((user?.email ?? userProfile?.email ?? "").toLowerCase());
+
   // Helper function to extract first name from email
   const getFirstNameFromEmail = (email: string | undefined | null): string => {
     if (!email) return "User";
@@ -632,7 +641,13 @@ export default function UserDashboard() {
               onClick={canUseCryptoToNaira ? () => handleServiceClick(services[0]) : undefined}
             />
             <ServiceButton icon="swap_vert" label={"Naira\nto Crypto"} useCustomIcon onClick={() => handleServiceClick(services[1])} />
-            <ServiceButton icon="receipt_long" label={"Generate\nInvoice"} comingSoon />
+            <ServiceButton
+              icon="receipt_long"
+              label={"Generate\nInvoice"}
+              useCustomIcon
+              comingSoon={!canUseGenerateInvoice}
+              onClick={canUseGenerateInvoice ? () => handleServiceClick(services[2]) : undefined}
+            />
             <ServiceButton icon="trending_up" label={"Create\nPrediction"} comingSoon />
             <ServiceButton icon="wifi" label={"Buy\nData"} comingSoon />
             <ServiceButton icon="phone_iphone" label={"Buy\nAirtime"} comingSoon />

@@ -32,12 +32,14 @@ export async function POST(request: NextRequest) {
       accountNumber,
       bankCode,
       bankName: bodyBankName,
+      accountName: bodyAccountName,
       userEmail,
       network = "base",
     } = body as {
       accountNumber?: string;
       bankCode?: string;
       bankName?: string;
+      accountName?: string;
       userEmail?: string;
       network?: string;
     };
@@ -69,29 +71,27 @@ export async function POST(request: NextRequest) {
     const cleanedAccountNumber = accountNumber.replace(/\D/g, "").slice(0, 10);
     const bankCodeStr = String(bankCode ?? "").trim();
 
-    // 1) Verify bank account (Flutterwave then Paystack fallback; bankName helps Paystack resolve OPay etc.)
+    // 1) Verify bank account (Flutterwave V3 then Paystack fallback; bankName helps Paystack resolve OPay). Pre-verified accountName accepted if re-verify fails.
     const verifyResult = await verifyBankAccount(cleanedAccountNumber, bankCodeStr, { bankName: bodyBankName || undefined });
 
-    if (!verifyResult.success || !verifyResult.data?.accountName) {
-      const errorMessage =
-        !verifyResult.success && "error" in verifyResult && typeof verifyResult.error === "string" && verifyResult.error.trim() !== ""
-          ? verifyResult.error
-          : "Could not verify bank account. Check account number and bank.";
-      console.error(
-        "[Off-ramp verify-and-create] Bank verification failed:",
-        errorMessage,
-        "account:",
-        cleanedAccountNumber,
-        "bankCode:",
-        bankCodeStr
-      );
-      return NextResponse.json(
-        { success: false, error: errorMessage },
-        { status: 400 }
-      );
+    let accountName: string;
+    if (verifyResult.success && verifyResult.data?.accountName) {
+      accountName = verifyResult.data.accountName;
+    } else {
+      const preVerifiedName = typeof bodyAccountName === "string" ? bodyAccountName.trim() : "";
+      const isValidPreVerified = preVerifiedName.length >= 2 && preVerifiedName.length <= 100 && /^[\p{L}\p{M}\s\-'.]+$/u.test(preVerifiedName);
+      if (isValidPreVerified) {
+        accountName = preVerifiedName;
+        console.log("[Off-ramp verify-and-create] Using pre-verified account name (re-verify failed):", accountName);
+      } else {
+        const errorMessage =
+          !verifyResult.success && "error" in verifyResult && typeof verifyResult.error === "string" && verifyResult.error.trim() !== ""
+            ? verifyResult.error
+            : "Could not verify bank account. Check number and bank.";
+        console.error("[Off-ramp verify-and-create] Bank verification failed:", errorMessage, "account:", cleanedAccountNumber, "bankCode:", bankCodeStr);
+        return NextResponse.json({ success: false, error: errorMessage }, { status: 400 });
+      }
     }
-
-    const accountName = verifyResult.data.accountName;
 
     // 2) Get user
     const { data: userData, error: userError } = await supabaseAdmin

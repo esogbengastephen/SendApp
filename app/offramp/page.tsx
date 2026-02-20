@@ -194,6 +194,7 @@ function OffRampPageContent() {
             accountNumber: accountNumber.trim().replace(/\D/g, "").slice(0, 10),
             bankCode: selectedBankCode,
             bankName: selectedBankName || undefined,
+            accountName: verifiedAccountName || undefined,
             userEmail: user?.email,
             network: "base",
           }),
