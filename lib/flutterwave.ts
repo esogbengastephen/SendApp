@@ -597,12 +597,12 @@ export async function initializePayment(
     }
 
     console.log(`[Flutterwave Payment] Initializing payment: ${params.amount} NGN, txRef: ${params.txRef}`);
-    console.log(`[Flutterwave Payment] Using API: ${useV4 ? 'v4' : 'v3'}`);
+    console.log(`[Flutterwave Payment] Using API: ${USE_V4_API ? "v4" : "v3"}`);
 
     // v4 API uses different endpoint structure
-    const endpoint = useV4
-      ? `${apiBase}/charges`
-      : `${apiBase}/payments`;
+    const endpoint = USE_V4_API
+      ? `${FLUTTERWAVE_API_BASE}/charges`
+      : `${FLUTTERWAVE_API_BASE}/payments`;
 
     const response = await axios.post(
       endpoint,
