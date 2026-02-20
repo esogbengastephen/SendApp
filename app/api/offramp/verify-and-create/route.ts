@@ -4,6 +4,7 @@ import { nanoid } from "nanoid";
 import { verifyBankAccount } from "@/lib/bank-verification";
 import { getOrCreateSmartWallet, encryptWalletPrivateKey, normalizeSmartWalletAddress } from "@/lib/coinbase-smart-wallet";
 import { getCDPSmartWalletAddress } from "@/lib/offramp-sweep-payout";
+import { isCdpOfframpConfigured, getOrCreateOfframpSmartWalletAddress } from "@/lib/cdp-offramp";
 import { getOfframpTransactionsEnabled } from "@/lib/settings";
 import { isValidBankAccountNumber, getBankByCode } from "@/lib/nigerian-banks";
 
@@ -127,48 +128,54 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 4) Get or create user's owner key; use CDP Smart Wallet (factory 1.1, nonce 0) as off-ramp deposit address
-    const { data: userRow } = await supabaseAdmin
-      .from("users")
-      .select("id, email, smart_wallet_address, smart_wallet_owner_encrypted")
-      .eq("id", userId)
-      .single();
+    // 4) Get or create deposit address: CDP static smart wallet (when configured) or local CDP-derived address
+    let depositAddress: string;
+    const useCdpOfframp = networkVal === "base" && isCdpOfframpConfigured();
 
-    if (!userRow?.email) {
-      return NextResponse.json(
-        { success: false, error: "User not found." },
-        { status: 404 }
-      );
-    }
-
-    const walletData = await getOrCreateSmartWallet(
-      userRow.id,
-      userRow.email,
-      userRow.smart_wallet_owner_encrypted ?? undefined,
-      userRow.smart_wallet_address ?? undefined
-    );
-
-    // Off-ramp uses CDP Smart Wallet address (viem factory 1.1, nonce 0) so sweep can deploy + sweep
-    const depositAddress = await getCDPSmartWalletAddress(walletData.ownerPrivateKey);
-
-    const needsWalletWrite =
-      !userRow.smart_wallet_address ||
-      !userRow.smart_wallet_owner_encrypted ||
-      normalizeSmartWalletAddress(userRow.smart_wallet_address) !== normalizeSmartWalletAddress(depositAddress);
-
-    if (needsWalletWrite) {
-      const encryptedKey = await encryptWalletPrivateKey(walletData.ownerPrivateKey, userRow.id);
-      const { error: updateErr } = await supabaseAdmin
+    if (useCdpOfframp) {
+      depositAddress = await getOrCreateOfframpSmartWalletAddress(userId);
+      // CDP holds keys; no user table wallet update for off-ramp
+    } else {
+      const { data: userRow } = await supabaseAdmin
         .from("users")
-        .update({
-          smart_wallet_address: depositAddress,
-          smart_wallet_owner_encrypted: encryptedKey,
-          smart_wallet_salt: walletData.salt,
-          smart_wallet_created_at: new Date().toISOString(),
-        })
-        .eq("id", userId);
-      if (updateErr) {
-        console.error("[Off-ramp verify-and-create] Failed to save smart wallet to user:", updateErr.message);
+        .select("id, email, smart_wallet_address, smart_wallet_owner_encrypted")
+        .eq("id", userId)
+        .single();
+
+      if (!userRow?.email) {
+        return NextResponse.json(
+          { success: false, error: "User not found." },
+          { status: 404 }
+        );
+      }
+
+      const walletData = await getOrCreateSmartWallet(
+        userRow.id,
+        userRow.email,
+        userRow.smart_wallet_owner_encrypted ?? undefined,
+        userRow.smart_wallet_address ?? undefined
+      );
+      depositAddress = await getCDPSmartWalletAddress(walletData.ownerPrivateKey);
+
+      const needsWalletWrite =
+        !userRow.smart_wallet_address ||
+        !userRow.smart_wallet_owner_encrypted ||
+        normalizeSmartWalletAddress(userRow.smart_wallet_address) !== normalizeSmartWalletAddress(depositAddress);
+
+      if (needsWalletWrite) {
+        const encryptedKey = await encryptWalletPrivateKey(walletData.ownerPrivateKey, userRow.id);
+        const { error: updateErr } = await supabaseAdmin
+          .from("users")
+          .update({
+            smart_wallet_address: depositAddress,
+            smart_wallet_owner_encrypted: encryptedKey,
+            smart_wallet_salt: walletData.salt,
+            smart_wallet_created_at: new Date().toISOString(),
+          })
+          .eq("id", userId);
+        if (updateErr) {
+          console.error("[Off-ramp verify-and-create] Failed to save smart wallet to user:", updateErr.message);
+        }
       }
     }
 

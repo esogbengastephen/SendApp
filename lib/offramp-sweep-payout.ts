@@ -18,6 +18,11 @@ import { getCDPSmartWalletAddress as getCDPSmartWalletAddressFromLib } from "./c
 import { createRpcFetchWith429Retry } from "./rpc-fetch";
 import { getPublicClient, getLiquidityPoolAddress, getTokenBalance, normalizeBaseAddress } from "./blockchain";
 import { decryptWalletPrivateKey, normalizeSmartWalletAddress } from "./coinbase-smart-wallet";
+import {
+  isCdpOfframpConfigured,
+  getOrCreateOfframpSmartWalletAddress,
+  transferSendToPoolCdp,
+} from "./cdp-offramp";
 import { createTransfer as createTransferFlutterwave, getAccountBalance as getAccountBalanceFlutterwave } from "./flutterwave";
 import { getSettings, getMinimumPurchase } from "./settings";
 import { supabaseAdmin } from "./supabase";
@@ -93,7 +98,7 @@ export interface OfframpRow {
 
 /**
  * Get the pool/receiver address that receives swept SEND.
- * Priority: OFFRAMP_RECEIVER_WALLET_ADDRESS > OFFRAMP_POOL_PRIVATE_KEY > LIQUIDITY_POOL (same as onramp).
+ * Priority: OFFRAMP_RECEIVER_WALLET_ADDRESS > OFFRAMP_POOL_PRIVATE_KEY > LIQUIDITY_POOL.
  */
 export function getOfframpPoolAddress(): string {
   const receiver = process.env.OFFRAMP_RECEIVER_WALLET_ADDRESS?.trim();
@@ -343,7 +348,44 @@ export async function processOneOfframpPayout(row: OfframpRow): Promise<{
   }
 
   const poolAddress = getOfframpPoolAddress();
-  const sweepResult = await sweepSendFromSmartWallet(user_id, depositAddressHex, poolAddress);
+
+  // Prefer CDP transfer when configured and this row's deposit address is the user's CDP static smart wallet.
+  // Note: process-payouts only selects rows where deposit_private_key_encrypted IS NULL (Smart Wallet only).
+  let sweepResult: SweepResult;
+  if (row.deposit_private_key_encrypted) {
+    // EOA path: not implemented in this processor (cron only fetches Smart Wallet rows).
+    sweepResult = { success: false, error: "EOA deposit sweep not supported; use Smart Wallet deposit." };
+  } else if (isCdpOfframpConfigured()) {
+    const cdpDepositAddress = await getOrCreateOfframpSmartWalletAddress(user_id);
+    const norm = (a: string) => (a || "").toLowerCase().replace(/^0x/, "");
+    if (norm(cdpDepositAddress) === norm(depositAddressHex)) {
+      const publicClient = getPublicClient();
+      const balanceWei = (await publicClient.readContract({
+        address: SEND_TOKEN_ADDRESS as `0x${string}`,
+        abi: ERC20_ABI,
+        functionName: "balanceOf",
+        args: [depositAddressHex as `0x${string}`],
+      })) as bigint;
+      if (balanceWei === BigInt(0)) {
+        sweepResult = { success: false, error: "No SEND balance at Smart Wallet" };
+      } else {
+        const decimals = (await publicClient.readContract({
+          address: SEND_TOKEN_ADDRESS as `0x${string}`,
+          abi: ERC20_ABI,
+          functionName: "decimals",
+        })) as number;
+        const sendAmountStr = formatUnits(balanceWei, decimals);
+        const cdpResult = await transferSendToPoolCdp(user_id, poolAddress, balanceWei);
+        sweepResult = cdpResult.success
+          ? { success: true, txHash: cdpResult.txHash, sendAmount: sendAmountStr }
+          : { success: false, error: cdpResult.error };
+      }
+    } else {
+      sweepResult = await sweepSendFromSmartWallet(user_id, depositAddressHex, poolAddress);
+    }
+  } else {
+    sweepResult = await sweepSendFromSmartWallet(user_id, depositAddressHex, poolAddress);
+  }
 
   if (!sweepResult.success || !sweepResult.sendAmount) {
     await supabaseAdmin
