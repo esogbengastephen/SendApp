@@ -177,50 +177,45 @@ export async function createTransfer(params: ZainpayTransferParams): Promise<{
 
 /**
  * Create a ZainPay dynamic virtual account per transaction for on-ramp payments.
- * No BVN required. Each call generates a fresh one-time virtual account.
+ * Generates a one-time ZainBank account valid for `duration` seconds.
  * Docs: https://zainpay.ng/developers/api-endpoints?section=create-dynamic-virtual-account
  * Endpoint: POST virtual-account/dynamic/create/request
  */
 export interface CreateDynamicVirtualAccountParams {
-  firstName: string;
-  surname: string;
   email: string;
-  mobileNumber: string;
-  amount: number;
+  amount: number;   // in NGN
   txnRef: string;
+  duration?: number; // seconds the account stays active, default 3600
 }
 
 export async function createDynamicVirtualAccount(params: CreateDynamicVirtualAccountParams): Promise<{
   success: boolean;
-  data?: { accountNumber: string; bankName: string; accountName: string };
+  data?: { accountNumber: string; bankName: string; accountName: string; amountAfterCharges?: string };
   error?: string;
   details?: unknown;
 }> {
   if (!ZAINPAY_API_TOKEN || !ZAINPAY_ZAINBOX_CODE) {
     return {
       success: false,
-      error: "Zainpay not configured. Set ZAINPAY_PUBLIC_KEY and ZAINPAY_ZAINBOX_CODE.",
+      error: "Zainpay not configured. Set ZAINPAY_SECRET_KEY and ZAINPAY_ZAINBOX_CODE.",
     };
   }
 
-  const mobile = String(params.mobileNumber ?? "").replace(/\D/g, "").slice(0, 11) || "08000000000";
-  const firstName = String(params.firstName ?? "").trim() || "Customer";
-  const surname = String(params.surname ?? "").trim() || "FlipPay";
+  // ZainPay expects amount as a string in kobo (NGN × 100)
   const amountKobo = String(Math.round(params.amount * 100));
 
   const payload = {
-    firstName,
-    surname,
+    bankType: "zainBank",
     email: String(params.email ?? "").trim(),
-    mobileNumber: mobile,
+    amount: amountKobo,
     zainboxCode: ZAINPAY_ZAINBOX_CODE,
     txnRef: params.txnRef,
-    amount: amountKobo,
-    ...(ZAINPAY_CALLBACK_URL ? { callbackUrl: ZAINPAY_CALLBACK_URL } : {}),
+    duration: params.duration ?? 3600,
+    callBackUrl: ZAINPAY_CALLBACK_URL ?? "",
   };
 
   const path = "virtual-account/dynamic/create/request";
-  console.log(`[Zainpay Dynamic VA] POST ${ZAINPAY_BASE}${path} (sandbox: ${ZAINPAY_SANDBOX})`, JSON.stringify({ ...payload, amount: `${amountKobo} kobo` }));
+  console.log(`[Zainpay Dynamic VA] POST ${ZAINPAY_BASE}${path}`, JSON.stringify({ ...payload, _ngnAmount: params.amount }));
 
   try {
     const res = await fetch(`${ZAINPAY_BASE}${path}`, {
@@ -238,13 +233,19 @@ export async function createDynamicVirtualAccount(params: CreateDynamicVirtualAc
     console.log(`[Zainpay Dynamic VA] Response: HTTP ${res.status}, code=${code}`, JSON.stringify(data));
 
     if (ok && data?.data) {
-      const d = data.data as { accountNumber?: string; bankName?: string; accountName?: string };
+      const d = data.data as {
+        accountNumber?: string;
+        bankType?: string;
+        accountName?: string;
+        amountAfterCharges?: string;
+      };
       return {
         success: true,
         data: {
           accountNumber: String(d?.accountNumber ?? ""),
-          bankName: String(d?.bankName ?? "Wema Bank"),
-          accountName: String(d?.accountName ?? `${firstName} ${surname}`),
+          bankName: "ZainBank",
+          accountName: String(d?.accountName ?? "Zainpay Checkout"),
+          amountAfterCharges: d?.amountAfterCharges,
         },
       };
     }

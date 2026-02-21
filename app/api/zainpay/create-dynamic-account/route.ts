@@ -5,6 +5,7 @@ import { getTransaction, createTransaction, updateTransaction } from "@/lib/tran
 import { getExchangeRate, getOnrampTransactionsEnabled, getMinimumPurchase } from "@/lib/settings";
 import { calculateTransactionFee, calculateFinalTokens, calculateFeeInTokens } from "@/lib/fee-calculation";
 import { getSupabaseUserByEmail, getSupabaseUserById, linkWalletToUser } from "@/lib/supabase-users";
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { nanoid } from "nanoid";
 
 /**
@@ -105,24 +106,16 @@ export async function POST(request: NextRequest) {
       await linkWalletToUser(currentUser.id, normalizedWallet);
     }
 
-    // Build user info for ZainPay VA
-    const fullName = currentUser?.full_name?.trim() || (userEmail ? userEmail.split("@")[0] : "Customer");
-    const nameParts = fullName.split(" ");
-    const firstName = nameParts[0] || "Customer";
-    const surname = nameParts.slice(1).join(" ") || "FlipPay";
     const email = currentUser?.email || userEmail || "customer@flippay.app";
-    const mobileNumber = currentUser?.mobile_number || "08000000000";
 
     console.log(`[ZainPay Dynamic VA] Creating VA for transaction ${txId}, ₦${amount}`);
 
-    // Create dynamic virtual account (no BVN required)
+    // Create dynamic virtual account — only needs email, amount, txnRef
     const vaResult = await createDynamicVirtualAccount({
-      firstName,
-      surname,
       email,
-      mobileNumber,
       amount,
       txnRef: txId,
+      duration: 3600, // 1 hour
     });
 
     if (!vaResult.success || !vaResult.data) {
