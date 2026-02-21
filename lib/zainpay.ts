@@ -3,11 +3,10 @@
  * Docs: https://zainpay.ng/developers/api-endpoints?section=funds-transfer (POST bank/transfer/v2)
  */
 
+// The Public Key JWT is the correct bearer token for all ZainPay API calls.
+// Secret Key is NOT used as a bearer token — the JWT is.
 const ZAINPAY_PUBLIC_KEY = process.env.ZAINPAY_PUBLIC_KEY?.trim();
-// Live Secret Key is used as the Bearer token for server-side API calls.
-// If not set, falls back to the public key JWT.
-const ZAINPAY_SECRET_KEY = process.env.ZAINPAY_SECRET_KEY?.trim();
-const ZAINPAY_API_TOKEN = ZAINPAY_SECRET_KEY || ZAINPAY_PUBLIC_KEY;
+const ZAINPAY_API_TOKEN = ZAINPAY_PUBLIC_KEY;
 const ZAINPAY_SANDBOX = process.env.ZAINPAY_SANDBOX === "true" || process.env.ZAINPAY_SANDBOX === "1";
 const ZAINPAY_BASE_RAW = process.env.ZAINPAY_BASE_URL?.trim() || (ZAINPAY_SANDBOX ? "https://sandbox.zainpay.ng/" : "https://api.zainpay.ng/");
 const ZAINPAY_BASE = ZAINPAY_BASE_RAW.replace(/\/?$/, "/");
@@ -200,7 +199,7 @@ export async function createDynamicVirtualAccount(params: CreateDynamicVirtualAc
   if (!ZAINPAY_API_TOKEN || !ZAINPAY_ZAINBOX_CODE) {
     return {
       success: false,
-      error: "Zainpay not configured. Set ZAINPAY_SECRET_KEY (Live Secret Key) and ZAINPAY_ZAINBOX_CODE.",
+      error: "Zainpay not configured. Set ZAINPAY_PUBLIC_KEY and ZAINPAY_ZAINBOX_CODE.",
     };
   }
 
