@@ -4,6 +4,10 @@
  */
 
 const ZAINPAY_PUBLIC_KEY = process.env.ZAINPAY_PUBLIC_KEY?.trim();
+// Live Secret Key is used as the Bearer token for server-side API calls.
+// If not set, falls back to the public key JWT.
+const ZAINPAY_SECRET_KEY = process.env.ZAINPAY_SECRET_KEY?.trim();
+const ZAINPAY_API_TOKEN = ZAINPAY_SECRET_KEY || ZAINPAY_PUBLIC_KEY;
 const ZAINPAY_SANDBOX = process.env.ZAINPAY_SANDBOX === "true" || process.env.ZAINPAY_SANDBOX === "1";
 const ZAINPAY_BASE_RAW = process.env.ZAINPAY_BASE_URL?.trim() || (ZAINPAY_SANDBOX ? "https://sandbox.zainpay.ng/" : "https://api.zainpay.ng/");
 const ZAINPAY_BASE = ZAINPAY_BASE_RAW.replace(/\/?$/, "/");
@@ -32,7 +36,7 @@ export async function getBankList(): Promise<{
   try {
     const res = await fetch(`${ZAINPAY_BASE}bank/list`, {
       method: "GET",
-      headers: { Authorization: `Bearer ${ZAINPAY_PUBLIC_KEY}` },
+      headers: { Authorization: `Bearer ${ZAINPAY_API_TOKEN}` },
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -146,7 +150,7 @@ export async function createTransfer(params: ZainpayTransferParams): Promise<{
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${ZAINPAY_PUBLIC_KEY}`,
+        Authorization: `Bearer ${ZAINPAY_API_TOKEN}`,
       },
       body: JSON.stringify(payload),
     });
@@ -193,10 +197,10 @@ export async function createDynamicVirtualAccount(params: CreateDynamicVirtualAc
   error?: string;
   details?: unknown;
 }> {
-  if (!ZAINPAY_PUBLIC_KEY || !ZAINPAY_ZAINBOX_CODE) {
+  if (!ZAINPAY_API_TOKEN || !ZAINPAY_ZAINBOX_CODE) {
     return {
       success: false,
-      error: "Zainpay not configured. Set ZAINPAY_PUBLIC_KEY and ZAINPAY_ZAINBOX_CODE.",
+      error: "Zainpay not configured. Set ZAINPAY_SECRET_KEY (Live Secret Key) and ZAINPAY_ZAINBOX_CODE.",
     };
   }
 
@@ -224,7 +228,7 @@ export async function createDynamicVirtualAccount(params: CreateDynamicVirtualAc
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${ZAINPAY_PUBLIC_KEY}`,
+        Authorization: `Bearer ${ZAINPAY_API_TOKEN}`,
       },
       body: JSON.stringify(payload),
     });
@@ -312,7 +316,7 @@ export async function createStaticVirtualAccount(params: CreateStaticVirtualAcco
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${ZAINPAY_PUBLIC_KEY}`,
+        Authorization: `Bearer ${ZAINPAY_API_TOKEN}`,
       },
       body: JSON.stringify(payload),
     });
@@ -361,7 +365,7 @@ export async function getVirtualAccountBalance(accountNumber: string): Promise<{
   try {
     const res = await fetch(`${ZAINPAY_BASE}virtual-account/wallet/balance/${account}`, {
       method: "GET",
-      headers: { Authorization: `Bearer ${ZAINPAY_PUBLIC_KEY}` },
+      headers: { Authorization: `Bearer ${ZAINPAY_API_TOKEN}` },
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -426,7 +430,7 @@ export async function getAccountBalance(): Promise<{
   try {
     const res = await fetch(`${ZAINPAY_BASE}zainbox/profile/${ZAINPAY_ZAINBOX_CODE}`, {
       method: "GET",
-      headers: { Authorization: `Bearer ${ZAINPAY_PUBLIC_KEY}` },
+      headers: { Authorization: `Bearer ${ZAINPAY_API_TOKEN}` },
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
