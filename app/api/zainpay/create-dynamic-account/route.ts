@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
       email,
       amount,
       txnRef: txId,
-      duration: 3600, // 1 hour
+      duration: 2880, // max allowed by ZainPay (48 minutes)
     });
 
     if (!vaResult.success || !vaResult.data) {

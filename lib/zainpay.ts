@@ -185,7 +185,7 @@ export interface CreateDynamicVirtualAccountParams {
   email: string;
   amount: number;   // in NGN
   txnRef: string;
-  duration?: number; // seconds the account stays active, default 3600
+  duration?: number; // seconds the account stays active, max 2880 (48 min)
 }
 
 export async function createDynamicVirtualAccount(params: CreateDynamicVirtualAccountParams): Promise<{
@@ -210,7 +210,7 @@ export async function createDynamicVirtualAccount(params: CreateDynamicVirtualAc
     amount: amountKobo,
     zainboxCode: ZAINPAY_ZAINBOX_CODE,
     txnRef: params.txnRef,
-    duration: params.duration ?? 3600,
+    duration: Math.min(params.duration ?? 2880, 2880),
     callBackUrl: ZAINPAY_CALLBACK_URL ?? "",
   };
 
