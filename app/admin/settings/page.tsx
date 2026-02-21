@@ -153,10 +153,6 @@ export default function SettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [updatingField, setUpdatingField] = useState<"ngnToSend" | "sendToNgn" | null>(null);
-  const [coingeckoPrice, setCoingeckoPrice] = useState<{ usd: number; ngn: number | null } | null>(null);
-  const [loadingCoingecko, setLoadingCoingecko] = useState(false);
-  const [coingeckoError, setCoingeckoError] = useState<string | null>(null);
-  
   // Admin Management State
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [admins, setAdmins] = useState<any[]>([]);
@@ -185,7 +181,6 @@ export default function SettingsPage() {
   // Fetch current settings on mount
   useEffect(() => {
     fetchSettings();
-    fetchCoingeckoPrice();
     checkSuperAdmin();
     if (address) {
       fetchAdmins();
@@ -474,89 +469,6 @@ export default function SettingsPage() {
     }
   };
 
-  const fetchCoingeckoPrice = async () => {
-    if (!address) return;
-    
-    setLoadingCoingecko(true);
-    setCoingeckoError(null);
-    
-    try {
-      const response = await fetch("/api/admin/coingecko-price", {
-        headers: {
-          Authorization: `Bearer ${address}`,
-        },
-      });
-
-      const data = await response.json();
-
-      if (data.success && data.price) {
-        setCoingeckoPrice({
-          usd: data.price.usd,
-          ngn: data.price.ngn,
-        });
-      } else {
-        setCoingeckoError(data.error || "Failed to fetch CoinGecko price");
-      }
-    } catch (err: any) {
-      console.error("Failed to fetch CoinGecko price:", err);
-      setCoingeckoError("Failed to load CoinGecko price");
-    } finally {
-      setLoadingCoingecko(false);
-    }
-  };
-
-  const publishCoingeckoPrice = async () => {
-    if (!address || !coingeckoPrice) {
-      setError("CoinGecko price not available");
-      return;
-    }
-
-    setSaving(true);
-    setError(null);
-    setSuccess(false);
-
-    try {
-      // Calculate NGN to SEND rate from CoinGecko price
-      // If 1 SEND = X NGN, then 1 NGN = 1/X SEND
-      const sendToNgn = coingeckoPrice.ngn || (coingeckoPrice.usd * 1500); // Fallback calculation
-      const ngnToSend = 1 / sendToNgn;
-
-      const response = await fetch("/api/admin/settings", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          exchangeRate: ngnToSend,
-          walletAddress: address,
-        }),
-      });
-
-      const data = await response.json();
-
-      if (data.success) {
-        setSuccess(true);
-        setExchangeRate(ngnToSend.toFixed(5));
-        setSendToNgnRate(sendToNgn.toFixed(2));
-        setTimeout(() => setSuccess(false), 3000);
-        
-        // Broadcast update event
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("exchangeRateUpdated", {
-            detail: { rate: ngnToSend }
-          }));
-        }
-      } else {
-        setError(data.error || "Failed to publish CoinGecko price");
-      }
-    } catch (err: any) {
-      console.error("Failed to publish CoinGecko price:", err);
-      setError(err.message || "Failed to publish CoinGecko price");
-    } finally {
-      setSaving(false);
-    }
-  };
-
   const fetchSettings = async () => {
     if (!address) return;
     
@@ -675,75 +587,6 @@ export default function SettingsPage() {
           <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
         </div>
       )}
-
-      {/* CoinGecko Price Section */}
-      <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
-        <h2 className="text-lg sm:text-xl font-bold text-slate-900 dark:text-slate-100 mb-3 sm:mb-4">
-          CoinGecko Price
-        </h2>
-        <div className="space-y-4">
-          {loadingCoingecko ? (
-            <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
-              <span className="text-sm">Fetching price from CoinGecko...</span>
-            </div>
-          ) : coingeckoError ? (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 rounded-lg">
-              <p className="text-sm text-red-600 dark:text-red-400">{coingeckoError}</p>
-              <button
-                onClick={fetchCoingeckoPrice}
-                className="mt-2 text-xs text-red-600 dark:text-red-400 hover:underline"
-              >
-                Retry
-              </button>
-            </div>
-          ) : coingeckoPrice ? (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Current Price</p>
-                  <p className="text-lg font-bold text-slate-900 dark:text-slate-100">
-                    ${coingeckoPrice.usd.toFixed(6)} USD
-                  </p>
-                  {coingeckoPrice.ngn && (
-                    <p className="text-sm text-slate-600 dark:text-slate-400">
-                      ≈ ₦{coingeckoPrice.ngn.toFixed(2)} NGN
-                    </p>
-                  )}
-                </div>
-                <button
-                  onClick={fetchCoingeckoPrice}
-                  disabled={loadingCoingecko}
-                  className="px-3 py-1.5 text-xs font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
-                >
-                  Refresh
-                </button>
-              </div>
-              <button
-                onClick={publishCoingeckoPrice}
-                disabled={saving || !coingeckoPrice}
-                className="w-full bg-primary text-slate-900 font-bold px-4 py-2 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-              >
-                {saving ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-slate-900"></div>
-                    Publishing...
-                  </>
-                ) : (
-                  "Publish CoinGecko Price"
-                )}
-              </button>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                This will overwrite the current exchange rate with CoinGecko price
-              </p>
-            </div>
-          ) : (
-            <div className="text-sm text-slate-600 dark:text-slate-400">
-              No price data available
-            </div>
-          )}
-        </div>
-      </div>
 
       {/* Transaction Status Toggle */}
       <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
