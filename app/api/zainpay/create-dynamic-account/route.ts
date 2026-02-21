@@ -121,6 +121,8 @@ export async function POST(request: NextRequest) {
       surname,
       email,
       mobileNumber,
+      amount,
+      txnRef: txId,
     });
 
     if (!vaResult.success || !vaResult.data) {
