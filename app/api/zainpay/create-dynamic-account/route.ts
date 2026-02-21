@@ -52,13 +52,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Resolve user
-    let currentUser: { id: string; email: string; full_name?: string; mobile_number?: string } | null = null;
+    type CurrentUser = { id: string; email: string; full_name?: string; mobile_number?: string };
+    let currentUser: CurrentUser | null = null;
     if (userEmail) {
       const r = await getSupabaseUserByEmail(userEmail);
-      if (r.success && r.user) currentUser = r.user as typeof currentUser;
+      if (r.success && r.user) currentUser = r.user as unknown as CurrentUser;
     } else if (userId) {
       const r = await getSupabaseUserById(userId);
-      if (r.success && r.user) currentUser = r.user as typeof currentUser;
+      if (r.success && r.user) currentUser = r.user as unknown as CurrentUser;
     }
 
     // Normalise wallet address
