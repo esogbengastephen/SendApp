@@ -675,7 +675,8 @@ export default function PaymentForm({ network = "send" }: PaymentFormProps) {
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        throw new Error(data.error || "Failed to generate payment account. Please try again.");
+        const detail = data.details ? ` (${JSON.stringify(data.details)})` : "";
+        throw new Error((data.error || "Failed to generate payment account. Please try again.") + detail);
       }
 
       // Update transaction ID in state/localStorage if the API assigned a new one

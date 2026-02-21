@@ -173,8 +173,8 @@ export async function createTransfer(params: ZainpayTransferParams): Promise<{
 }
 
 /**
- * Create a dynamic (no-BVN) virtual account per transaction for on-ramp payments.
- * Uses wemaBank with sensible defaults so no BVN/full KYC is required.
+ * Create a dynamic virtual account per transaction for on-ramp payments.
+ * BVN is required by ZainPay's API. In sandbox we use a test BVN.
  * Docs: POST virtual-account/create/request
  */
 export interface CreateDynamicVirtualAccountParams {
@@ -182,6 +182,7 @@ export interface CreateDynamicVirtualAccountParams {
   surname: string;
   email: string;
   mobileNumber: string;
+  bvn?: string;
 }
 
 export async function createDynamicVirtualAccount(params: CreateDynamicVirtualAccountParams): Promise<{
@@ -200,8 +201,10 @@ export async function createDynamicVirtualAccount(params: CreateDynamicVirtualAc
   const mobile = String(params.mobileNumber ?? "").replace(/\D/g, "").slice(0, 11) || "08000000000";
   const firstName = String(params.firstName ?? "").trim() || "Customer";
   const surname = String(params.surname ?? "").trim() || "FlipPay";
+  // ZainPay requires BVN. Use provided BVN or fall back to sandbox test BVN.
+  const bvn = String(params.bvn ?? "").replace(/\D/g, "").slice(0, 11) || (ZAINPAY_SANDBOX ? "22222222222" : "");
 
-  const payload = {
+  const payload: Record<string, string> = {
     bankType: "wemaBank",
     firstName,
     surname,
@@ -214,6 +217,9 @@ export async function createDynamicVirtualAccount(params: CreateDynamicVirtualAc
     state: "Lagos",
     zainboxCode: ZAINPAY_ZAINBOX_CODE,
   };
+  if (bvn) payload.bvn = bvn;
+
+  console.log(`[Zainpay Dynamic VA] Creating VA at ${ZAINPAY_BASE}virtual-account/create/request (sandbox: ${ZAINPAY_SANDBOX})`);
 
   try {
     const path = "virtual-account/create/request";
@@ -229,6 +235,8 @@ export async function createDynamicVirtualAccount(params: CreateDynamicVirtualAc
     const code = String(data?.code ?? "").trim();
     const ok = res.ok && (code === "00" || data?.status === "200 OK" || data?.status === "Success");
 
+    console.log(`[Zainpay Dynamic VA] Response: HTTP ${res.status}, code=${code}, ok=${ok}`, JSON.stringify(data));
+
     if (ok && data?.data) {
       const d = data.data as { accountNumber?: string; bankName?: string; accountName?: string };
       return {
@@ -242,7 +250,7 @@ export async function createDynamicVirtualAccount(params: CreateDynamicVirtualAc
     }
 
     const message = data?.description ?? data?.message ?? data?.error ?? (res.statusText || "Create failed");
-    console.error("[Zainpay Dynamic VA] Failed:", JSON.stringify({ status: res.status, data }));
+    console.error("[Zainpay Dynamic VA] Failed:", JSON.stringify({ status: res.status, code, data }));
     return {
       success: false,
       error: typeof message === "string" ? message : "Create virtual account failed",
