@@ -50,57 +50,76 @@ export async function POST(request: NextRequest) {
     console.log("[ZainPay Webhook] Received:", JSON.stringify(body, null, 2));
 
     const event = body?.event ?? body?.type ?? "";
+    // ZainPay wraps payload in `data` for some events, or sends flat for dynamic VA callbacks
     const data = body?.data ?? body;
 
     const txnType = String(data?.txnType ?? "").toLowerCase();
-    const status = String(data?.status ?? "").toLowerCase();
+    // Dynamic VA callbacks use `paymentStatus`; static VA callbacks use `status`
+    const status = String(data?.paymentStatus ?? data?.status ?? "").toLowerCase();
     const isDeposit =
       event === "virtualAccountDeposit" ||
       event === "virtual_account_deposit" ||
-      txnType === "deposit";
+      txnType === "deposit" ||
+      status === "success" || // dynamic VA: paymentStatus=success means deposit completed
+      status === "successful";
 
     if (!isDeposit) {
-      console.log(`[ZainPay Webhook] Non-deposit event (${event}), ignoring.`);
+      console.log(`[ZainPay Webhook] Non-deposit event (${event}), status: ${status} — ignoring.`);
       return NextResponse.json({ received: true });
     }
 
     if (status !== "success" && status !== "successful" && status !== "00") {
-      console.log(`[ZainPay Webhook] Deposit status not successful: ${status}`);
+      console.log(`[ZainPay Webhook] Payment status not successful: ${status}`);
       return NextResponse.json({ received: true });
     }
 
     // Amount: ZainPay sends kobo, convert to NGN
     const rawAmount = Number(data?.amount ?? 0);
-    // Detect whether value is already in NGN or in kobo (values >10000 are likely kobo for >₦100)
-    const amountNGN = rawAmount > 10000 ? rawAmount / 100 : rawAmount;
+    const amountNGN = rawAmount >= 100 ? rawAmount / 100 : rawAmount;
 
     const accountNumber = String(data?.accountNumber ?? data?.beneficiaryAccountNumber ?? "").trim();
+    // For dynamic VAs, txnRef === our transaction_id (set when creating the account)
     const txnRef = String(data?.txnRef ?? data?.transactionRef ?? "").trim();
 
-    console.log(`[ZainPay Webhook] Deposit detected — account: ${accountNumber}, amount: ₦${amountNGN}, ref: ${txnRef}`);
+    console.log(`[ZainPay Webhook] Deposit — txnRef: ${txnRef}, account: ${accountNumber}, amount: ₦${amountNGN}`);
 
-    if (!accountNumber) {
-      console.error("[ZainPay Webhook] Missing accountNumber in payload");
-      return NextResponse.json({ received: true });
+    // --- Strategy 1: Look up directly by txnRef (= transaction_id for dynamic VAs) ---
+    let txRow: Record<string, unknown> | null = null;
+
+    if (txnRef) {
+      const { data: txByRef } = await supabaseAdmin
+        .from("transactions")
+        .select("*")
+        .eq("transaction_id", txnRef)
+        .maybeSingle();
+
+      if (txByRef) {
+        console.log(`[ZainPay Webhook] ✅ Found transaction by txnRef: ${txnRef}`);
+        txRow = txByRef;
+      }
     }
 
-    // Find the pending transaction for this virtual account number
-    const { data: txRows, error: txError } = await supabaseAdmin
-      .from("transactions")
-      .select("*")
-      .eq("metadata->>zainpay_account_number", accountNumber)
-      .eq("status", "pending")
-      .order("created_at", { ascending: false })
-      .limit(1);
+    // --- Strategy 2: Look up by accountNumber stored in metadata ---
+    if (!txRow && accountNumber) {
+      const { data: txRows, error: txError } = await supabaseAdmin
+        .from("transactions")
+        .select("*")
+        .eq("metadata->>zainpay_account_number", accountNumber)
+        .eq("status", "pending")
+        .order("created_at", { ascending: false })
+        .limit(1);
 
-    if (txError) {
-      console.error("[ZainPay Webhook] DB error looking up transaction:", txError);
-      return NextResponse.json({ received: true });
+      if (txError) {
+        console.error("[ZainPay Webhook] DB error looking up by accountNumber:", txError);
+      } else if (txRows && txRows.length > 0) {
+        console.log(`[ZainPay Webhook] ✅ Found transaction by accountNumber: ${accountNumber}`);
+        txRow = txRows[0];
+      }
     }
 
-    if (!txRows || txRows.length === 0) {
-      // Fallback: check recently pending transactions (last 2 hours) using contains
-      console.warn(`[ZainPay Webhook] No pending tx found for account ${accountNumber}. Trying fallback lookup…`);
+    // --- Strategy 3: Recent pending transactions fallback ---
+    if (!txRow) {
+      console.warn(`[ZainPay Webhook] No tx found by txnRef/accountNumber. Trying recent pending fallback…`);
       const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
       const { data: recentTxs } = await supabaseAdmin
         .from("transactions")
@@ -110,20 +129,17 @@ export async function POST(request: NextRequest) {
         .order("created_at", { ascending: false })
         .limit(20);
 
-      const matched = recentTxs?.find((tx) => {
+      txRow = recentTxs?.find((tx) => {
         const meta = tx.metadata as Record<string, unknown> | null;
         return meta?.zainpay_account_number === accountNumber;
-      });
-
-      if (!matched) {
-        console.error(`[ZainPay Webhook] No transaction found for account ${accountNumber}`);
-        return NextResponse.json({ received: true });
-      }
-      txRows?.push(matched);
+      }) ?? null;
     }
 
-    const txRow = txRows![0];
-    const transactionId: string = txRow.transaction_id;
+    if (!txRow) {
+      console.error(`[ZainPay Webhook] No transaction found for txnRef=${txnRef} accountNumber=${accountNumber}`);
+      return NextResponse.json({ received: true });
+    }
+    const transactionId: string = txRow.transaction_id as string;
 
     console.log(`[ZainPay Webhook] Matched transaction: ${transactionId}`);
 
@@ -133,12 +149,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true });
     }
 
-    const walletAddress: string =
-      txRow.wallet_address ?? (txRow.metadata as Record<string, unknown>)?.wallet_address ?? "";
-    const userId: string =
-      txRow.user_id ?? (txRow.metadata as Record<string, unknown>)?.user_id ?? "";
-    const network: string =
-      (txRow.metadata as Record<string, unknown>)?.network as string ?? "send";
+    const meta = (txRow.metadata ?? {}) as Record<string, unknown>;
+    const walletAddress: string = (txRow.wallet_address as string) ?? (meta.wallet_address as string) ?? "";
+    const userId: string = (txRow.user_id as string) ?? (meta.user_id as string) ?? "";
+    const network: string = (meta.network as string) ?? "send";
 
     if (!walletAddress) {
       console.error(`[ZainPay Webhook] No wallet address on transaction ${transactionId}`);
