@@ -174,7 +174,7 @@ export async function createTransfer(params: ZainpayTransferParams): Promise<{
 
 /**
  * Create a dynamic virtual account per transaction for on-ramp payments.
- * BVN is required by ZainPay's API. In sandbox we use a test BVN.
+ * No BVN required — ZainPay dynamic accounts use name, email, and phone only.
  * Docs: POST virtual-account/create/request
  */
 export interface CreateDynamicVirtualAccountParams {
@@ -182,7 +182,6 @@ export interface CreateDynamicVirtualAccountParams {
   surname: string;
   email: string;
   mobileNumber: string;
-  bvn?: string;
 }
 
 export async function createDynamicVirtualAccount(params: CreateDynamicVirtualAccountParams): Promise<{
@@ -201,10 +200,8 @@ export async function createDynamicVirtualAccount(params: CreateDynamicVirtualAc
   const mobile = String(params.mobileNumber ?? "").replace(/\D/g, "").slice(0, 11) || "08000000000";
   const firstName = String(params.firstName ?? "").trim() || "Customer";
   const surname = String(params.surname ?? "").trim() || "FlipPay";
-  // ZainPay requires BVN. Use provided BVN or fall back to sandbox test BVN.
-  const bvn = String(params.bvn ?? "").replace(/\D/g, "").slice(0, 11) || (ZAINPAY_SANDBOX ? "22222222222" : "");
 
-  const payload: Record<string, string> = {
+  const payload = {
     bankType: "wemaBank",
     firstName,
     surname,
@@ -217,7 +214,6 @@ export async function createDynamicVirtualAccount(params: CreateDynamicVirtualAc
     state: "Lagos",
     zainboxCode: ZAINPAY_ZAINBOX_CODE,
   };
-  if (bvn) payload.bvn = bvn;
 
   console.log(`[Zainpay Dynamic VA] Creating VA at ${ZAINPAY_BASE}virtual-account/create/request (sandbox: ${ZAINPAY_SANDBOX})`);
 

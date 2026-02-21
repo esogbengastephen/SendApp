@@ -115,16 +115,12 @@ export async function POST(request: NextRequest) {
 
     console.log(`[ZainPay Dynamic VA] Creating VA for transaction ${txId}, ₦${amount}`);
 
-    // Pass user BVN if available on profile (required by ZainPay API)
-    const userBvn = (currentUser as unknown as Record<string, string> | null)?.bvn || undefined;
-
-    // Create dynamic virtual account
+    // Create dynamic virtual account (no BVN required)
     const vaResult = await createDynamicVirtualAccount({
       firstName,
       surname,
       email,
       mobileNumber,
-      bvn: userBvn,
     });
 
     if (!vaResult.success || !vaResult.data) {
