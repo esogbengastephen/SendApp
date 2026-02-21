@@ -88,6 +88,17 @@ export default function PaymentForm({ network = "send" }: PaymentFormProps) {
   const [transactionsEnabled, setTransactionsEnabled] = useState(true);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  // ZainPay dynamic virtual account state
+  const [zainpayAccount, setZainpayAccount] = useState<{
+    accountNumber: string;
+    bankName: string;
+    accountName: string;
+    amount: number;
+    transactionId: string;
+  } | null>(null);
+  const [isWaitingForTransfer, setIsWaitingForTransfer] = useState(false);
+  const [copiedAccount, setCopiedAccount] = useState(false);
+
   // Note: Virtual account is now only fetched/created when "Generate Payment" is clicked
   // This ensures account details are only shown after user initiates payment
 
@@ -509,6 +520,38 @@ export default function PaymentForm({ network = "send" }: PaymentFormProps) {
     return Object.keys(newErrors).length === 0;
   };
 
+  /** Poll every 5 s for transaction completion after ZainPay deposit */
+  const startPollingForZainpayPayment = (txId: string) => {
+    if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+    setIsPollingPayment(true);
+    pollingIntervalRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/transactions/create-id?transactionId=${txId}`);
+        const data = await res.json();
+        if (data.success && data.exists && data.status === "completed" && data.txHash) {
+          clearInterval(pollingIntervalRef.current!);
+          pollingIntervalRef.current = null;
+          setIsPollingPayment(false);
+          setIsWaitingForTransfer(false);
+          setZainpayAccount(null);
+          safeLocalStorage.removeItem("transactionId");
+          safeLocalStorage.removeItem("walletAddress");
+          safeLocalStorage.removeItem("ngnAmount");
+          setModalData({
+            title: "Tokens Received!",
+            message: "Your transfer was confirmed and tokens have been sent to your wallet.",
+            type: "success",
+            txHash: data.txHash,
+            explorerUrl: data.txHash ? `https://basescan.org/tx/${data.txHash}` : undefined,
+          });
+          setShowModal(true);
+        }
+      } catch {
+        // silent — keep polling
+      }
+    }, 5000);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -519,17 +562,11 @@ export default function PaymentForm({ network = "send" }: PaymentFormProps) {
         type: "info",
         isVisible: true,
       });
-      // Refresh page to generate new transaction ID
-      setTimeout(() => {
-        window.location.reload();
-      }, 1000);
+      setTimeout(() => window.location.reload(), 1000);
       return;
     }
 
-    // Prevent multiple submissions
-    if (isLoading) {
-      return;
-    }
+    if (isLoading) return;
 
     // Validate form
     if (!validateForm()) {
@@ -583,15 +620,8 @@ export default function PaymentForm({ network = "send" }: PaymentFormProps) {
     try {
       const finalWalletAddress = walletAddress.trim();
 
-      // Get user and validate they're logged in
+      // Require login
       const user = getUserFromStorage();
-      console.log(`[PaymentForm] User from storage:`, {
-        hasUser: !!user,
-        hasEmail: !!(user?.email),
-        email: user?.email ? (user.email.length > 20 ? `${user.email.slice(0, 20)}...` : user.email) : "MISSING",
-        userId: user?.id ? (user.id.length > 10 ? `${user.id.slice(0, 10)}...` : user.id) : "MISSING",
-      });
-
       if (!user) {
         setModalData({
           title: "Authentication Required",
@@ -600,15 +630,11 @@ export default function PaymentForm({ network = "send" }: PaymentFormProps) {
         });
         setShowModal(true);
         setIsLoading(false);
-        // Redirect to auth page
-        setTimeout(() => {
-          window.location.href = "/auth";
-        }, 2000);
+        setTimeout(() => { window.location.href = "/auth"; }, 2000);
         return;
       }
 
       if (!user.email || user.email.trim() === "") {
-        console.error(`[PaymentForm] User exists but email is missing or empty:`, user);
         setModalData({
           title: "Account Error",
           message: "Your account email is missing. Please log out and log back in.",
@@ -619,285 +645,63 @@ export default function PaymentForm({ network = "send" }: PaymentFormProps) {
         return;
       }
 
-      // Generate a NEW transaction ID for this payment attempt
-      // This ensures each payment attempt is unique and avoids Flutterwave duplicate reference errors
-      let currentTransactionId = transactionId || safeLocalStorage.getItem("transactionId") || "";
-      
-      // If we have an existing transaction ID, check if it's already completed
-      // If completed, generate a new one for this payment attempt
+      // Use existing transaction ID or let the API create one
+      const currentTransactionId = transactionId || safeLocalStorage.getItem("transactionId") || "";
+
+      // Store in localStorage for recovery
       if (currentTransactionId) {
-        try {
-          const checkResponse = await fetch(`/api/transactions/create-id?transactionId=${currentTransactionId}`);
-          const checkData = await checkResponse.json();
-          if (checkData.success && checkData.exists && checkData.status === "completed") {
-            console.log(`[Flutterwave Payment] Previous transaction completed, generating new transaction ID`);
-            currentTransactionId = ""; // Force generation of new ID
-          }
-        } catch (error) {
-          console.error(`[Flutterwave Payment] Error checking transaction status:`, error);
-          // Continue with existing ID or generate new one
-        }
+        safeLocalStorage.setItem("transactionId", currentTransactionId);
       }
-
-      // Generate new transaction ID if needed (for fresh payment attempt)
-      if (!currentTransactionId || currentTransactionId.trim() === "") {
-        try {
-          const txIdResponse = await fetch("/api/transactions/create-id", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({}),
-          });
-          const txIdData = await txIdResponse.json();
-          if (txIdData.success && txIdData.transactionId) {
-            currentTransactionId = txIdData.transactionId;
-            setTransactionId(currentTransactionId);
-            localStorage.setItem("transactionId", currentTransactionId);
-            console.log(`[Flutterwave Payment] Generated new transaction ID: ${currentTransactionId}`);
-          } else {
-            // Fallback: generate locally
-            currentTransactionId = nanoid();
-            setTransactionId(currentTransactionId);
-            localStorage.setItem("transactionId", currentTransactionId);
-          }
-        } catch (error) {
-          console.error(`[Flutterwave Payment] Failed to generate transaction ID:`, error);
-          // Fallback: generate locally
-          currentTransactionId = nanoid();
-          setTransactionId(currentTransactionId);
-          localStorage.setItem("transactionId", currentTransactionId);
-        }
-      }
-
-      // Final validation
-      if (!currentTransactionId || currentTransactionId.trim() === "") {
-        throw new Error("Failed to generate transaction ID. Please try again.");
-      }
-
-      // Store transaction details in localStorage for auto-claim
-      safeLocalStorage.setItem("transactionId", currentTransactionId);
       safeLocalStorage.setItem("walletAddress", finalWalletAddress);
       safeLocalStorage.setItem("ngnAmount", ngnAmount);
 
-      // Create pending transaction first
-      console.log(`[Flutterwave Payment] Creating transaction: ${currentTransactionId} for wallet ${finalWalletAddress}, amount: ${ngnAmount} NGN`);
-      
-      const createTxBody: Record<string, unknown> = {
-        transactionId: currentTransactionId,
-        walletAddress: network === "solana" ? finalWalletAddress : finalWalletAddress.toLowerCase(),
-        ngnAmount: parseFloat(ngnAmount),
-        sendAmount: parseFloat(sendAmount),
-        userId: user.id,
-        userEmail: user.email,
-      };
-      if (network === "base" || network === "solana") {
-        createTxBody.exchangeRate = effectiveExchangeRate;
-        createTxBody.network = network;
-        createTxBody.token = selectedStablecoin;
-      }
-      const txResponse = await fetch("/api/transactions/create-id", {
+      console.log(`[ZainPay] Requesting dynamic virtual account for ₦${ngnAmount}`);
+
+      // Call ZainPay dynamic account endpoint
+      const res = await fetch("/api/zainpay/create-dynamic-account", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(createTxBody),
-      });
-      
-      const txData = await txResponse.json();
-      if (!txResponse.ok || !txData.success) {
-        console.error(`[Flutterwave Payment] ❌ Transaction creation failed:`, txData);
-        throw new Error(txData.error || "Failed to create transaction");
-      }
-      
-      console.log(`[Flutterwave Payment] ✅ Transaction created successfully:`, {
-        transactionId: txData.transactionId,
-        exists: txData.exists,
-        status: txData.transaction?.status,
-      });
-      
-      // Step 2: Initialize Flutterwave payment
-      // Generate unique Flutterwave transaction reference
-      // IMPORTANT: Flutterwave requires UNIQUE tx_ref for EACH payment attempt
-      // Format: FLW-{timestamp}-{random}-{transactionId} to ensure maximum uniqueness
-      // Using timestamp first ensures chronological uniqueness
-      const timestamp = Date.now();
-      const randomSuffix = Math.random().toString(36).substring(2, 11); // 9 character random string
-      const flutterwaveTxRef = `FLW-${timestamp}-${randomSuffix}-${currentTransactionId.substring(0, 8)}`;
-      const callbackUrl = `${window.location.origin}/payment/callback?tx_ref=${flutterwaveTxRef}`;
-      
-      console.log(`[Flutterwave Payment] Generated unique Flutterwave txRef: ${flutterwaveTxRef}`);
-      console.log(`[Flutterwave Payment] Internal transaction ID: ${currentTransactionId}`);
-      console.log(`[Flutterwave Payment] Amount: ${parseFloat(ngnAmount)} NGN`);
-      
-      // Step 2.5: Update transaction with Flutterwave tx_ref in metadata
-      // This allows the callback to find the transaction even before webhook processes it
-      try {
-        const updateResponse = await fetch("/api/transactions/update-metadata", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            transactionId: currentTransactionId,
-            metadata: {
-              flutterwave_tx_ref: flutterwaveTxRef,
-              transaction_id: currentTransactionId,
-            },
-          }),
-        });
-        
-        if (updateResponse.ok) {
-          const updateData = await updateResponse.json();
-          if (updateData.success) {
-            console.log(`[Flutterwave Payment] ✅ Updated transaction metadata with tx_ref: ${flutterwaveTxRef}`);
-          } else {
-            console.error(`[Flutterwave Payment] ❌ Metadata update failed:`, updateData.error);
-          }
-        } else {
-          const errorText = await updateResponse.text();
-          console.error(`[Flutterwave Payment] ❌ Metadata update HTTP error (${updateResponse.status}):`, errorText);
-        }
-      } catch (updateError: any) {
-        console.error(`[Flutterwave Payment] ❌ Error updating transaction metadata:`, updateError?.message || updateError);
-        // Non-critical - continue with payment initialization, but log the error
-      }
-      
-      const paymentRequest = {
-        email: user.email.trim(), // User is guaranteed to exist and have email at this point
-        amount: parseFloat(ngnAmount),
-        txRef: flutterwaveTxRef, // Use unique Flutterwave transaction reference
-        callbackUrl: callbackUrl,
-        metadata: {
-          transaction_id: currentTransactionId, // Our internal transaction ID (used by webhook)
-          flutterwave_tx_ref: flutterwaveTxRef, // Flutterwave's unique reference
-          wallet_address: finalWalletAddress,
-          send_amount: sendAmount,
-          user_id: user.id,
-          user_email: user.email,
-          user_phone: (user as any).mobile_number || "",
-          ...(network !== "send" && { network, token: selectedStablecoin }),
-        },
-      };
-
-      // Validate request data before sending
-      if (!paymentRequest.email || paymentRequest.email.trim() === "") {
-        throw new Error("Email is required but missing");
-      }
-      if (isNaN(paymentRequest.amount) || paymentRequest.amount <= 0) {
-        throw new Error(`Invalid amount: ${ngnAmount}`);
-      }
-      if (!paymentRequest.txRef || paymentRequest.txRef.trim() === "") {
-        console.error(`[PaymentForm] Transaction ID validation failed:`, {
-          txRef: paymentRequest.txRef,
-          currentTransactionId,
-          transactionId,
-        });
-        throw new Error("Transaction ID is required but missing. Please refresh the page and try again.");
-      }
-
-      console.log(`[Flutterwave Payment] Request payload:`, {
-        email: paymentRequest.email,
-        amount: paymentRequest.amount,
-        txRef: paymentRequest.txRef,
-        hasMetadata: !!paymentRequest.metadata,
+        body: JSON.stringify({
+          transactionId: currentTransactionId || undefined,
+          ngnAmount: parseFloat(ngnAmount),
+          walletAddress: finalWalletAddress,
+          userId: user.id,
+          userEmail: user.email,
+          network,
+          token: (network === "base" || network === "solana") ? selectedStablecoin : undefined,
+        }),
       });
 
-      // Flutterwave Inline: open payment in modal instead of redirecting
-      const pubKey = process.env.NEXT_PUBLIC_FLUTTERWAVE_PUBLIC_KEY;
-      if (!pubKey || pubKey.trim() === "") {
-        throw new Error("Flutterwave is not configured. Please set NEXT_PUBLIC_FLUTTERWAVE_PUBLIC_KEY.");
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || "Failed to generate payment account. Please try again.");
       }
 
-      const fwConfig = {
-        public_key: pubKey,
-        tx_ref: flutterwaveTxRef,
-        amount: parseFloat(ngnAmount),
-        currency: "NGN" as const,
-        customer: {
-          email: user.email.trim(),
-          name: (user as { full_name?: string }).full_name || user.email.split("@")[0] || "Customer",
-          phone_number: (user as { mobile_number?: string; phone_number?: string }).mobile_number ||
-            (user as { mobile_number?: string; phone_number?: string }).phone_number ||
-            "",
-        },
-        redirect_url: callbackUrl,
-        customizations: {
-          title: network === "send" ? "FlipPay - SEND Token Purchase" : `FlipPay - ${selectedStablecoin} Purchase`,
-          description: network === "send" ? "Purchase SEND tokens with Naira" : `Purchase ${selectedStablecoin} with Naira`,
-          logo: typeof window !== "undefined" ? `${window.location.origin}/logo.png` : "",
-        },
-        meta: paymentRequest.metadata,
-        payment_options: "card,account,ussd,transfer,banktransfer",
-      };
-
-      // Ensure Flutterwave script is loaded: poll for FlutterwaveCheckout, then inject our own script if still missing (retry instead of "still loading" error)
-      const ensureFlutterwave = (): Promise<void> => {
-        if (typeof window === "undefined") return Promise.reject(new Error("Window not available"));
-        const win = window as unknown as { FlutterwaveCheckout?: (opts: unknown) => void };
-        if (win.FlutterwaveCheckout) return Promise.resolve();
-
-        const FW_URL = "https://checkout.flutterwave.com/v3.js";
-        const pollMs = 200;
-        const initialWait = 6000; // poll 6s for layout script
-
-        return new Promise((resolve, reject) => {
-          const pollStart = Date.now();
-          const id = setInterval(() => {
-            if (win.FlutterwaveCheckout) {
-              clearInterval(id);
-              resolve();
-              return;
-            }
-            if (Date.now() - pollStart < initialWait) return;
-
-            clearInterval(id);
-            // Layout script didn't expose FlutterwaveCheckout in time; inject our own (retry)
-            const script = document.createElement("script");
-            script.src = FW_URL;
-            script.async = true;
-            script.onload = () => resolve();
-            script.onerror = () => reject(new Error("Could not load payment form. Check your connection or try again."));
-            document.body.appendChild(script);
-          }, pollMs);
-        });
-      };
-
-      try {
-        await ensureFlutterwave();
-        const fw = (window as unknown as { FlutterwaveCheckout?: (opts: typeof fwConfig) => void }).FlutterwaveCheckout;
-        if (typeof fw !== "function") {
-          throw new Error("Payment form did not load.");
-        }
-        fw(fwConfig);
-        console.log("[Flutterwave Payment] Inline checkout modal opened");
-        setIsLoading(false);
-        return;
-      } catch (inlineError: unknown) {
-        // Inline script failed to load or run; fall back to redirect so the user can still pay
-        console.warn("[Flutterwave Payment] Inline failed, falling back to redirect:", (inlineError as Error)?.message);
+      // Update transaction ID in state/localStorage if the API assigned a new one
+      if (data.transactionId && data.transactionId !== transactionId) {
+        setTransactionId(data.transactionId);
+        safeLocalStorage.setItem("transactionId", data.transactionId);
       }
 
-      // Fallback: redirect to Flutterwave hosted page
-      const initRes = await fetch("/api/flutterwave/initialize-payment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(paymentRequest),
+      // Show the virtual account UI
+      setZainpayAccount({
+        accountNumber: data.accountNumber,
+        bankName: data.bankName,
+        accountName: data.accountName,
+        amount: data.amount,
+        transactionId: data.transactionId,
       });
-      const initData = await initRes.json();
-      if (!initRes.ok || !initData.success) {
-        throw new Error(initData.error || "Failed to start payment");
-      }
-      const paymentUrl = initData.authorization_url || initData.link;
-      if (!paymentUrl) {
-        throw new Error("No payment URL received from Flutterwave");
-      }
-      window.location.href = paymentUrl;
-      setIsLoading(false);
+      setIsWaitingForTransfer(true);
+
+      // Start polling for payment confirmation
+      startPollingForZainpayPayment(data.transactionId);
+
     } catch (error: any) {
-      console.error("Payment error:", error);
-      const msg = error?.message || "An error occurred. Please try again.";
-      const isCredentialError =
-        /Invalid client credentials|FLW_CLIENT_ID|FLW_CLIENT_SECRET/i.test(msg);
+      console.error("[ZainPay] Payment error:", error);
       setModalData({
         title: "Payment Error",
-        message: isCredentialError
-          ? "Flutterwave v4 credentials are invalid or mismatched. Options: (1) Add FLW_CLIENT_ID and FLW_CLIENT_SECRET from Dashboard → Settings → API → \"Switch to v4 live API keys\" (both Live or both Test). (2) Or use v3: set FLUTTERWAVE_FORCE_V3=true and FLUTTERWAVE_SECRET_KEY in .env.local. Restart the dev server after changing."
-          : msg,
+        message: error?.message || "An error occurred. Please try again.",
         type: "error",
       });
       setShowModal(true);
@@ -958,7 +762,109 @@ export default function PaymentForm({ network = "send" }: PaymentFormProps) {
 
         {/* Form Card - mobile-first padding, touch-friendly */}
         <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 md:p-6 rounded-xl sm:rounded-2xl shadow-lg w-full border border-slate-200/50 dark:border-slate-700/50">
-          <form className="space-y-5 sm:space-y-6" onSubmit={handleSubmit}>
+          {/* ZainPay Virtual Account — shown after "Pay Now" is clicked */}
+          {isWaitingForTransfer && zainpayAccount && (
+            <div className="space-y-4">
+              <div className="text-center">
+                <p className="text-base sm:text-lg font-semibold text-slate-800 dark:text-slate-100">
+                  Complete Your Transfer
+                </p>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                  Transfer exactly{" "}
+                  <span className="font-bold text-slate-800 dark:text-slate-100">
+                    ₦{zainpayAccount.amount.toLocaleString()}
+                  </span>{" "}
+                  to the account below
+                </p>
+              </div>
+
+              <div className="bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-4 space-y-3">
+                {/* Bank */}
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-slate-500 dark:text-slate-400">Bank</span>
+                  <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                    {zainpayAccount.bankName}
+                  </span>
+                </div>
+
+                {/* Account number with copy */}
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-slate-500 dark:text-slate-400">Account Number</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-base font-bold tracking-widest text-slate-900 dark:text-white">
+                      {zainpayAccount.accountNumber}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(zainpayAccount.accountNumber).then(() => {
+                          setCopiedAccount(true);
+                          setTimeout(() => setCopiedAccount(false), 2000);
+                        });
+                      }}
+                      className="text-primary hover:opacity-70 transition-opacity p-1 rounded"
+                      title="Copy account number"
+                    >
+                      {copiedAccount ? (
+                        <span className="text-green-500 text-xs font-medium">Copied!</span>
+                      ) : (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                            d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Account name */}
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-slate-500 dark:text-slate-400">Account Name</span>
+                  <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+                    {zainpayAccount.accountName}
+                  </span>
+                </div>
+
+                {/* Amount */}
+                <div className="flex justify-between items-center pt-2 border-t border-slate-200 dark:border-slate-700">
+                  <span className="text-sm text-slate-500 dark:text-slate-400">Amount to transfer</span>
+                  <span className="text-base font-bold text-green-600 dark:text-green-400">
+                    ₦{zainpayAccount.amount.toLocaleString()}
+                  </span>
+                </div>
+              </div>
+
+              {/* Waiting indicator */}
+              <div className="flex items-center justify-center gap-2 py-2 text-sm text-slate-500 dark:text-slate-400">
+                <svg className="animate-spin w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor"
+                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                <span>Waiting for your transfer…</span>
+              </div>
+
+              <p className="text-xs text-center text-slate-400 dark:text-slate-500">
+                This account is for this payment only. Tokens will be sent automatically once your transfer is confirmed.
+              </p>
+
+              {/* Cancel / start over */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+                  setIsWaitingForTransfer(false);
+                  setZainpayAccount(null);
+                  setIsPollingPayment(false);
+                }}
+                className="w-full py-2 text-sm text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 underline transition-colors"
+              >
+                Cancel — start over
+              </button>
+            </div>
+          )}
+
+          <form className={`space-y-5 sm:space-y-6${isWaitingForTransfer ? " hidden" : ""}`} onSubmit={handleSubmit}>
             {/* NGN Amount Input */}
             <div>
               <label

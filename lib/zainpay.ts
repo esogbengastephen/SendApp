@@ -173,6 +173,89 @@ export async function createTransfer(params: ZainpayTransferParams): Promise<{
 }
 
 /**
+ * Create a dynamic (no-BVN) virtual account per transaction for on-ramp payments.
+ * Uses wemaBank with sensible defaults so no BVN/full KYC is required.
+ * Docs: POST virtual-account/create/request
+ */
+export interface CreateDynamicVirtualAccountParams {
+  firstName: string;
+  surname: string;
+  email: string;
+  mobileNumber: string;
+}
+
+export async function createDynamicVirtualAccount(params: CreateDynamicVirtualAccountParams): Promise<{
+  success: boolean;
+  data?: { accountNumber: string; bankName: string; accountName: string };
+  error?: string;
+  details?: unknown;
+}> {
+  if (!ZAINPAY_PUBLIC_KEY || !ZAINPAY_ZAINBOX_CODE) {
+    return {
+      success: false,
+      error: "Zainpay not configured. Set ZAINPAY_PUBLIC_KEY and ZAINPAY_ZAINBOX_CODE.",
+    };
+  }
+
+  const mobile = String(params.mobileNumber ?? "").replace(/\D/g, "").slice(0, 11) || "08000000000";
+  const firstName = String(params.firstName ?? "").trim() || "Customer";
+  const surname = String(params.surname ?? "").trim() || "FlipPay";
+
+  const payload = {
+    bankType: "wemaBank",
+    firstName,
+    surname,
+    email: String(params.email ?? "").trim(),
+    mobileNumber: mobile,
+    dob: "01-01-1990",
+    gender: "M",
+    address: "No 1",
+    title: "Mr",
+    state: "Lagos",
+    zainboxCode: ZAINPAY_ZAINBOX_CODE,
+  };
+
+  try {
+    const path = "virtual-account/create/request";
+    const res = await fetch(`${ZAINPAY_BASE}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${ZAINPAY_PUBLIC_KEY}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    const code = String(data?.code ?? "").trim();
+    const ok = res.ok && (code === "00" || data?.status === "200 OK" || data?.status === "Success");
+
+    if (ok && data?.data) {
+      const d = data.data as { accountNumber?: string; bankName?: string; accountName?: string };
+      return {
+        success: true,
+        data: {
+          accountNumber: String(d?.accountNumber ?? ""),
+          bankName: String(d?.bankName ?? "Wema Bank"),
+          accountName: String(d?.accountName ?? `${firstName} ${surname}`),
+        },
+      };
+    }
+
+    const message = data?.description ?? data?.message ?? data?.error ?? (res.statusText || "Create failed");
+    console.error("[Zainpay Dynamic VA] Failed:", JSON.stringify({ status: res.status, data }));
+    return {
+      success: false,
+      error: typeof message === "string" ? message : "Create virtual account failed",
+      details: data,
+    };
+  } catch (e: unknown) {
+    const err = e instanceof Error ? e.message : String(e);
+    console.error("[Zainpay Dynamic VA] Error:", err);
+    return { success: false, error: err };
+  }
+}
+
+/**
  * Create a static virtual account linked to your Zainbox.
  * Use this account as the transfer source (ZAINPAY_SOURCE_ACCOUNT_NUMBER, ZAINPAY_SOURCE_BANK_CODE).
  * Docs: https://zainpay.ng/developers — Create Virtual Account POST virtual-account/create/request
