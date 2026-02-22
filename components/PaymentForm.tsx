@@ -520,36 +520,51 @@ export default function PaymentForm({ network = "send" }: PaymentFormProps) {
     return Object.keys(newErrors).length === 0;
   };
 
-  /** Poll every 5 s for transaction completion after ZainPay deposit */
+  /** Poll every 8 s — calls ZainPay verify API directly so tokens distribute even if webhook fails */
   const startPollingForZainpayPayment = (txId: string) => {
     if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
     setIsPollingPayment(true);
+
+    const handleSuccess = (txHash: string) => {
+      clearInterval(pollingIntervalRef.current!);
+      pollingIntervalRef.current = null;
+      setIsPollingPayment(false);
+      setIsWaitingForTransfer(false);
+      setZainpayAccount(null);
+      safeLocalStorage.removeItem("transactionId");
+      safeLocalStorage.removeItem("walletAddress");
+      safeLocalStorage.removeItem("ngnAmount");
+      setModalData({
+        title: "Tokens Received!",
+        message: "Your transfer was confirmed and tokens have been sent to your wallet.",
+        type: "success",
+        txHash,
+        explorerUrl: txHash ? `https://basescan.org/tx/${txHash}` : undefined,
+      });
+      setShowModal(true);
+    };
+
     pollingIntervalRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`/api/transactions/create-id?transactionId=${txId}`);
-        const data = await res.json();
-        if (data.success && data.exists && data.status === "completed" && data.txHash) {
-          clearInterval(pollingIntervalRef.current!);
-          pollingIntervalRef.current = null;
-          setIsPollingPayment(false);
-          setIsWaitingForTransfer(false);
-          setZainpayAccount(null);
-          safeLocalStorage.removeItem("transactionId");
-          safeLocalStorage.removeItem("walletAddress");
-          safeLocalStorage.removeItem("ngnAmount");
-          setModalData({
-            title: "Tokens Received!",
-            message: "Your transfer was confirmed and tokens have been sent to your wallet.",
-            type: "success",
-            txHash: data.txHash,
-            explorerUrl: data.txHash ? `https://basescan.org/tx/${data.txHash}` : undefined,
-          });
-          setShowModal(true);
+        // Primary: ask ZainPay directly if payment was received (triggers distribution)
+        const verifyRes = await fetch(`/api/zainpay/verify-payment?transactionId=${txId}`);
+        const verifyData = await verifyRes.json();
+
+        if (verifyData.paid && verifyData.status === "completed" && verifyData.txHash) {
+          handleSuccess(verifyData.txHash);
+          return;
+        }
+
+        // Fallback: check DB in case webhook already processed it
+        const dbRes = await fetch(`/api/transactions/create-id?transactionId=${txId}`);
+        const dbData = await dbRes.json();
+        if (dbData.success && dbData.status === "completed" && dbData.txHash) {
+          handleSuccess(dbData.txHash);
         }
       } catch {
         // silent — keep polling
       }
-    }, 5000);
+    }, 8000);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {

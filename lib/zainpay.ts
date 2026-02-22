@@ -265,6 +265,49 @@ export async function createDynamicVirtualAccount(params: CreateDynamicVirtualAc
 }
 
 /**
+ * Verify a ZainPay dynamic VA payment by txnRef (= our transaction_id).
+ * Docs: GET virtual-account/wallet/deposit/verify/v2/{txnRef}
+ * Returns payment details if paid, or null/error if not yet paid.
+ */
+export async function verifyDynamicVAPayment(txnRef: string): Promise<{
+  success: boolean;
+  paid: boolean;
+  amountNGN?: number;
+  data?: unknown;
+  error?: string;
+}> {
+  if (!ZAINPAY_API_TOKEN) {
+    return { success: false, paid: false, error: "Zainpay not configured" };
+  }
+  try {
+    const res = await fetch(`${ZAINPAY_BASE}virtual-account/wallet/deposit/verify/v2/${encodeURIComponent(txnRef)}`, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${ZAINPAY_API_TOKEN}` },
+    });
+    const data = await res.json().catch(() => ({}));
+    const code = String(data?.code ?? "").trim();
+
+    // code "04" = not found / not yet paid
+    if (code === "04" || !res.ok) {
+      return { success: true, paid: false, data };
+    }
+
+    if (code === "00" && data?.data) {
+      const d = data.data as { depositedAmount?: string | number; amountAfterCharges?: string | number };
+      const rawAmount = Number(d?.depositedAmount ?? d?.amountAfterCharges ?? 0);
+      // ZainPay returns amounts in kobo
+      const amountNGN = rawAmount >= 100 ? rawAmount / 100 : rawAmount;
+      return { success: true, paid: true, amountNGN, data: d };
+    }
+
+    return { success: true, paid: false, data };
+  } catch (e: unknown) {
+    const err = e instanceof Error ? e.message : String(e);
+    return { success: false, paid: false, error: err };
+  }
+}
+
+/**
  * Create a static virtual account linked to your Zainbox.
  * Use this account as the transfer source (ZAINPAY_SOURCE_ACCOUNT_NUMBER, ZAINPAY_SOURCE_BANK_CODE).
  * Docs: https://zainpay.ng/developers — Create Virtual Account POST virtual-account/create/request
