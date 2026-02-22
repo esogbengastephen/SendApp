@@ -280,12 +280,15 @@ export async function verifyDynamicVAPayment(txnRef: string): Promise<{
     return { success: false, paid: false, error: "Zainpay not configured" };
   }
   try {
-    const res = await fetch(`${ZAINPAY_BASE}virtual-account/wallet/deposit/verify/v2/${encodeURIComponent(txnRef)}`, {
+    // Use v1 endpoint — v2 returns 404 for dynamic VA txnRefs
+    const res = await fetch(`${ZAINPAY_BASE}virtual-account/wallet/deposit/verify/${encodeURIComponent(txnRef)}`, {
       method: "GET",
       headers: { Authorization: `Bearer ${ZAINPAY_API_TOKEN}` },
     });
     const data = await res.json().catch(() => ({}));
     const code = String(data?.code ?? "").trim();
+
+    console.log(`[ZainPay Verify] txnRef=${txnRef} HTTP=${res.status} code=${code}`, JSON.stringify(data));
 
     // code "04" = not found / not yet paid
     if (code === "04" || !res.ok) {
@@ -293,9 +296,22 @@ export async function verifyDynamicVAPayment(txnRef: string): Promise<{
     }
 
     if (code === "00" && data?.data) {
-      const d = data.data as { depositedAmount?: string | number; amountAfterCharges?: string | number };
-      const rawAmount = Number(d?.depositedAmount ?? d?.amountAfterCharges ?? 0);
-      // ZainPay returns amounts in kobo
+      const d = data.data as {
+        amount?: { amount?: number } | number | string;
+        depositedAmount?: string | number;
+        amountAfterCharges?: string | number;
+        txnType?: string;
+      };
+
+      // ZainPay v1 returns amount as nested object: { amount: { amount: 19720 } }
+      let rawAmount = 0;
+      if (d?.amount && typeof d.amount === "object" && "amount" in d.amount) {
+        rawAmount = Number((d.amount as { amount?: number }).amount ?? 0);
+      } else {
+        rawAmount = Number(d?.amount ?? d?.depositedAmount ?? d?.amountAfterCharges ?? 0);
+      }
+
+      // Convert kobo → NGN
       const amountNGN = rawAmount >= 100 ? rawAmount / 100 : rawAmount;
       return { success: true, paid: true, amountNGN, data: d };
     }
