@@ -621,7 +621,6 @@ export default function PaymentForm({ network = "send" }: PaymentFormProps) {
         title: "Payment Not Confirmed Yet",
         message: "We haven't received your transfer yet. Please wait a moment and try again, or keep waiting — we'll detect it automatically.",
         type: "info",
-        isVisible: true,
       });
       setShowModal(true);
     } catch {
@@ -629,7 +628,6 @@ export default function PaymentForm({ network = "send" }: PaymentFormProps) {
         title: "Check Failed",
         message: "Could not verify your payment right now. Please wait — we're still checking automatically.",
         type: "error",
-        isVisible: true,
       });
       setShowModal(true);
     } finally {
