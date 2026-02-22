@@ -85,6 +85,7 @@ export default function PaymentForm({ network = "send" }: PaymentFormProps) {
   const [isLoadingVirtualAccount, setIsLoadingVirtualAccount] = useState(false);
   const [paymentGenerated, setPaymentGenerated] = useState(false);
   const [isPollingPayment, setIsPollingPayment] = useState(false);
+  const [isCheckingNow, setIsCheckingNow] = useState(false);
   const [transactionsEnabled, setTransactionsEnabled] = useState(true);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -567,6 +568,75 @@ export default function PaymentForm({ network = "send" }: PaymentFormProps) {
     }, 8000);
   };
 
+  /** Triggered when user clicks "I have made payment" — immediate single check */
+  const handleCheckPaymentNow = async () => {
+    if (!zainpayAccount?.transactionId || isCheckingNow) return;
+    setIsCheckingNow(true);
+    try {
+      const verifyRes = await fetch(`/api/zainpay/verify-payment?transactionId=${zainpayAccount.transactionId}`);
+      const verifyData = await verifyRes.json();
+      if (verifyData.paid && verifyData.status === "completed" && verifyData.txHash) {
+        if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+        setIsPollingPayment(false);
+        setIsWaitingForTransfer(false);
+        setZainpayAccount(null);
+        safeLocalStorage.removeItem("transactionId");
+        safeLocalStorage.removeItem("walletAddress");
+        safeLocalStorage.removeItem("ngnAmount");
+        setModalData({
+          title: "Tokens Received!",
+          message: "Your transfer was confirmed and tokens have been sent to your wallet.",
+          type: "success",
+          txHash: verifyData.txHash,
+          explorerUrl: `https://basescan.org/tx/${verifyData.txHash}`,
+        });
+        setShowModal(true);
+        return;
+      }
+      // Fallback: check DB
+      const dbRes = await fetch(`/api/transactions/create-id?transactionId=${zainpayAccount.transactionId}`);
+      const dbData = await dbRes.json();
+      if (dbData.success && dbData.status === "completed" && dbData.txHash) {
+        if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+        setIsPollingPayment(false);
+        setIsWaitingForTransfer(false);
+        setZainpayAccount(null);
+        safeLocalStorage.removeItem("transactionId");
+        safeLocalStorage.removeItem("walletAddress");
+        safeLocalStorage.removeItem("ngnAmount");
+        setModalData({
+          title: "Tokens Received!",
+          message: "Your transfer was confirmed and tokens have been sent to your wallet.",
+          type: "success",
+          txHash: dbData.txHash,
+          explorerUrl: `https://basescan.org/tx/${dbData.txHash}`,
+        });
+        setShowModal(true);
+        return;
+      }
+      // Payment not found yet
+      setModalData({
+        title: "Payment Not Confirmed Yet",
+        message: "We haven't received your transfer yet. Please wait a moment and try again, or keep waiting — we'll detect it automatically.",
+        type: "info",
+        isVisible: true,
+      });
+      setShowModal(true);
+    } catch {
+      setModalData({
+        title: "Check Failed",
+        message: "Could not verify your payment right now. Please wait — we're still checking automatically.",
+        type: "error",
+        isVisible: true,
+      });
+      setShowModal(true);
+    } finally {
+      setIsCheckingNow(false);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -850,19 +920,34 @@ export default function PaymentForm({ network = "send" }: PaymentFormProps) {
                 </div>
               </div>
 
-              {/* Waiting indicator */}
-              <div className="flex items-center justify-center gap-2 py-2 text-sm text-slate-500 dark:text-slate-400">
-                <svg className="animate-spin w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor"
-                    d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
-                <span>Waiting for your transfer…</span>
-              </div>
+              {/* I have made payment button */}
+              <button
+                type="button"
+                onClick={handleCheckPaymentNow}
+                disabled={isCheckingNow}
+                className="w-full bg-primary text-slate-900 font-bold py-3 px-4 rounded-xl hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {isCheckingNow ? (
+                  <>
+                    <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                    </svg>
+                    Checking payment…
+                  </>
+                ) : (
+                  "I have made payment"
+                )}
+              </button>
 
-              <p className="text-xs text-center text-slate-400 dark:text-slate-500">
-                This account is for this payment only. Tokens will be sent automatically once your transfer is confirmed.
-              </p>
+              {/* Auto-detection note */}
+              <div className="flex items-center justify-center gap-2 text-xs text-slate-400 dark:text-slate-500">
+                <svg className="animate-spin w-3 h-3 text-primary shrink-0" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                <span>Also detecting automatically — tokens sent once confirmed.</span>
+              </div>
 
               {/* Cancel / start over */}
               <button
