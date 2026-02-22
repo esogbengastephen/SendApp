@@ -3,6 +3,22 @@
 import { useState, useEffect } from "react";
 import Modal from "@/components/Modal";
 
+function timeAgo(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffSecs = Math.floor(diffMs / 1000);
+  const diffMins = Math.floor(diffSecs / 60);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffSecs < 60) return `${diffSecs}s ago`;
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString();
+}
+
 interface Payment {
   reference: string;
   amount: number;
@@ -70,8 +86,8 @@ export default function PaymentsPage() {
   };
 
   const handleVerifyPayment = async (reference: string, source?: string) => {
-    if (source === "Flutterwave") {
-      alert("Flutterwave payments are verified via webhook. Status is already up to date.");
+    if (source === "Flutterwave" || source === "ZainPay") {
+      alert(`${source} payments are verified via webhook. Status is already up to date.`);
       return;
     }
     setVerifying(reference);
@@ -100,7 +116,7 @@ export default function PaymentsPage() {
           Payment Verification
         </h1>
         <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 mt-1 sm:mt-2">
-          Verify and manage payments (Paystack & Flutterwave)
+          Verify and manage payments (Paystack, Flutterwave & ZainPay)
         </p>
       </div>
 
@@ -147,7 +163,12 @@ export default function PaymentsPage() {
             )}
             <div className="flex items-start justify-between gap-3">
               <span className="text-slate-500 dark:text-slate-400">Created</span>
-              <span className="text-slate-900 dark:text-slate-100 text-right">{new Date(selectedPayment.createdAt).toLocaleString()}</span>
+              <span className="text-slate-900 dark:text-slate-100 text-right">
+                {timeAgo(selectedPayment.createdAt)}
+                <span className="block text-xs text-slate-500 dark:text-slate-400">
+                  {new Date(selectedPayment.createdAt).toLocaleString()}
+                </span>
+              </span>
             </div>
           </div>
         )}
@@ -253,7 +274,9 @@ export default function PaymentsPage() {
                       {payment.source || "—"}
                     </td>
                     <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400">
-                      {new Date(payment.createdAt).toLocaleString()}
+                      <span title={new Date(payment.createdAt).toLocaleString()}>
+                        {timeAgo(payment.createdAt)}
+                      </span>
                     </td>
                     <td className="px-6 py-4">
                       <div className="flex flex-col gap-2">

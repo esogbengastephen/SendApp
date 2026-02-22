@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 
 /**
- * Fetch all onramp payments from our database (Paystack + Flutterwave).
- * Uses transactions table as source of truth. Reads payment_reference plus metadata for Flutterwave tx_ref.
+ * Fetch all onramp payments from our database (Paystack + Flutterwave + ZainPay).
+ * Uses transactions table as source of truth. Reads payment_reference plus metadata for Flutterwave tx_ref and ZainPay account number.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -37,12 +37,23 @@ export async function GET(request: NextRequest) {
       return acc;
     }, {});
 
-    const meta = (m: unknown) => (m as { flutterwave_tx_ref?: string } | null)?.flutterwave_tx_ref;
+    const flutterwaveMeta = (m: unknown) => (m as { flutterwave_tx_ref?: string } | null)?.flutterwave_tx_ref;
+    const zainpayMeta = (m: unknown) => (m as { zainpay_account_number?: string } | null)?.zainpay_account_number;
+
     const payments = transactions.map((t) => {
       const payRef = (t as { payment_reference?: string | null }).payment_reference;
-      const ref = payRef || meta(t.metadata) || t.transaction_id || "";
+      const ref = payRef || flutterwaveMeta(t.metadata) || t.transaction_id || "";
       const statusLabel = t.status === "completed" ? "success" : t.status === "pending" ? "pending" : "failed";
-      const isFlutterwave = (payRef && String(payRef).startsWith("FLW")) || !!meta(t.metadata);
+      const isFlutterwave = (payRef && String(payRef).startsWith("FLW")) || !!flutterwaveMeta(t.metadata);
+      const isZainPay = (payRef && String(payRef).startsWith("ZAINPAY")) || !!zainpayMeta(t.metadata);
+
+      let source = "—";
+      if (ref) {
+        if (isZainPay) source = "ZainPay";
+        else if (isFlutterwave) source = "Flutterwave";
+        else source = "Paystack";
+      }
+
       return {
         reference: ref,
         amount: typeof t.ngn_amount === "number" ? t.ngn_amount : parseFloat(String(t.ngn_amount || "0")),
@@ -54,11 +65,11 @@ export async function GET(request: NextRequest) {
         walletAddress: t.wallet_address || null,
         sendAmount: t.send_amount || null,
         txHash: t.tx_hash || null,
-        source: ref ? (isFlutterwave ? "Flutterwave" : "Paystack") : "—",
+        source,
       };
     });
 
-    console.log(`[Admin Payments] Returned ${payments.length} payments from DB (Paystack + Flutterwave)`);
+    console.log(`[Admin Payments] Returned ${payments.length} payments from DB (Paystack + Flutterwave + ZainPay)`);
 
     return NextResponse.json(
       { success: true, payments },
