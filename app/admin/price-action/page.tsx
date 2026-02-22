@@ -645,7 +645,7 @@ export default function PriceActionPage() {
           Price Action
         </h1>
         <p className="text-sm sm:text-base text-slate-600 dark:text-slate-400 mt-1 sm:mt-2">
-          View live token prices and price-related metrics. Manage rates in Settings or Token Prices.
+          View live token prices and price-related metrics. Manage rates in Settings.
         </p>
       </div>
 
@@ -1408,13 +1408,6 @@ export default function PriceActionPage() {
               >
                 <span className="material-icons-outlined text-lg">arrow_downward</span>
                 Onramp Transactions
-              </Link>
-              <Link
-                href="/admin/token-prices"
-                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-900 dark:text-slate-100 text-sm font-medium transition-colors"
-              >
-                <span className="material-icons-outlined text-lg">attach_money</span>
-                Token Buy Prices
               </Link>
             </>
           ) : (

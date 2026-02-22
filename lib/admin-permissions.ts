@@ -14,7 +14,6 @@ export const ADMIN_ROUTE_PERMISSION: Record<string, string> = {
   "/admin/token-distribution": "manage_token_distribution",
   "/admin/utility": "manage_utility",
   "/admin/test-transfer": "test_transfers",
-  "/admin/token-prices": "manage_token_prices",
   "/admin/price-action": "manage_price_action",
   "/admin/banners": "manage_banners",
   "/admin/offramp": "manage_offramp",
@@ -25,7 +24,7 @@ export const ADMIN_ROUTE_PERMISSION: Record<string, string> = {
 /** Legacy permissions: when an admin has these, they get the listed granular permissions too (for backward compatibility). */
 const LEGACY_PERMISSION_EXPANSION: Record<string, string[]> = {
   manage_transactions: ["manage_onramp", "manage_transactions", "manage_invoices", "manage_offramp"],
-  manage_settings: ["manage_utility", "manage_token_prices", "manage_price_action", "manage_banners", "manage_settings"],
+  manage_settings: ["manage_utility", "manage_price_action", "manage_banners", "manage_settings"],
   manage_users: ["manage_users", "manage_kyc"],
 };
 
@@ -57,7 +56,6 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
   { href: "/admin/token-distribution", label: "Token Distribution", icon: "account_balance_wallet", permission: "manage_token_distribution" },
   { href: "/admin/utility", label: "Utility", icon: "build", permission: "manage_utility" },
   { href: "/admin/test-transfer", label: "Test Transfer", icon: "send", permission: "test_transfers" },
-  { href: "/admin/token-prices", label: "Token Prices", icon: "attach_money", permission: "manage_token_prices" },
   { href: "/admin/price-action", label: "Price Action", icon: "trending_up", permission: "manage_price_action" },
   { href: "/admin/banners", label: "Banners", icon: "image", permission: "manage_banners" },
   { href: "/admin/offramp", label: "Offramp", icon: "arrow_upward", permission: "manage_offramp" },
@@ -77,7 +75,6 @@ export const ALL_ADMIN_PERMISSIONS: string[] = [
   "manage_token_distribution",
   "manage_utility",
   "test_transfers",
-  "manage_token_prices",
   "manage_price_action",
   "manage_banners",
   "manage_offramp",
