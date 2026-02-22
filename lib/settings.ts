@@ -266,6 +266,17 @@ export async function getSettings(): Promise<PlatformSettings> {
 }
 
 /**
+ * Get platform settings without using cache (always loads from DB).
+ * Use when fresh data is critical (e.g. token-prices after admin saves sell rates).
+ */
+export async function getSettingsNoCache(): Promise<PlatformSettings> {
+  const loadedSettings = await loadSettings();
+  global.__sendSettings = loadedSettings;
+  global.__sendSettingsCacheTime = Date.now();
+  return { ...loadedSettings };
+}
+
+/**
  * Get current platform settings (synchronous version - uses cache)
  * Use this when you need synchronous access and can accept cached data
  * WARNING: This may return undefined if settings haven't been loaded yet
