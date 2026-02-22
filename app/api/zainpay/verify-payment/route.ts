@@ -43,8 +43,28 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: true, paid: false, status: tx.status });
     }
 
+    // Atomic claim: flip status pending→processing.
+    // Prevents double-distribution if webhook fires at the same time as this poller.
+    const { data: claimed } = await supabaseAdmin
+      .from("transactions")
+      .update({ status: "processing" })
+      .eq("transaction_id", transactionId)
+      .in("status", ["pending"])
+      .select("transaction_id")
+      .maybeSingle();
+
+    if (!claimed) {
+      console.log(`[ZainPay Verify] Transaction ${transactionId} already claimed by another request — skipping.`);
+      // Re-check DB — might now be completed by webhook
+      const refreshed = await getTransaction(transactionId);
+      if (refreshed?.status === "completed" && refreshed.txHash) {
+        return NextResponse.json({ success: true, paid: true, status: "completed", txHash: refreshed.txHash });
+      }
+      return NextResponse.json({ success: true, paid: true, status: "processing" });
+    }
+
     // Payment confirmed by ZainPay — distribute tokens
-    console.log(`[ZainPay Verify] Payment confirmed for ${transactionId}, ₦${verifyResult.amountNGN}`);
+    console.log(`[ZainPay Verify] ✅ Claimed ${transactionId} — distributing tokens, ₦${verifyResult.amountNGN}`);
 
     const amountNGN = verifyResult.amountNGN ?? tx.ngnAmount ?? 0;
     const walletAddress: string = tx.walletAddress ?? "";

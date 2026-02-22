@@ -149,11 +149,28 @@ export async function POST(request: NextRequest) {
 
     console.log(`[ZainPay Webhook] Matched transaction: ${transactionId}`);
 
-    // Prevent double-processing
+    // Already completed — skip
     if (txRow.status === "completed" && txRow.tx_hash) {
       console.log(`[ZainPay Webhook] Transaction ${transactionId} already completed.`);
       return NextResponse.json({ received: true });
     }
+
+    // Atomic claim: flip status pending→processing so only one request distributes tokens.
+    // If another request (webhook or poller) already claimed it, this returns 0 rows.
+    const { data: claimed } = await supabaseAdmin
+      .from("transactions")
+      .update({ status: "processing" })
+      .eq("transaction_id", transactionId)
+      .in("status", ["pending"])
+      .select("transaction_id")
+      .maybeSingle();
+
+    if (!claimed) {
+      console.log(`[ZainPay Webhook] Transaction ${transactionId} already claimed by another request — skipping.`);
+      return NextResponse.json({ received: true });
+    }
+
+    console.log(`[ZainPay Webhook] ✅ Claimed transaction ${transactionId} for processing.`);
 
     const meta = (txRow.metadata ?? {}) as Record<string, unknown>;
     const walletAddress: string = (txRow.wallet_address as string) ?? (meta.wallet_address as string) ?? "";
