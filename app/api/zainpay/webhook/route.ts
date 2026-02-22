@@ -73,8 +73,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ received: true });
     }
 
-    // Amount: ZainPay sends kobo, convert to NGN
-    const rawAmount = Number(data?.amount ?? 0);
+    // Amount: ZainPay sends kobo in various formats — flat number, string, or nested { amount: N }
+    const rawAmountRaw = data?.amount ?? 0;
+    let rawAmount: number;
+    if (rawAmountRaw && typeof rawAmountRaw === "object" && "amount" in rawAmountRaw) {
+      rawAmount = Number((rawAmountRaw as { amount?: number }).amount ?? 0);
+    } else {
+      rawAmount = Number(rawAmountRaw);
+    }
     const amountNGN = rawAmount >= 100 ? rawAmount / 100 : rawAmount;
 
     const accountNumber = String(data?.accountNumber ?? data?.beneficiaryAccountNumber ?? "").trim();
