@@ -728,24 +728,18 @@ export default function PaymentForm({ network = "send" }: PaymentFormProps) {
         return;
       }
 
-      // Use existing transaction ID or let the API create one
-      const currentTransactionId = transactionId || safeLocalStorage.getItem("transactionId") || "";
-
-      // Store in localStorage for recovery
-      if (currentTransactionId) {
-        safeLocalStorage.setItem("transactionId", currentTransactionId);
-      }
+      // Always request a fresh transaction ID from the API — never reuse old ones.
+      // This guarantees every "Pay now" click generates a brand new DVA with a unique txnRef.
       safeLocalStorage.setItem("walletAddress", finalWalletAddress);
       safeLocalStorage.setItem("ngnAmount", ngnAmount);
 
-      console.log(`[ZainPay] Requesting dynamic virtual account for ₦${ngnAmount}`);
+      console.log(`[ZainPay] Generating new DVA for ₦${ngnAmount}`);
 
-      // Call ZainPay dynamic account endpoint
+      // Call ZainPay dynamic account endpoint — no transactionId passed, API generates fresh one
       const res = await fetch("/api/zainpay/create-dynamic-account", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          transactionId: currentTransactionId || undefined,
           ngnAmount: parseFloat(ngnAmount),
           walletAddress: finalWalletAddress,
           userId: user.id,
@@ -762,11 +756,9 @@ export default function PaymentForm({ network = "send" }: PaymentFormProps) {
         throw new Error((data.error || "Failed to generate payment account. Please try again.") + detail);
       }
 
-      // Update transaction ID in state/localStorage if the API assigned a new one
-      if (data.transactionId && data.transactionId !== transactionId) {
-        setTransactionId(data.transactionId);
-        safeLocalStorage.setItem("transactionId", data.transactionId);
-      }
+      // Always store the fresh transaction ID returned by the API
+      setTransactionId(data.transactionId);
+      safeLocalStorage.setItem("transactionId", data.transactionId);
 
       // Show the virtual account UI
       setZainpayAccount({
