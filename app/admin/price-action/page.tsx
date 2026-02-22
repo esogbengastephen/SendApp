@@ -225,33 +225,71 @@ export default function PriceActionPage() {
     };
   }, [address, settingsLoaded, profitNgnSend, profitNgnUsdc, profitNgnUsdt]);
 
-  // Debounced save of sell profit margins to DB (1s after last change)
+  /** Persist sell profit margins to DB (call on blur or from debounce) */
+  const saveProfitMarginsSell = async () => {
+    if (!address) return;
+    const send = parseFloat(profitNgnSendSell) || 0;
+    const usdc = parseFloat(profitNgnUsdcSell) || 0;
+    const usdt = parseFloat(profitNgnUsdtSell) || 0;
+    setSavingProfit(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          profitNgnSendSell: send,
+          profitNgnUsdcSell: usdc,
+          profitNgnUsdtSell: usdt,
+          walletAddress: address,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSuccess(true);
+        setTimeout(() => setSuccess(false), 2000);
+      } else {
+        setError(data.error || "Failed to save sell profit");
+      }
+    } catch (err) {
+      console.error("Failed to save sell profit margins:", err);
+      setError("Failed to save sell profit");
+    } finally {
+      setSavingProfit(false);
+    }
+  };
+
+  // Debounced save of sell profit margins to DB (500ms after last change)
   useEffect(() => {
     if (!address || !settingsLoaded) return;
     if (profitSellSaveTimeoutRef.current) clearTimeout(profitSellSaveTimeoutRef.current);
+    const send = parseFloat(profitNgnSendSell) || 0;
+    const usdc = parseFloat(profitNgnUsdcSell) || 0;
+    const usdt = parseFloat(profitNgnUsdtSell) || 0;
     profitSellSaveTimeoutRef.current = setTimeout(async () => {
       profitSellSaveTimeoutRef.current = null;
-      const send = parseFloat(profitNgnSendSell) || 0;
-      const usdc = parseFloat(profitNgnUsdcSell) || 0;
-      const usdt = parseFloat(profitNgnUsdtSell) || 0;
       setSavingProfit(true);
+      setError(null);
       try {
-        await fetch("/api/admin/settings", {
+        const res = await fetch("/api/admin/settings", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            profitNgnSendSell: send,
-            profitNgnUsdcSell: usdc,
-            profitNgnUsdtSell: usdt,
-            walletAddress: address,
-          }),
+          body: JSON.stringify({ profitNgnSendSell: send, profitNgnUsdcSell: usdc, profitNgnUsdtSell: usdt, walletAddress: address }),
         });
+        const data = await res.json();
+        if (data.success) {
+          setSuccess(true);
+          setTimeout(() => setSuccess(false), 2000);
+        } else {
+          setError(data.error || "Failed to save sell profit");
+        }
       } catch (err) {
         console.error("Failed to save sell profit margins:", err);
+        setError("Failed to save sell profit");
       } finally {
         setSavingProfit(false);
       }
-    }, 1000);
+    }, 500);
     return () => {
       if (profitSellSaveTimeoutRef.current) clearTimeout(profitSellSaveTimeoutRef.current);
     };
@@ -780,12 +818,13 @@ export default function PriceActionPage() {
                     min="0"
                     value={activeTab === "buy" ? profitNgnSend : profitNgnSendSell}
                     onChange={(e) => (activeTab === "buy" ? setProfitNgnSend(e.target.value) : setProfitNgnSendSell(e.target.value))}
+                    onBlur={activeTab === "sell" ? saveProfitMarginsSell : undefined}
                     placeholder="0"
                     disabled={saving}
                     className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    {activeTab === "buy" ? "Added to SEND buy rate in NGN when publishing (1 $SEND = CoinGecko NGN + this profit)." : "Added to SEND sell rate in NGN when publishing (1 $SEND = CoinGecko NGN + this profit)."}
+                    {activeTab === "buy" ? "Added to SEND buy rate in NGN when publishing (1 $SEND = CoinGecko NGN + this profit)." : "Added to SEND sell rate in NGN when publishing (1 $SEND = CoinGecko NGN + this profit). Stored in DB."}
                   </p>
                 </div>
               </div>
@@ -817,12 +856,13 @@ export default function PriceActionPage() {
                     min="0"
                     value={activeTab === "buy" ? profitNgnUsdc : profitNgnUsdcSell}
                     onChange={(e) => (activeTab === "buy" ? setProfitNgnUsdc(e.target.value) : setProfitNgnUsdcSell(e.target.value))}
+                    onBlur={activeTab === "sell" ? saveProfitMarginsSell : undefined}
                     placeholder="0"
                     disabled={saving}
                     className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    {activeTab === "buy" ? "Added to USDC buy rate in NGN when publishing." : "Added to USDC sell rate in NGN when publishing."}
+                    {activeTab === "buy" ? "Added to USDC buy rate in NGN when publishing." : "Added to USDC sell rate in NGN when publishing. Stored in DB."}
                   </p>
                 </div>
               </div>
@@ -854,12 +894,13 @@ export default function PriceActionPage() {
                     min="0"
                     value={activeTab === "buy" ? profitNgnUsdt : profitNgnUsdtSell}
                     onChange={(e) => (activeTab === "buy" ? setProfitNgnUsdt(e.target.value) : setProfitNgnUsdtSell(e.target.value))}
+                    onBlur={activeTab === "sell" ? saveProfitMarginsSell : undefined}
                     placeholder="0"
                     disabled={saving}
                     className="w-full rounded-lg border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 px-4 py-2 focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
                   />
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    {activeTab === "buy" ? "Added to USDT buy rate in NGN when publishing." : "Added to USDT sell rate in NGN when publishing."}
+                    {activeTab === "buy" ? "Added to USDT buy rate in NGN when publishing." : "Added to USDT sell rate in NGN when publishing. Stored in DB."}
                   </p>
                 </div>
               </div>
