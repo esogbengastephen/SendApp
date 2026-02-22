@@ -1108,24 +1108,6 @@ export default function SettingsPage() {
           )}
         </div>
       )}
-
-      {/* Save Button */}
-      <div className="flex justify-end">
-        <button
-          onClick={handleSave}
-          disabled={saving || !address || !exchangeRate || parseFloat(exchangeRate) <= 0 || !sendToNgnRate || parseFloat(sendToNgnRate) <= 0}
-          className="bg-primary text-slate-900 font-bold px-6 py-3 rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-        >
-          {saving ? (
-            <>
-              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-slate-900"></div>
-              Saving...
-            </>
-          ) : (
-            "Save Settings"
-          )}
-        </button>
-      </div>
     </div>
   );
 }
