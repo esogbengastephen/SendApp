@@ -75,7 +75,9 @@ export async function POST(request: NextRequest) {
     const finalSendAmount = calculateFinalTokens(amount, feeNGN, exchangeRate);
 
     // Create or update transaction record
-    const txId = transactionId || nanoid();
+    // ZainPay txnRef must be alphanumeric only — nanoid uses - and _ which can cause issues
+    const rawId = transactionId || nanoid();
+    const txId = rawId.replace(/[^a-zA-Z0-9]/g, "");
     const existingTx = transactionId ? await getTransaction(transactionId) : null;
 
     if (existingTx) {
