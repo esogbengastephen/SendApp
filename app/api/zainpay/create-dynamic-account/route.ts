@@ -5,8 +5,10 @@ import { getTransaction, createTransaction, updateTransaction } from "@/lib/tran
 import { getExchangeRate, getOnrampTransactionsEnabled, getMinimumPurchase } from "@/lib/settings";
 import { calculateTransactionFee, calculateFinalTokens, calculateFeeInTokens } from "@/lib/fee-calculation";
 import { getSupabaseUserByEmail, getSupabaseUserById, linkWalletToUser } from "@/lib/supabase-users";
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-import { nanoid } from "nanoid";
+import { customAlphabet } from "nanoid";
+
+// Clean alphanumeric ID — ZainPay txnRef must not contain hyphens or underscores
+const alphanumericId = customAlphabet("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", 21);
 
 /**
  * POST /api/zainpay/create-dynamic-account
@@ -74,23 +76,60 @@ export async function POST(request: NextRequest) {
     const feeInSEND = calculateFeeInTokens(feeNGN, exchangeRate);
     const finalSendAmount = calculateFinalTokens(amount, feeNGN, exchangeRate);
 
-    // Create or update transaction record
-    // ZainPay txnRef must be alphanumeric only — nanoid uses - and _ which can cause issues
-    const rawId = transactionId || nanoid();
-    const txId = rawId.replace(/[^a-zA-Z0-9]/g, "");
-    const existingTx = transactionId ? await getTransaction(transactionId) : null;
-
-    if (existingTx) {
-      await updateTransaction(txId, {
-        ngnAmount: amount,
-        sendAmount: finalSendAmount,
-        walletAddress: normalizedWallet,
-        exchangeRate,
-        userId: currentUser?.id,
-        fee_ngn: feeNGN,
-        fee_in_send: feeInSEND,
-      });
+    // Always generate a fresh clean alphanumeric transaction ID for each Pay Now click.
+    // Never reuse an old transaction — this prevents txnRef mismatches with ZainPay.
+    // If the frontend passes a completed transaction ID, we ignore it and create a new one.
+    let txId: string;
+    if (transactionId) {
+      const existingTx = await getTransaction(transactionId);
+      if (existingTx && existingTx.status === "completed") {
+        // Previous transaction is done — create a fresh one
+        txId = alphanumericId();
+      } else if (existingTx) {
+        // Existing pending transaction — reuse its ID (already clean or clean it)
+        txId = transactionId.replace(/[^a-zA-Z0-9]/g, "");
+        if (txId !== transactionId) {
+          // ID had special chars — create new record with clean ID
+          await createTransaction({
+            transactionId: txId,
+            paystackReference: txId,
+            ngnAmount: amount,
+            sendAmount: finalSendAmount,
+            walletAddress: normalizedWallet,
+            exchangeRate,
+            userId: currentUser?.id,
+            fee_ngn: feeNGN,
+            fee_in_send: feeInSEND,
+          });
+        } else {
+          await updateTransaction(txId, {
+            ngnAmount: amount,
+            sendAmount: finalSendAmount,
+            walletAddress: normalizedWallet,
+            exchangeRate,
+            userId: currentUser?.id,
+            fee_ngn: feeNGN,
+            fee_in_send: feeInSEND,
+          });
+        }
+      } else {
+        // No existing record — clean the ID and create fresh
+        txId = transactionId.replace(/[^a-zA-Z0-9]/g, "") || alphanumericId();
+        await createTransaction({
+          transactionId: txId,
+          paystackReference: txId,
+          ngnAmount: amount,
+          sendAmount: finalSendAmount,
+          walletAddress: normalizedWallet,
+          exchangeRate,
+          userId: currentUser?.id,
+          fee_ngn: feeNGN,
+          fee_in_send: feeInSEND,
+        });
+      }
     } else {
+      // No ID passed — generate a fresh clean one
+      txId = alphanumericId();
       await createTransaction({
         transactionId: txId,
         paystackReference: txId,
