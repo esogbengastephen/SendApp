@@ -361,6 +361,9 @@ export default function PriceActionPage() {
           sendToNgnSell: sendToNgnSell,
           usdcSellPriceNgn: coingeckoPrice.USDC?.ngn != null ? coingeckoPrice.USDC.ngn + profitUsdc : undefined,
           usdtSellPriceNgn: coingeckoPrice.USDT?.ngn != null ? coingeckoPrice.USDT.ngn + profitUsdt : undefined,
+          profitNgnSendSell: profitSend,
+          profitNgnUsdcSell: profitUsdc,
+          profitNgnUsdtSell: profitUsdt,
           walletAddress: address,
         }),
       });

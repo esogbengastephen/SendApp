@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSettings, updateExchangeRate, updateTransactionsEnabled, updateMinimumPurchase, updateMinimumOfframpSEND, updateOnrampEnabled, updateOfframpEnabled, updateProfitMargins, updateProfitMarginsSell, updateSellRates, updateCoingeckoAutoPublish, updateCoingeckoAutoPublishSell } from "@/lib/settings";
+import { getSettings, getSettingsNoCache, updateExchangeRate, updateTransactionsEnabled, updateMinimumPurchase, updateMinimumOfframpSEND, updateOnrampEnabled, updateOfframpEnabled, updateProfitMargins, updateProfitMarginsSell, updateSellRates, updateCoingeckoAutoPublish, updateCoingeckoAutoPublishSell } from "@/lib/settings";
 import { isAdminWallet } from "@/lib/supabase";
 
 /**
@@ -27,7 +27,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    const settings = await getSettings();
+    const settings = await getSettingsNoCache();
 
     return NextResponse.json({
       success: true,
