@@ -1120,35 +1120,9 @@ export default function PriceActionPage() {
         </div>
       )}
 
-      {/* Off Ramp only – Admin set sell rates + auto-publish */}
+      {/* Off Ramp only – Admin set sell rates */}
       {activeTab === "sell" && (
         <div className="bg-white dark:bg-slate-900 p-4 sm:p-6 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700">
-          {/* Auto-publish toggle for offramp only (its own setting) */}
-          <div className="flex items-center justify-between p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 mb-4">
-            <div>
-              <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Auto-publish CoinGecko + sell profit every 30s</p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">When on, sell (offramp) rates are published automatically every 30s.</p>
-            </div>
-            <label className="cursor-pointer">
-              <div className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${coingeckoAutoPublishSell ? "bg-primary" : "bg-slate-300 dark:bg-slate-600"}`}>
-                <input
-                  type="checkbox"
-                  checked={coingeckoAutoPublishSell}
-                  onChange={(e) => handleCoingeckoAutoPublishSellToggle(e.target.checked)}
-                  disabled={!address}
-                  className="sr-only"
-                  aria-label="Toggle offramp auto-publish on or off"
-                />
-                <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${coingeckoAutoPublishSell ? "translate-x-6" : "translate-x-1"}`} />
-              </div>
-            </label>
-          </div>
-
-          {coingeckoAutoPublishSell && (
-            <p className="text-xs text-primary dark:text-primary font-medium mb-3">
-              Auto-publish is on: these sell rates are also updated every 30s from CoinGecko + sell profit.
-            </p>
-          )}
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">$SEND to NGN (Sell)</label>
